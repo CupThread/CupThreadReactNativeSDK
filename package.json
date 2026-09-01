@@ -1,0 +1,56 @@
+{
+  "name": "@cupthread/react-native",
+  "version": "0.1.0",
+  "description": "Official CupThread SDK for React Native & Expo — Roadmaps, Feature Requests, In-App Feedback, and Changelogs.",
+  "type": "module",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "keywords": [
+    "cupthread",
+    "react-native",
+    "expo",
+    "feedback",
+    "roadmap",
+    "feature-requests",
+    "changelog",
+    "in-app-feedback"
+  ],
+  "author": "CupThread Team <support@cupthread.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CupThread/CupThreadReactNativeSDK.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CupThread/CupThreadReactNativeSDK/issues"
+  },
+  "homepage": "https://cupthread.com",
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.70.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "react": "^18.3.1",
+    "react-native": "^0.76.0",
+    "typescript": "^5.6.0"
+  }
+}
