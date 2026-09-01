@@ -1,6 +1,9 @@
 node_modules/
 dist/
+build/
+docs-site/
 .DS_Store
 *.log
-coverage/
-.turbo/
+.env
+.env.local
+.env*.local
