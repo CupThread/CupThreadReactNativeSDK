@@ -4,6 +4,19 @@ Official TypeScript SDK for React Native and Expo apps (iOS, Android, and Web).
 
 Part of the [CupThread.com](https://cupthread.com) platform.
 
+## 🤖 Recommended: Install via AI Agent (Agentic Coding)
+
+Instead of manually editing package files and writing boilerplate by hand, install the official **CupThread React Native AI Skill** into your workspace with [`npx skills`](https://github.com/skills-directory/skills) and let your AI assistant (Claude Code, Cursor, Copilot, Windsurf, Codex, Antigravity) integrate and customize it for you:
+
+```sh
+npx skills add CupThread/CupThreadAgenticCoding --skill cupthread-react-native-sdk
+```
+
+Once installed, simply prompt your coding agent:
+> *"Integrate the CupThread feedback roadmap and feature requests screens with appKey `app_xxx`"*
+
+---
+
 ## CupThread Ecosystem
 - 🌐 [CupThread.com](https://cupthread.com) — Feedback SaaS platform, developer console, and API.
 - 🍏 [CupThread/CupThreadSwiftSDK](https://github.com/CupThread/CupThreadSwiftSDK) — Apple platform SDK (SwiftUI / SPM / XCFramework).
@@ -12,17 +25,9 @@ Part of the [CupThread.com](https://cupthread.com) platform.
 - 💙 [CupThread/CupThreadFlutterSDK](https://github.com/CupThread/CupThreadFlutterSDK) — Flutter SDK (Dart).
 - 🧠 [CupThread/CupThreadAgenticCoding](https://github.com/CupThread/CupThreadAgenticCoding) — AI-friendly CLI & Skills for pair programming.
 
-## 🤖 Agentic Coding Friendly
-
-This repository is designed from the ground up to be **Agentic Coding friendly** for LLMs, coding agents, and pair programmers:
-- **Zero native binary dependencies**: Pure TypeScript / React Native component tree that runs deterministically across bare React Native and Expo without native rebuilds or pod linking.
-- **Strict type consistency**: Full alignment with CupThread Public API schemas.
-- **Comprehensive documentation**: JSDoc symbol docs, clean props, and usage examples.
-- **AI skills & pair programming tooling**: Companion skills, CLI tools, and agent workflows are maintained in [CupThread/CupThreadAgenticCoding](https://github.com/CupThread/CupThreadAgenticCoding).
-
 ---
 
-## Installation
+## Manual Installation
 
 ```sh
 # npm
@@ -138,9 +143,6 @@ npm run typecheck
 
 # Run unit tests
 npm test
-
-# Build package
-npm run build
 ```
 
 ## License
