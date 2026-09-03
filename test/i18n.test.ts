@@ -119,3 +119,58 @@ test('formatFileSize formats byte units properly', () => {
   assert.equal(formatFileSize(1024), '1.0 KB');
   assert.equal(formatFileSize(1024 * 1024 * 2.5), '2.5 MB');
 });
+
+test('i18n handles singular and plural quantities properly across locales', () => {
+  assert.equal(deStrings.common.daysAgo(1), 'vor 1 Tag');
+  assert.equal(deStrings.common.daysAgo(3), 'vor 3 Tagen');
+  assert.equal(deStrings.roadmap.upvotesCount(1), '1 Stimme');
+  assert.equal(deStrings.roadmap.upvotesCount(5), '5 Stimmen');
+
+  assert.equal(esStrings.roadmap.upvotesCount(1), '1 voto');
+  assert.equal(esStrings.roadmap.upvotesCount(3), '3 votos');
+
+  assert.equal(frStrings.roadmap.upvotesCount(0), '0 vote');
+  assert.equal(frStrings.roadmap.upvotesCount(1), '1 vote');
+  assert.equal(frStrings.roadmap.upvotesCount(2), '2 votes');
+
+  assert.equal(itStrings.common.hoursAgo(1), '1 ora fa');
+  assert.equal(itStrings.common.hoursAgo(2), '2 ore fa');
+  assert.equal(itStrings.common.daysAgo(1), '1 giorno fa');
+  assert.equal(itStrings.common.daysAgo(4), '4 giorni fa');
+  assert.equal(itStrings.roadmap.upvotesCount(1), '1 voto');
+  assert.equal(itStrings.roadmap.upvotesCount(2), '2 voti');
+
+  assert.equal(ptStrings.common.daysAgo(1), 'Há 1 dia');
+  assert.equal(ptStrings.common.daysAgo(2), 'Há 2 dias');
+  assert.equal(ptStrings.roadmap.upvotesCount(1), '1 voto');
+  assert.equal(ptStrings.roadmap.upvotesCount(2), '2 votos');
+
+  assert.equal(noStrings.common.daysAgo(1), '1 dag siden');
+  assert.equal(noStrings.common.daysAgo(2), '2 dager siden');
+  assert.equal(noStrings.roadmap.upvotesCount(1), '1 stemme');
+  assert.equal(noStrings.roadmap.upvotesCount(2), '2 stemmer');
+
+  assert.equal(plStrings.common.daysAgo(1), '1 dzień temu');
+  assert.equal(plStrings.common.daysAgo(2), '2 dni temu');
+  assert.equal(plStrings.roadmap.upvotesCount(1), '1 głos');
+  assert.equal(plStrings.roadmap.upvotesCount(2), '2 głosy');
+  assert.equal(plStrings.roadmap.upvotesCount(5), '5 głosów');
+  assert.equal(plStrings.roadmap.upvotesCount(21), '21 głosów');
+  assert.equal(plStrings.roadmap.upvotesCount(22), '22 głosy');
+});
+
+test('i18n grammatical gender agreement and UI polish', () => {
+  assert.equal(frStrings.featureRequestDetail.proposedBy, 'Proposée par');
+  assert.equal(frStrings.featureRequestDetail.releasedIn, 'Publiée dans');
+
+  assert.equal(itStrings.featureRequestDetail.proposedBy, 'Proposta da');
+  assert.equal(itStrings.featureRequestDetail.releasedIn, 'Rilasciata in');
+
+  assert.equal(ptStrings.featureRequestDetail.proposedBy, 'Proposta por');
+  assert.equal(ptStrings.featureRequestDetail.releasedIn, 'Lançada em');
+
+  assert.equal(esStrings.featureRequestDetail.releasedIn, 'Publicada en');
+
+  assert.equal(jaStrings.changelog.continueButton, '次へ');
+  assert.equal(koStrings.featureRequests.upvoted, '추천됨');
+});

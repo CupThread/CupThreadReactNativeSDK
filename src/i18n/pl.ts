@@ -16,7 +16,7 @@ export const plStrings: CupThreadStrings = {
     justNow: 'Przed chwilą',
     minutesAgo: (m: number) => `${m} min temu`,
     hoursAgo: (h: number) => `${h} godz. temu`,
-    daysAgo: (d: number) => `${d} dni temu`,
+    daysAgo: (d: number) => d === 1 ? '1 dzień temu' : `${d} dni temu`,
   },
   feedbackComposer: {
     title: 'Wyślij opinię',
@@ -69,7 +69,15 @@ export const plStrings: CupThreadStrings = {
     screenTitle: 'Mapa drogowa',
     searchPlaceholder: 'Szukaj na mapie drogowej...',
     emptyColumn: 'Brak elementów na tym etapie',
-    upvotesCount: (count: number) => `${count} głosów`,
+    upvotesCount: (count: number) => {
+      if (count === 1) return '1 głos';
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+        return `${count} głosy`;
+      }
+      return `${count} głosów`;
+    },
   },
   featureRequestDetail: {
     title: 'Prośba o funkcję',

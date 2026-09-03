@@ -16,7 +16,7 @@ export const deStrings: CupThreadStrings = {
     justNow: 'Gerade eben',
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,
-    daysAgo: (d: number) => `vor ${d} Tagen`,
+    daysAgo: (d: number) => d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`,
   },
   feedbackComposer: {
     title: 'Feedback senden',
@@ -69,7 +69,7 @@ export const deStrings: CupThreadStrings = {
     screenTitle: 'Roadmap',
     searchPlaceholder: 'Roadmap durchsuchen...',
     emptyColumn: 'Keine Einträge in dieser Phase',
-    upvotesCount: (count: number) => `${count} Stimmen`,
+    upvotesCount: (count: number) => count === 1 ? '1 Stimme' : `${count} Stimmen`,
   },
   featureRequestDetail: {
     title: 'Feature-Anfrage',

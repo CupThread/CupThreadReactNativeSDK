@@ -47,7 +47,7 @@ export const koStrings: CupThreadStrings = {
     emptySubtitle: '새 기능을 가장 먼저 제안해 보세요!',
     proposeButton: '기능 제안',
     moreCommenters: '+ 더 보기',
-    upvoted: '투표함',
+    upvoted: '추천됨',
     upvote: '투표',
   },
   featureRequestCompose: {

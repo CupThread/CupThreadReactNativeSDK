@@ -91,7 +91,7 @@ export const jaStrings: CupThreadStrings = {
   },
   changelog: {
     overlayTitle: '新着情報',
-    continueButton: '続ける',
+    continueButton: '次へ',
     closeButton: '閉じる',
     emptyChangelog: '公開済みの更新情報はまだありません。',
     subscribeTitle: '最新情報を受け取る',

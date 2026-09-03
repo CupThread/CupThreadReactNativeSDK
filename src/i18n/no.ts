@@ -16,7 +16,7 @@ export const noStrings: CupThreadStrings = {
     justNow: 'Akkurat nå',
     minutesAgo: (m: number) => `${m} min siden`,
     hoursAgo: (h: number) => `${h} t siden`,
-    daysAgo: (d: number) => `${d} dager siden`,
+    daysAgo: (d: number) => d === 1 ? '1 dag siden' : `${d} dager siden`,
   },
   feedbackComposer: {
     title: 'Send tilbakemelding',
@@ -69,7 +69,7 @@ export const noStrings: CupThreadStrings = {
     screenTitle: 'Veikart',
     searchPlaceholder: 'Søk i veikartet...',
     emptyColumn: 'Ingen elementer i denne fasen',
-    upvotesCount: (count: number) => `${count} stemmer`,
+    upvotesCount: (count: number) => count === 1 ? '1 stemme' : `${count} stemmer`,
   },
   featureRequestDetail: {
     title: 'Funksjonsforespørsel',
