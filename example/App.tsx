@@ -16,7 +16,7 @@ installDemoFetch();
 
 type Screen = 'roadmap' | 'requests' | 'whats-new' | 'feedback';
 
-function screenFromUrl(url: string | null): { screen: Screen; overlay: boolean; compose: boolean } {
+function screenFromUrl(url: string | null): { screen: Screen; overlay: boolean } {
   const params = new URL(url ?? 'cupthread-showcase://?screen=roadmap').searchParams;
   const requested = params.get('screen');
   return {
@@ -24,7 +24,6 @@ function screenFromUrl(url: string | null): { screen: Screen; overlay: boolean; 
       ? requested
       : 'roadmap',
     overlay: params.get('overlay') === 'changelog',
-    compose: params.get('compose') === 'feature-request',
   };
 }
 
@@ -33,20 +32,21 @@ export default function App() {
     () => new FeedbackClient({ baseUrl: 'https://demo.cupthread.invalid', appKey: 'app_showcase' }),
     []
   );
-  const initial = screenFromUrl(Linking.useURL());
+  const initial = screenFromUrl(null);
   const [screen, setScreen] = useState<Screen>(initial.screen);
   const [showOverlay, setShowOverlay] = useState(initial.overlay);
   const [showFeedback, setShowFeedback] = useState(initial.screen === 'feedback');
-  const [composeKey, setComposeKey] = useState(initial.compose ? 1 : 0);
+
+  const applyUrl = (url: string | null) => {
+    const next = screenFromUrl(url);
+    setScreen(next.screen);
+    setShowOverlay(next.overlay);
+    setShowFeedback(next.screen === 'feedback');
+  };
 
   useEffect(() => {
-    const subscription = Linking.addEventListener('url', ({ url }) => {
-      const next = screenFromUrl(url);
-      setScreen(next.screen);
-      setShowOverlay(next.overlay);
-      setShowFeedback(next.screen === 'feedback');
-      if (next.compose) setComposeKey((key) => key + 1);
-    });
+    Linking.getInitialURL().then(applyUrl).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => applyUrl(url));
     return () => subscription.remove();
   }, []);
 
@@ -56,9 +56,7 @@ export default function App() {
       <View style={styles.container}>
         <View style={styles.content}>
           {screen === 'roadmap' && <RoadmapBoardScreen />}
-          {screen === 'requests' && (
-            <FeatureRequestsScreen key={composeKey} />
-          )}
+          {screen === 'requests' && <FeatureRequestsScreen />}
           {screen === 'whats-new' && <WhatsNewScreen />}
           {screen === 'feedback' && (
             <View style={styles.feedbackPrompt}>

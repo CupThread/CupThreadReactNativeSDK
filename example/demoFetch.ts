@@ -45,8 +45,15 @@ const entries = [
   { id: 'change-23', title: 'Team feedback workspace', body: 'Share, discuss, and prioritize feature requests with your team in one place.', versionLabel: '2.3.0', publishedAt: '2026-08-15T12:00:00.000Z', linkedRequests: [{ id: 'fr-sso', title: 'Single sign-on for larger teams' }] },
 ];
 
-function response(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+function response(body: unknown, status = 200) {
+  const text = JSON.stringify(body);
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: { get: (name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null) },
+    text: async () => text,
+    json: async () => JSON.parse(text),
+  };
 }
 
 export function installDemoFetch(): void {
@@ -62,7 +69,7 @@ export function installDemoFetch(): void {
     if (pathname.endsWith('/changelog')) return response({ entries });
     if (pathname.endsWith('/changelog/subscribe')) return response({ subscribed: true, alreadySubscribed: false });
     if (pathname.includes('/feature-requests/') && pathname.endsWith('/vote')) return response({ voted: true, voteCount: 49 });
-    if (pathname.endsWith('/feature-requests')) return response({ items: requests, total: requests.length, limit: 50, offset: 0 });
+    if (pathname.endsWith('/feature-requests')) return response({ requests, total: requests.length });
     if (pathname.endsWith('/feedback')) return response({ submissionId: 'submission-showcase', forwardedToGithub: false });
     return response({});
   };
