@@ -7,20 +7,52 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient, useCupThreadUserToken } from '../theme/CupThreadThemeProvider.tsx';
-import type { FeatureRequestComment, CommentDraft } from '../types/index.ts';
-import { Avatar } from './Avatar.tsx';
-import { formatDate } from '../utils/formatters.ts';
-import { MarkdownText } from './MarkdownText.tsx';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadUserToken,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { FeatureRequestComment, CommentDraft } from '../types';
+import { Avatar } from './Avatar';
+import { formatDate } from '../utils/formatters';
+import { MarkdownText } from './MarkdownText';
 
+/**
+ * Props for configuring the {@link CommentsSection} thread component.
+ *
+ * @example
+ * ```tsx
+ * <CommentsSection featureRequestId="fr_sample123" />
+ * ```
+ */
 export interface CommentsSectionProps {
+  /**
+   * Unique identifier of the feature request whose comments are being displayed and posted.
+   */
   featureRequestId: string;
 }
 
+/**
+ * Interactive discussion thread component displaying nested comments, markdown rendering, avatars, and reply composer.
+ *
+ * @param props - {@link CommentsSectionProps} containing the target feature request ID.
+ *
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { CommentsSection } from '@cupthread/react-native';
+ *
+ * export function FeatureCommentsTab({ id }: { id: string }) {
+ *   return <CommentsSection featureRequestId={id} />;
+ * }
+ * ```
+ */
 export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const strings = useCupThreadStrings();
 
   const [comments, setComments] = useState<FeatureRequestComment[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -72,63 +104,65 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
     }
   };
 
+  const activeComments = comments.filter((c) => !c.isHidden);
+
   return (
     <View style={styles.container}>
       <Text style={[styles.heading, { color: colors.textPrimary }]}>
-        Discussion ({comments.filter((c) => !c.isHidden).length})
+        {strings.comments.commentsCount(activeComments.length)}
       </Text>
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
-      ) : comments.length === 0 ? (
+      ) : activeComments.length === 0 ? (
         <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-          No comments yet. Start the discussion!
+          {strings.comments.emptyComments}
         </Text>
       ) : (
         <View style={styles.list}>
-          {comments
-            .filter((c) => !c.isHidden)
-            .map((item) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.commentCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.cardBorder,
-                    marginLeft: item.parentId ? 20 : 0,
-                  },
-                ]}
-              >
-                <View style={styles.authorRow}>
-                  <Avatar url={item.authorAvatarUrl} name={item.authorName} size={28} />
-                  <View style={styles.authorMeta}>
-                    <Text style={[styles.authorName, { color: colors.textPrimary }]}>
-                      {item.authorName || 'Anonymous User'}
-                    </Text>
-                    <Text style={[styles.timeText, { color: colors.textMuted }]}>
-                      {formatDate(item.createdAt)}
-                    </Text>
-                  </View>
-                </View>
-
-                {item.replyToAuthorName && (
-                  <Text style={[styles.replyNotice, { color: colors.primary }]}>
-                    Replying to @{item.replyToAuthorName}
+          {activeComments.map((item) => (
+            <View
+              key={item.id}
+              style={[
+                styles.commentCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.cardBorder,
+                  marginLeft: item.parentId ? 20 : 0,
+                },
+              ]}
+            >
+              <View style={styles.authorRow}>
+                <Avatar url={item.authorAvatarUrl} name={item.authorName} size={28} />
+                <View style={styles.authorMeta}>
+                  <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+                    {item.authorName || strings.common.anonymous}
                   </Text>
-                )}
-
-                <MarkdownText content={item.body} style={{ fontSize: 13 }} />
-
-                <TouchableOpacity
-                  onPress={() => setReplyTo(item)}
-                  style={styles.replyButton}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.replyButtonText, { color: colors.primary }]}>Reply</Text>
-                </TouchableOpacity>
+                  <Text style={[styles.timeText, { color: colors.textMuted }]}>
+                    {formatDate(item.createdAt, strings.common)}
+                  </Text>
+                </View>
               </View>
-            ))}
+
+              {item.replyToAuthorName && (
+                <Text style={[styles.replyNotice, { color: colors.primary }]}>
+                  {strings.comments.replyingTo(item.replyToAuthorName)}
+                </Text>
+              )}
+
+              <MarkdownText content={item.body} style={{ fontSize: 13 }} />
+
+              <TouchableOpacity
+                onPress={() => setReplyTo(item)}
+                style={styles.replyButton}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.replyButtonText, { color: colors.primary }]}>
+                  {strings.comments.replyButton}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
         </View>
       )}
 
@@ -144,10 +178,12 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
         {replyTo && (
           <View style={[styles.replyingBar, { backgroundColor: colors.chipBg }]}>
             <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
-              Replying to {replyTo.authorName || 'Anonymous'}
+              {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
             </Text>
             <TouchableOpacity onPress={() => setReplyTo(null)}>
-              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>Cancel</Text>
+              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                {strings.comments.cancelReply}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -163,7 +199,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
               color: colors.textPrimary,
             },
           ]}
-          placeholder="Your name (optional)"
+          placeholder={strings.comments.namePlaceholder}
           placeholderTextColor={colors.textMuted}
           value={authorName}
           onChangeText={setAuthorName}
@@ -178,7 +214,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
               color: colors.textPrimary,
             },
           ]}
-          placeholder="Write a comment..."
+          placeholder={strings.comments.inputPlaceholder}
           placeholderTextColor={colors.textMuted}
           value={commentText}
           onChangeText={setCommentText}
@@ -200,7 +236,9 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
           {isSubmitting ? (
             <ActivityIndicator color={colors.primaryText} size="small" />
           ) : (
-            <Text style={[styles.sendButtonText, { color: colors.primaryText }]}>Send</Text>
+            <Text style={[styles.sendButtonText, { color: colors.primaryText }]}>
+              {strings.comments.postButton}
+            </Text>
           )}
         </TouchableOpacity>
       </View>

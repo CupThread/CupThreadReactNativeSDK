@@ -5,7 +5,6 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
     "noImplicitAny": true,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getThemeColors } from '../src/theme/SdkTheme.ts';
-import { formatDate } from '../src/utils/formatters.ts';
+import { getThemeColors } from '../src/theme/SdkTheme';
+import { formatDate } from '../src/utils/formatters';
 
 test('getThemeColors returns matching colors for each theme', () => {
   const light = getThemeColors('light');

@@ -1,28 +1,124 @@
-import type { SdkTheme } from '../types/index.ts';
+import type { SdkTheme } from '../types';
 
+/**
+ * Color design tokens used across all CupThread React Native components and screens.
+ *
+ * @example
+ * ```ts
+ * import { ThemeColors, lightTheme } from '@cupthread/react-native';
+ *
+ * const customColors: ThemeColors = {
+ *   ...lightTheme,
+ *   primary: '#6366f1',
+ *   accent: '#818cf8',
+ * };
+ * ```
+ */
 export interface ThemeColors {
+  /**
+   * Main screen background color.
+   */
   background: string;
+
+  /**
+   * Card, modal sheet, or container surface background color.
+   */
   card: string;
+
+  /**
+   * Outline and divider color for cards and container surfaces.
+   */
   cardBorder: string;
+
+  /**
+   * High-contrast primary text color for headers, titles, and body content.
+   */
   textPrimary: string;
+
+  /**
+   * Medium-contrast secondary text color for subtitles and descriptions.
+   */
   textSecondary: string;
+
+  /**
+   * Low-contrast muted text color for timestamps, counters, and placeholders.
+   */
   textMuted: string;
+
+  /**
+   * Primary brand / call-to-action color for buttons, active tabs, and highlights.
+   */
   primary: string;
+
+  /**
+   * Hover/press highlight tint for primary actions.
+   */
   primaryHover: string;
+
+  /**
+   * Contrasting text color rendered on top of primary button backgrounds.
+   */
   primaryText: string;
+
+  /**
+   * Generic hairline border and separator color.
+   */
   border: string;
+
+  /**
+   * Background color for text input fields and text areas.
+   */
   inputBg: string;
+
+  /**
+   * Border color for idle text input fields.
+   */
   inputBorder: string;
+
+  /**
+   * Vibrant accent color for icons, indicators, and links.
+   */
   accent: string;
+
+  /**
+   * Background fill for active/voted state on {@link VoteButton}.
+   */
   voteActiveBg: string;
+
+  /**
+   * Text and arrow color for active/voted state on {@link VoteButton}.
+   */
   voteActiveText: string;
+
+  /**
+   * Background fill for unvoted state on {@link VoteButton}.
+   */
   voteInactiveBg: string;
+
+  /**
+   * Text and arrow color for unvoted state on {@link VoteButton}.
+   */
   voteInactiveText: string;
+
+  /**
+   * Background color for category chips, tag pills, and badges.
+   */
   chipBg: string;
+
+  /**
+   * Text color inside category chips, tag pills, and badges.
+   */
   chipText: string;
+
+  /**
+   * Horizontal divider rule color.
+   */
   divider: string;
 }
 
+/**
+ * Standard crisp light theme palette (slate on white).
+ */
 export const lightTheme: ThemeColors = {
   background: '#f8fafc',
   card: '#ffffff',
@@ -46,6 +142,9 @@ export const lightTheme: ThemeColors = {
   divider: '#e2e8f0',
 };
 
+/**
+ * Modern dark slate theme palette.
+ */
 export const darkTheme: ThemeColors = {
   background: '#090d16',
   card: '#131b2e',
@@ -69,6 +168,9 @@ export const darkTheme: ThemeColors = {
   divider: '#1e293b',
 };
 
+/**
+ * Deep indigo/midnight dark palette optimized for OLED displays.
+ */
 export const midnightTheme: ThemeColors = {
   ...darkTheme,
   background: '#030712',
@@ -80,6 +182,9 @@ export const midnightTheme: ThemeColors = {
   voteActiveText: '#c7d2fe',
 };
 
+/**
+ * Teal and marine coastal theme palette.
+ */
 export const oceanTheme: ThemeColors = {
   background: '#f0fdfa',
   card: '#ffffff',
@@ -103,6 +208,9 @@ export const oceanTheme: ThemeColors = {
   divider: '#ccfbf1',
 };
 
+/**
+ * Natural emerald and lime forest theme palette.
+ */
 export const forestTheme: ThemeColors = {
   background: '#f7fee7',
   card: '#ffffff',
@@ -126,6 +234,9 @@ export const forestTheme: ThemeColors = {
   divider: '#d9f99d',
 };
 
+/**
+ * Warm amber and terracotta sunset theme palette.
+ */
 export const sunsetTheme: ThemeColors = {
   background: '#fff7ed',
   card: '#ffffff',
@@ -149,6 +260,9 @@ export const sunsetTheme: ThemeColors = {
   divider: '#fed7aa',
 };
 
+/**
+ * Vibrant fuchsia and candy pink theme palette.
+ */
 export const candyTheme: ThemeColors = {
   background: '#fdf4ff',
   card: '#ffffff',
@@ -172,6 +286,21 @@ export const candyTheme: ThemeColors = {
   divider: '#f5d0fe',
 };
 
+/**
+ * Resolves full {@link ThemeColors} for a given {@link SdkTheme} and dark mode state.
+ *
+ * @param theme - Selected theme identifier (e.g. `'system'`, `'ocean'`, `'dark'`).
+ * @param isDarkMode - Boolean indicating if device system dark mode is active (used for `'system'`).
+ * @returns Complete {@link ThemeColors} color token mapping.
+ *
+ * @example
+ * ```ts
+ * import { getThemeColors } from '@cupthread/react-native';
+ *
+ * const colors = getThemeColors('ocean');
+ * console.log(`Primary color: ${colors.primary}`);
+ * ```
+ */
 export function getThemeColors(theme: SdkTheme, isDarkMode: boolean = false): ThemeColors {
   switch (theme) {
     case 'light':

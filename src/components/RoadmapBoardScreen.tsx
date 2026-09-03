@@ -9,24 +9,76 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient, useCupThreadUserToken } from '../theme/CupThreadThemeProvider.tsx';
-import type { BoardColumn, FeatureRequestItem } from '../types/index.ts';
-import { VoteButton } from './VoteButton.tsx';
-import { Badge } from './Badge.tsx';
-import { FeatureRequestDetail } from './FeatureRequestDetail.tsx';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadUserToken,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { BoardColumn, FeatureRequestItem } from '../types';
+import { VoteButton } from './VoteButton';
+import { Badge } from './Badge';
+import { FeatureRequestDetail } from './FeatureRequestDetail';
 
+/**
+ * Props for configuring the {@link RoadmapBoardScreen} component.
+ *
+ * @example
+ * ```tsx
+ * <RoadmapBoardScreen
+ *   headerTitle="Product Roadmap"
+ *   onBack={() => navigation.goBack()}
+ * />
+ * ```
+ */
 export interface RoadmapBoardScreenProps {
+  /**
+   * Optional callback function invoked when the user taps the top navigation back button.
+   * If omitted, the back button is hidden.
+   */
   onBack?: () => void;
+
+  /**
+   * Header title displayed at the top of the roadmap screen.
+   *
+   * @defaultValue `'Roadmap'` (or localized equivalent)
+   */
   headerTitle?: string;
 }
 
+/**
+ * Multi-column Kanban roadmap board screen showing milestones such as "Under Consideration", "In Progress", and "Shipped".
+ *
+ * @param props - {@link RoadmapBoardScreenProps} configuring navigation and titles.
+ *
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { FeedbackClient, CupThreadProvider, RoadmapBoardScreen } from '@cupthread/react-native';
+ *
+ * const client = new FeedbackClient({
+ *   baseUrl: 'https://api.cupthread.com',
+ *   appKey: 'app_prod_123',
+ * });
+ *
+ * export function RoadmapRoute({ navigation }) {
+ *   return (
+ *     <CupThreadProvider client={client}>
+ *       <RoadmapBoardScreen onBack={() => navigation.goBack()} />
+ *     </CupThreadProvider>
+ *   );
+ * }
+ * ```
+ */
 export function RoadmapBoardScreen({
   onBack,
-  headerTitle = 'Roadmap',
+  headerTitle,
 }: RoadmapBoardScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const strings = useCupThreadStrings();
+  const title = headerTitle ?? strings.roadmap.screenTitle;
 
   const [columns, setColumns] = useState<BoardColumn[]>([]);
   const [requests, setRequests] = useState<FeatureRequestItem[]>([]);
@@ -100,7 +152,7 @@ export function RoadmapBoardScreen({
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{headerTitle}</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
       </View>
 
       {columns.length > 0 && (
@@ -151,9 +203,8 @@ export function RoadmapBoardScreen({
         </View>
       ) : columnItems.length === 0 ? (
         <View style={styles.centerEmpty}>
-          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No items in this column</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-            Features planned for this milestone will appear here.
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            {strings.roadmap.emptyColumn}
           </Text>
         </View>
       ) : (

@@ -1,31 +1,33 @@
 // Export Types
-export * from './types/index.ts';
+export * from './types';
 
 // Export Errors
-export * from './client/FeedbackException.ts';
+export * from './client/FeedbackException';
 
 // Export Client & UserTokenStore
-export * from './client/FeedbackClient.ts';
-export * from './client/UserTokenStore.ts';
+export * from './client/FeedbackClient';
+export * from './client/UserTokenStore';
 
-// Export Theme
-export * from './theme/SdkTheme.ts';
-export * from './theme/CupThreadThemeProvider.tsx';
+// Export Theme & i18n
+export * from './theme/SdkTheme';
+export * from './theme/CupThreadThemeProvider';
+export * from './i18n';
 
 // Export Components & Screens
-export * from './components/MarkdownText.tsx';
-export * from './components/Avatar.tsx';
-export * from './components/Badge.tsx';
-export * from './components/VoteButton.tsx';
-export * from './components/FeedbackComposer.tsx';
-export * from './components/CommentsSection.tsx';
-export * from './components/FeatureRequestDetail.tsx';
-export * from './components/FeatureRequestsScreen.tsx';
-export * from './components/RoadmapBoardScreen.tsx';
-export * from './components/WhatsNewScreen.tsx';
-export * from './components/ChangelogOverlay.tsx';
-export * from './components/UserProfileScreen.tsx';
+export * from './components/MarkdownText';
+export * from './components/Avatar';
+export * from './components/Badge';
+export * from './components/VoteButton';
+export * from './components/FeedbackComposer';
+export * from './components/FeatureRequestComposeSheet';
+export * from './components/CommentsSection';
+export * from './components/FeatureRequestDetail';
+export * from './components/FeatureRequestsScreen';
+export * from './components/RoadmapBoardScreen';
+export * from './components/WhatsNewScreen';
+export * from './components/ChangelogOverlay';
+export * from './components/UserProfileScreen';
 
 // Export Utils
-export * from './utils/formatters.ts';
-export * from './utils/platform.ts';
+export * from './utils/formatters';
+export * from './utils/platform';

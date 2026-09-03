@@ -1,7 +1,16 @@
+import type { CommonStrings } from '../i18n';
+
 /**
  * Formats an ISO 8601 date string to a human-friendly relative or calendar date.
+ *
+ * @param isoDateString - ISO 8601 timestamp string.
+ * @param commonStrings - Optional localized relative time strings.
+ * @returns Human-friendly relative date representation (e.g. `'Just now'`, `'5m ago'`).
  */
-export function formatDate(isoDateString?: string | null): string {
+export function formatDate(
+  isoDateString?: string | null,
+  commonStrings?: CommonStrings
+): string {
   if (!isoDateString) return '';
   const date = new Date(isoDateString);
   if (isNaN(date.getTime())) return isoDateString;
@@ -13,16 +22,31 @@ export function formatDate(isoDateString?: string | null): string {
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffSec < 60) return 'Just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffSec < 60) return commonStrings?.justNow ?? 'Just now';
+  if (diffMin < 60) return commonStrings?.minutesAgo ? commonStrings.minutesAgo(diffMin) : `${diffMin}m ago`;
+  if (diffHours < 24) return commonStrings?.hoursAgo ? commonStrings.hoursAgo(diffHours) : `${diffHours}h ago`;
+  if (diffDays < 7) return commonStrings?.daysAgo ? commonStrings.daysAgo(diffDays) : `${diffDays}d ago`;
 
   return date.toLocaleDateString(undefined, {
     year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     month: 'short',
     day: 'numeric',
   });
+}
+
+/**
+ * Formats byte counts into human-readable strings (e.g. 512 B, 1.2 MB).
+ *
+ * @param bytes - Size in bytes.
+ * @returns Readable file size string.
+ */
+export function formatFileSize(bytes?: number): string {
+  if (bytes === undefined || bytes === null || isNaN(bytes)) return '';
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const size = bytes / Math.pow(1024, i);
+  return `${size >= 10 || i === 0 ? Math.round(size) : size.toFixed(1)} ${units[i]}`;
 }
 
 /**

@@ -9,19 +9,26 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient } from '../theme/CupThreadThemeProvider.tsx';
-import type { PublicUserProfileResult } from '../types/index.ts';
-import { Avatar } from './Avatar.tsx';
-import { formatDate } from '../utils/formatters.ts';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { PublicUserProfileResult } from '../types';
+import { Avatar } from './Avatar';
+import { formatDate } from '../utils/formatters';
 
 export interface UserProfileScreenProps {
   userId: string;
   onBack?: () => void;
+  headerTitle?: string;
 }
 
-export function UserProfileScreen({ userId, onBack }: UserProfileScreenProps) {
+export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
+  const strings = useCupThreadStrings();
+  const title = headerTitle ?? strings.userProfile.screenTitle;
 
   const [data, setData] = useState<PublicUserProfileResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -51,7 +58,7 @@ export function UserProfileScreen({ userId, onBack }: UserProfileScreenProps) {
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>User Profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
       </View>
 
       {isLoading ? (
@@ -148,7 +155,7 @@ export function UserProfileScreen({ userId, onBack }: UserProfileScreenProps) {
                     "{comment.body}"
                   </Text>
                   <Text style={[styles.commentDate, { color: colors.textMuted }]}>
-                    {formatDate(comment.createdAt)} · {comment.appName}
+                    {formatDate(comment.createdAt, strings.common)} · {comment.appName}
                   </Text>
                 </View>
               ))}

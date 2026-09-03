@@ -8,22 +8,76 @@ import {
   Modal,
   SafeAreaView,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient, useCupThreadUserToken } from '../theme/CupThreadThemeProvider.tsx';
-import type { FeatureRequestItem } from '../types/index.ts';
-import { VoteButton } from './VoteButton.tsx';
-import { Badge } from './Badge.tsx';
-import { Avatar } from './Avatar.tsx';
-import { MarkdownText } from './MarkdownText.tsx';
-import { CommentsSection } from './CommentsSection.tsx';
-import { formatDate } from '../utils/formatters.ts';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadUserToken,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { FeatureRequestItem } from '../types';
+import { VoteButton } from './VoteButton';
+import { Badge } from './Badge';
+import { Avatar } from './Avatar';
+import { MarkdownText } from './MarkdownText';
+import { CommentsSection } from './CommentsSection';
+import { formatDate } from '../utils/formatters';
 
+/**
+ * Props for configuring the {@link FeatureRequestDetail} modal view.
+ *
+ * @example
+ * ```tsx
+ * <FeatureRequestDetail
+ *   item={selectedItem}
+ *   visible={isOpen}
+ *   onClose={() => setIsOpen(false)}
+ *   onVoteChange={(updated) => updateLocalItem(updated)}
+ * />
+ * ```
+ */
 export interface FeatureRequestDetailProps {
+  /**
+   * The feature request item data model to render.
+   */
   item: FeatureRequestItem;
+
+  /**
+   * Whether the full-screen modal sheet is visible.
+   */
   visible: boolean;
+
+  /**
+   * Callback invoked when the user taps the back button or requests modal dismissal.
+   */
   onClose: () => void;
+
+  /**
+   * Optional callback notified whenever the user toggles an upvote inside the detail view.
+   */
   onVoteChange?: (updated: FeatureRequestItem) => void;
 }
 
+/**
+ * Full-screen modal screen displaying detailed feature request descriptions, badges, upvoting, and comments.
+ *
+ * @param props - {@link FeatureRequestDetailProps} configuring the active item and modal actions.
+ *
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { FeatureRequestDetail } from '@cupthread/react-native';
+ *
+ * export function RequestViewer({ activeRequest, onClose }) {
+ *   return (
+ *     <FeatureRequestDetail
+ *       item={activeRequest}
+ *       visible={!!activeRequest}
+ *       onClose={onClose}
+ *     />
+ *   );
+ * }
+ * ```
+ */
 export function FeatureRequestDetail({
   item: initialItem,
   visible,
@@ -33,6 +87,7 @@ export function FeatureRequestDetail({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const strings = useCupThreadStrings();
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
   const [isVoting, setIsVoting] = useState<boolean>(false);
@@ -65,7 +120,7 @@ export function FeatureRequestDetail({
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <Text style={[styles.backText, { color: colors.primary }]}>← Back</Text>
+            <Text style={[styles.backText, { color: colors.primary }]}>← {strings.common.back}</Text>
           </TouchableOpacity>
         </View>
 
@@ -93,11 +148,11 @@ export function FeatureRequestDetail({
           <View style={styles.authorRow}>
             <Avatar url={item.requesterAvatarUrl} name={item.requesterName} size={24} />
             <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-              {item.requesterName || 'Anonymous User'}
+              {item.requesterName || strings.common.anonymous}
             </Text>
             <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
             <Text style={[styles.dateText, { color: colors.textMuted }]}>
-              {formatDate(item.createdAt)}
+              {formatDate(item.createdAt, strings.common)}
             </Text>
           </View>
 

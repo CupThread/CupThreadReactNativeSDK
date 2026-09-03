@@ -10,26 +10,79 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient, useCupThreadUserToken } from '../theme/CupThreadThemeProvider.tsx';
-import type { FeatureRequestItem, AppVersion } from '../types/index.ts';
-import { VoteButton } from './VoteButton.tsx';
-import { Badge } from './Badge.tsx';
-import { Avatar } from './Avatar.tsx';
-import { FeatureRequestDetail } from './FeatureRequestDetail.tsx';
-import { FeedbackComposer } from './FeedbackComposer.tsx';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadUserToken,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { FeatureRequestItem, AppVersion } from '../types';
+import { VoteButton } from './VoteButton';
+import { Badge } from './Badge';
+import { Avatar } from './Avatar';
+import { FeatureRequestDetail } from './FeatureRequestDetail';
+import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
 
+/**
+ * Props for configuring the {@link FeatureRequestsScreen} view.
+ *
+ * @example
+ * ```tsx
+ * <FeatureRequestsScreen
+ *   headerTitle="Community Feedback"
+ *   onBack={() => navigation.goBack()}
+ * />
+ * ```
+ */
 export interface FeatureRequestsScreenProps {
+  /**
+   * Optional callback function invoked when the user taps the top navigation back button.
+   * If not provided, the back button is hidden.
+   */
   onBack?: () => void;
+
+  /**
+   * Title text rendered in the top navigation bar.
+   *
+   * @defaultValue `'Feature Requests'`
+   */
   headerTitle?: string;
 }
 
+/**
+ * Full-featured feature request list screen with search bar, version filter chips, voting, and composer trigger.
+ *
+ * @param props - {@link FeatureRequestsScreenProps} configuring navigation and titles.
+ *
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { FeedbackClient, CupThreadProvider, FeatureRequestsScreen } from '@cupthread/react-native';
+ *
+ * const client = new FeedbackClient({
+ *   baseUrl: 'https://api.cupthread.com',
+ *   appKey: 'app_sample123',
+ * });
+ *
+ * export default function FeedbackTab({ navigation }) {
+ *   return (
+ *     <CupThreadProvider client={client}>
+ *       <FeatureRequestsScreen onBack={() => navigation.goBack()} />
+ *     </CupThreadProvider>
+ *   );
+ * }
+ * ```
+ */
 export function FeatureRequestsScreen({
   onBack,
-  headerTitle = 'Feature Requests',
+  headerTitle,
 }: FeatureRequestsScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const strings = useCupThreadStrings();
+
+  const title = headerTitle ?? strings.featureRequests.screenTitle;
 
   const [items, setItems] = useState<FeatureRequestItem[]>([]);
   const [versions, setVersions] = useState<AppVersion[]>([]);
@@ -139,7 +192,9 @@ export function FeatureRequestsScreen({
             </View>
           ))}
           {item.hasMoreCommenters && (
-            <Text style={[styles.moreCommenters, { color: colors.textMuted }]}>+more</Text>
+            <Text style={[styles.moreCommenters, { color: colors.textMuted }]}>
+              {strings.featureRequests.moreCommenters}
+            </Text>
           )}
         </View>
       )}
@@ -154,13 +209,15 @@ export function FeatureRequestsScreen({
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{headerTitle}</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
         <TouchableOpacity
           onPress={() => setShowCompose(true)}
           style={[styles.composeBtn, { backgroundColor: colors.primary }]}
           activeOpacity={0.8}
         >
-          <Text style={[styles.composeBtnText, { color: colors.primaryText }]}>+ New</Text>
+          <Text style={[styles.composeBtnText, { color: colors.primaryText }]}>
+            {strings.featureRequests.newButton}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -174,7 +231,7 @@ export function FeatureRequestsScreen({
               color: colors.textPrimary,
             },
           ]}
-          placeholder="Search feature requests..."
+          placeholder={strings.featureRequests.searchPlaceholder}
           placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -187,7 +244,7 @@ export function FeatureRequestsScreen({
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={[{ id: 'all', label: 'All Versions' }, ...versions]}
+            data={[{ id: 'all', label: strings.featureRequests.allVersions }, ...versions]}
             keyExtractor={(v) => v.id}
             contentContainerStyle={styles.chipsList}
             renderItem={({ item: v }) => {
@@ -228,16 +285,18 @@ export function FeatureRequestsScreen({
         </View>
       ) : items.length === 0 ? (
         <View style={styles.centerEmpty}>
-          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No requests found</Text>
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+            {strings.featureRequests.emptyTitle}
+          </Text>
           <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-            Be the first to propose a new feature request!
+            {strings.featureRequests.emptySubtitle}
           </Text>
           <TouchableOpacity
             onPress={() => setShowCompose(true)}
             style={[styles.emptyButton, { backgroundColor: colors.primary }]}
           >
             <Text style={[styles.emptyButtonText, { color: colors.primaryText }]}>
-              Propose Feature
+              {strings.featureRequests.proposeButton}
             </Text>
           </TouchableOpacity>
         </View>
@@ -268,7 +327,7 @@ export function FeatureRequestsScreen({
         />
       )}
 
-      <FeedbackComposer
+      <FeatureRequestComposeSheet
         visible={showCompose}
         onClose={() => setShowCompose(false)}
         onSubmitSuccess={() => {

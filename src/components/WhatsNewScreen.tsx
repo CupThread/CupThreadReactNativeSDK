@@ -11,11 +11,16 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient, useCupThreadUserToken } from '../theme/CupThreadThemeProvider.tsx';
-import type { ChangelogEntry } from '../types/index.ts';
-import { Badge } from './Badge.tsx';
-import { MarkdownText } from './MarkdownText.tsx';
-import { formatDate } from '../utils/formatters.ts';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadUserToken,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { ChangelogEntry } from '../types';
+import { Badge } from './Badge';
+import { MarkdownText } from './MarkdownText';
+import { formatDate } from '../utils/formatters';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
@@ -24,11 +29,13 @@ export interface WhatsNewScreenProps {
 
 export function WhatsNewScreen({
   onBack,
-  headerTitle = "What's New",
+  headerTitle,
 }: WhatsNewScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const strings = useCupThreadStrings();
+  const title = headerTitle ?? strings.changelog.overlayTitle;
 
   const [entries, setEntries] = useState<ChangelogEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -60,7 +67,7 @@ export function WhatsNewScreen({
 
   const handleSubscribe = async () => {
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      Alert.alert(strings.common.error, 'Please enter a valid email address.');
       return;
     }
 
@@ -68,9 +75,9 @@ export function WhatsNewScreen({
       setIsSubscribing(true);
       await client.subscribeToChangelog(email.trim(), userToken);
       setIsSubscribed(true);
-      Alert.alert('Subscribed!', "You'll be notified whenever new updates are released.");
+      Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to subscribe to changelog.');
+      Alert.alert(strings.common.error, err?.message || 'Failed to subscribe to changelog.');
     } finally {
       setIsSubscribing(false);
     }
@@ -87,16 +94,16 @@ export function WhatsNewScreen({
       ]}
     >
       <Text style={[styles.subscribeTitle, { color: colors.textPrimary }]}>
-        Get notified on new releases
+        {strings.changelog.subscribeTitle}
       </Text>
       <Text style={[styles.subscribeSubtitle, { color: colors.textSecondary }]}>
-        Subscribe to receive release notes right in your inbox.
+        {strings.changelog.subscribeSubtitle}
       </Text>
 
       {isSubscribed ? (
         <View style={[styles.subscribedBanner, { backgroundColor: colors.chipBg }]}>
           <Text style={[styles.subscribedText, { color: colors.primary }]}>
-            ✓ Subscribed to updates ({email})
+            ✓ {strings.changelog.subscribedSuccess} ({email})
           </Text>
         </View>
       ) : (
@@ -110,7 +117,7 @@ export function WhatsNewScreen({
                 color: colors.textPrimary,
               },
             ]}
-            placeholder="Enter your email..."
+            placeholder={strings.changelog.emailPlaceholder}
             placeholderTextColor={colors.textMuted}
             value={email}
             onChangeText={setEmail}
@@ -126,7 +133,7 @@ export function WhatsNewScreen({
               <ActivityIndicator color={colors.primaryText} size="small" />
             ) : (
               <Text style={[styles.subscribeButtonText, { color: colors.primaryText }]}>
-                Subscribe
+                {strings.changelog.subscribeButton}
               </Text>
             )}
           </TouchableOpacity>
@@ -143,7 +150,7 @@ export function WhatsNewScreen({
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
-        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{headerTitle}</Text>
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
       </View>
 
       {isLoading ? (
@@ -183,7 +190,7 @@ export function WhatsNewScreen({
               </View>
 
               <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
-                {formatDate(item.publishedAt)}
+                {formatDate(item.publishedAt, strings.common)}
               </Text>
 
               {item.linkedRequests && item.linkedRequests.length > 0 && (

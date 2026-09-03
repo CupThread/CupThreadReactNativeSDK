@@ -1,4 +1,4 @@
-import type { FeedbackPlatform } from '../types/index.ts';
+import type { FeedbackPlatform } from '../types';
 
 export function getRuntimePlatform(): FeedbackPlatform {
   try {

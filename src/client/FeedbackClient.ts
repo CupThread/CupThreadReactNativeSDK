@@ -18,26 +18,119 @@ import type {
   SdkAppearance,
   UserAttributesUpdateResult,
   VoteResult,
-} from '../types/index.ts';
+} from '../types';
 import {
   AuthenticationRequiredException,
   InvalidResponseException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
-} from './FeedbackException.ts';
-import { getRuntimePlatform } from '../utils/platform.ts';
-import { iso8601Now } from '../utils/formatters.ts';
+} from './FeedbackException';
+import { getRuntimePlatform } from '../utils/platform';
+import { iso8601Now } from '../utils/formatters';
+import { UserTokenStore } from './UserTokenStore';
 
+/**
+ * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
+ *
+ * @example
+ * ```ts
+ * const options: UploadAttachmentOptions = {
+ *   file: { uri: 'file:///var/mobile/.../screenshot.png' },
+ *   filename: 'screenshot.png',
+ *   mimeType: 'image/png',
+ *   preferredKind: 'image',
+ * };
+ * ```
+ */
 export interface UploadAttachmentOptions {
+  /**
+   * File payload to upload.
+   * In React Native, this can be an object containing `{ uri, name, type }` or a standard Blob/File.
+   */
   file: any;
+
+  /**
+   * Name of the file including file extension (e.g. `'crash-log.txt'`).
+   */
   filename: string;
+
+  /**
+   * Content MIME type of the upload (e.g. `'image/png'`, `'text/plain'`).
+   */
   mimeType: string;
+
+  /**
+   * Preferred storage destination:
+   * - `'image'`: Routed to optimized image processing pipeline.
+   * - `'r2'`: Routed to Cloudflare R2 object storage for logs or diagnostic archives.
+   *
+   * @defaultValue `'image'` if mimeType starts with `'image/'`, else `'r2'`
+   */
   preferredKind?: 'image' | 'r2';
 }
 
+/**
+ * Options for evaluating and fetching entries for the What's-New changelog overlay.
+ */
+export interface PrepareChangelogOverlayOptions {
+  /**
+   * If `true`, returns `null` if the latest changelog entry has already been marked as seen by the user.
+   *
+   * @defaultValue `false`
+   */
+  onlyIfUnseen?: boolean;
+
+  /**
+   * Optional custom {@link UserTokenStore} instance used to query seen status from.
+   * Defaults to {@link UserTokenStore.shared}.
+   */
+  tokenStore?: UserTokenStore;
+}
+
+/**
+ * Primary API client for interacting with CupThread backend services.
+ *
+ * @remarks
+ * The `FeedbackClient` manages network transport, serialization, user authentication tokens,
+ * error mapping, and platform targeting across all CupThread API surfaces.
+ *
+ * @example
+ * ```ts
+ * import { FeedbackClient } from '@cupthread/react-native';
+ *
+ * const client = new FeedbackClient({
+ *   baseUrl: 'https://api.cupthread.com',
+ *   appKey: 'app_live_sample123',
+ *   defaultPlatform: 'ios',
+ * });
+ *
+ * // Submit feedback draft
+ * const result = await client.submit({
+ *   title: 'Crash on launch in offline mode',
+ *   description: 'App freezes on splash screen when cellular data is disabled.',
+ * });
+ * console.log(`Feedback submitted: ${result.submissionId}`);
+ * ```
+ */
 export class FeedbackClient {
+  /**
+   * Resolved client configuration.
+   */
   public readonly config: FeedbackClientConfig;
 
+  /**
+   * Creates a new `FeedbackClient` instance.
+   *
+   * @param config - Initialization options including `baseUrl` and `appKey`.
+   *
+   * @example
+   * ```ts
+   * const client = new FeedbackClient({
+   *   baseUrl: 'https://api.cupthread.com',
+   *   appKey: 'app_prod_998877',
+   * });
+   * ```
+   */
   constructor(config: FeedbackClientConfig) {
     this.config = {
       baseUrl: config.baseUrl.replace(/\/+$/, ''),
@@ -46,6 +139,24 @@ export class FeedbackClient {
     };
   }
 
+  /**
+   * Submits a user feedback draft, bug report, or feature inquiry.
+   *
+   * @param draft - The feedback payload including title, description, and optional attachments.
+   * @param userToken - Optional persistent anonymous or authenticated user token.
+   * @returns A promise resolving to the submission result metadata.
+   * @throws {@link UnexpectedStatusException} If the server returns a non-2xx status code.
+   * @throws {@link InvalidResponseException} If a network failure occurs or JSON parsing fails.
+   *
+   * @example
+   * ```ts
+   * const result = await client.submit({
+   *   title: 'Dark mode contrast issue',
+   *   description: 'Secondary text on settings screen is hard to read in dark mode.',
+   *   reporterEmail: 'user@example.com',
+   * });
+   * ```
+   */
   public async submit(draft: FeedbackDraft, userToken?: string): Promise<FeedbackSubmissionResult> {
     const platform = draft.platform || this.config.defaultPlatform || getRuntimePlatform();
     const payload = {
@@ -75,6 +186,24 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Uploads a file, image, or log attachment to CupThread storage.
+   *
+   * @param options - Attachment file payload, filename, and MIME type options.
+   * @returns The uploaded attachment descriptor ready to attach to {@link FeedbackDraft.attachments}.
+   * @throws {@link UnexpectedStatusException} If upload endpoint responds with an error.
+   * @throws {@link UnreadableUploadResponseException} If response body is malformed.
+   * @throws {@link InvalidResponseException} If network transport fails.
+   *
+   * @example
+   * ```ts
+   * const attachment = await client.uploadAttachment({
+   *   file: { uri: 'file:///path/to/screenshot.jpg' },
+   *   filename: 'screenshot.jpg',
+   *   mimeType: 'image/jpeg',
+   * });
+   * ```
+   */
   public async uploadAttachment(options: UploadAttachmentOptions): Promise<FeedbackAttachment> {
     const kind =
       options.preferredKind || (options.mimeType.startsWith('image/') ? 'image' : 'r2');
@@ -124,6 +253,18 @@ export class FeedbackClient {
     }
   }
 
+  /**
+   * Retrieves public application settings, features, and styling configuration.
+   *
+   * @returns Application metadata and visual theme configuration.
+   * @throws {@link UnexpectedStatusException} If the app key is invalid or unpublished.
+   *
+   * @example
+   * ```ts
+   * const config = await client.fetchAppConfig();
+   * console.log(`Loaded settings for ${config.name}, theme: ${config.sdk.theme}`);
+   * ```
+   */
   public async fetchAppConfig(): Promise<PublicAppConfig> {
     return this.request<PublicAppConfig>({
       method: 'GET',
@@ -131,6 +272,17 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Retrieves all Kanban roadmap columns configured for the application, sorted by position.
+   *
+   * @returns List of active roadmap columns in display order.
+   *
+   * @example
+   * ```ts
+   * const columns = await client.fetchColumns();
+   * columns.forEach(c => console.log(`${c.name} (position: ${c.position})`));
+   * ```
+   */
   public async fetchColumns(): Promise<BoardColumn[]> {
     const res = await this.request<{ columns: BoardColumn[] }>({
       method: 'GET',
@@ -139,6 +291,17 @@ export class FeedbackClient {
     return (res.columns || []).sort((a, b) => a.position - b.position);
   }
 
+  /**
+   * Retrieves all release version milestones for the application, sorted by position.
+   *
+   * @returns Array of version milestones.
+   *
+   * @example
+   * ```ts
+   * const versions = await client.fetchVersions();
+   * const shipped = versions.filter(v => v.released);
+   * ```
+   */
   public async fetchVersions(): Promise<AppVersion[]> {
     const res = await this.request<{ versions: AppVersion[] }>({
       method: 'GET',
@@ -147,11 +310,42 @@ export class FeedbackClient {
     return (res.versions || []).sort((a, b) => a.position - b.position);
   }
 
+  /**
+   * Fetches paginated feature requests with optional milestone filtering and keyword search.
+   *
+   * @param options - Query parameters including `userToken`, `limit`, `offset`, `versionId`, and `query`.
+   * @returns Paginated list of feature request items.
+   *
+   * @example
+   * ```ts
+   * const result = await client.fetchFeatureRequests({
+   *   userToken: 'usr_token_abc',
+   *   query: 'widgets',
+   *   limit: 20,
+   * });
+   * console.log(`Found ${result.total} matching requests.`);
+   * ```
+   */
   public async fetchFeatureRequests(options: {
+    /**
+     * Unique user token to evaluate `hasVoted` and `isOwnRequest` states.
+     */
     userToken: string;
+    /**
+     * Maximum number of items to return per page (default: 50).
+     */
     limit?: number;
+    /**
+     * Page offset index (default: 0).
+     */
     offset?: number;
+    /**
+     * Optional version ID filter.
+     */
     versionId?: string;
+    /**
+     * Optional search query string.
+     */
     query?: string;
   }): Promise<ListFeatureRequestsResult> {
     const params = new URLSearchParams({
@@ -169,6 +363,21 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Proposes a new public feature request.
+   *
+   * @param draft - Feature request proposal details (title, description, requesterName).
+   * @param userToken - Current user identifier token.
+   * @returns Submission confirmation and moderation pending status.
+   *
+   * @example
+   * ```ts
+   * const result = await client.submitFeatureRequest({
+   *   title: 'Apple Watch Complications support',
+   *   description: 'Provide circular and rectangular lock screen complications.',
+   * }, userToken);
+   * ```
+   */
   public async submitFeatureRequest(
     draft: FeatureRequestDraft,
     userToken: string
@@ -187,6 +396,19 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Toggles an upvote on a specified feature request for the given user token.
+   *
+   * @param featureRequestId - ID of the target feature request.
+   * @param userToken - User token performing the vote.
+   * @returns Updated vote status and total vote count.
+   *
+   * @example
+   * ```ts
+   * const vote = await client.toggleVote('fr_123', userToken);
+   * console.log(`Voted: ${vote.voted}, New count: ${vote.voteCount}`);
+   * ```
+   */
   public async toggleVote(featureRequestId: string, userToken: string): Promise<VoteResult> {
     return this.request<VoteResult>({
       method: 'POST',
@@ -199,6 +421,18 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Retrieves all discussion comments for a feature request.
+   *
+   * @param featureRequestId - ID of the feature request.
+   * @returns List of discussion comments.
+   *
+   * @example
+   * ```ts
+   * const comments = await client.fetchComments('fr_123');
+   * console.log(`Loaded ${comments.length} comments.`);
+   * ```
+   */
   public async fetchComments(featureRequestId: string): Promise<FeatureRequestComment[]> {
     const res = await this.request<{ comments: FeatureRequestComment[] }>({
       method: 'GET',
@@ -207,6 +441,22 @@ export class FeedbackClient {
     return res.comments || [];
   }
 
+  /**
+   * Posts a new discussion comment or reply on a feature request.
+   *
+   * @param featureRequestId - ID of the target feature request.
+   * @param draft - Comment message content, author info, and optional reply pointers.
+   * @param userToken - User token of the commenter.
+   * @returns The created comment record.
+   *
+   * @example
+   * ```ts
+   * const comment = await client.postComment('fr_123', {
+   *   body: 'We are targeting release in version 2.2!',
+   *   authorName: 'Alex',
+   * }, userToken);
+   * ```
+   */
   public async postComment(
     featureRequestId: string,
     draft: CommentDraft,
@@ -229,6 +479,17 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Retrieves published changelog entries and release notes sorted by publication date descending.
+   *
+   * @returns Chronological list of release notes.
+   *
+   * @example
+   * ```ts
+   * const entries = await client.fetchChangelog();
+   * console.log(`Latest release: ${entries[0]?.title}`);
+   * ```
+   */
   public async fetchChangelog(): Promise<ChangelogEntry[]> {
     const res = await this.request<{ entries: ChangelogEntry[] }>({
       method: 'GET',
@@ -239,9 +500,24 @@ export class FeedbackClient {
     );
   }
 
-  public async prepareChangelogOverlay(): Promise<{
+  /**
+   * Evaluates app configuration and fetches entries for the What's-New modal sheet.
+   *
+   * @param options - Optional filtering settings including `onlyIfUnseen`.
+   * @returns Overlay payload or `null` if changelog feature is disabled, empty, or already seen.
+   *
+   * @example
+   * ```ts
+   * const overlayData = await client.prepareChangelogOverlay({ onlyIfUnseen: true });
+   * if (overlayData) {
+   *   console.log(`Ready to show ${overlayData.entries.length} release highlights.`);
+   * }
+   * ```
+   */
+  public async prepareChangelogOverlay(options?: PrepareChangelogOverlayOptions): Promise<{
     entries: ChangelogEntry[];
     appearance: SdkAppearance;
+    latestKey: string;
   } | null> {
     const config = await this.fetchAppConfig();
     if (!config.sdk?.features?.changelog) return null;
@@ -249,12 +525,40 @@ export class FeedbackClient {
     const all = await this.fetchChangelog();
     const entries = all.slice(0, limit);
     if (entries.length === 0) return null;
+
+    const latest = entries[0];
+    const latestKey = latest.versionLabel || latest.id;
+
+    if (options?.onlyIfUnseen) {
+      const store = options.tokenStore || UserTokenStore.shared;
+      const seen = await store.hasSeenChangelog(latestKey);
+      if (seen) {
+        return null;
+      }
+    }
+
     return {
       entries,
       appearance: config.sdk,
+      latestKey,
     };
   }
 
+  /**
+   * Subscribes an email address to future changelog and release note announcements.
+   *
+   * @param email - Target email address to subscribe.
+   * @param userToken - Current user token.
+   * @returns Subscription status confirmation.
+   *
+   * @example
+   * ```ts
+   * const sub = await client.subscribeToChangelog('user@example.com', userToken);
+   * if (sub.subscribed) {
+   *   console.log('Successfully subscribed to release notes.');
+   * }
+   * ```
+   */
   public async subscribeToChangelog(
     email: string,
     userToken: string
@@ -268,6 +572,17 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Unsubscribes an email address from changelog notification emails.
+   *
+   * @param email - Email address to remove.
+   * @returns Confirmation result.
+   *
+   * @example
+   * ```ts
+   * await client.unsubscribeFromChangelog('user@example.com');
+   * ```
+   */
   public async unsubscribeFromChangelog(email: string): Promise<ChangelogUnsubscribeResult> {
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
@@ -277,6 +592,23 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Reports customer tier, subscription plan, or revenue metrics for a user token.
+   *
+   * @param options - User attributes including subscription status, plan name, and MRR.
+   * @returns Update confirmation.
+   *
+   * @example
+   * ```ts
+   * await client.updateUserAttributes({
+   *   userToken: 'usr_token_abc',
+   *   isPaying: true,
+   *   plan: 'Pro Annual',
+   *   mrr: 29.99,
+   *   currency: 'USD',
+   * });
+   * ```
+   */
   public async updateUserAttributes(options: {
     userToken: string;
     isPaying?: boolean;
@@ -298,6 +630,18 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Retrieves the public developer profile, authored applications, and recent comment history.
+   *
+   * @param userId - Target user or developer identifier.
+   * @returns Public profile details.
+   *
+   * @example
+   * ```ts
+   * const profile = await client.fetchUserProfile('usr_42');
+   * console.log(`Developer: ${profile.profile.displayName}`);
+   * ```
+   */
   public async fetchUserProfile(userId: string): Promise<PublicUserProfileResult> {
     return this.request<PublicUserProfileResult>({
       method: 'GET',
@@ -305,6 +649,11 @@ export class FeedbackClient {
     });
   }
 
+  /**
+   * Internal generic HTTP request dispatcher handling JSON serialization, custom headers, and error mapping.
+   *
+   * @internal
+   */
   private async request<T>(options: {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE';
     path: string;

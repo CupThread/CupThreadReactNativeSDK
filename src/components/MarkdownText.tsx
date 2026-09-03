@@ -1,12 +1,45 @@
 import React from 'react';
 import { Text, View, StyleSheet, Linking, TextStyle } from 'react-native';
-import { useCupThreadTheme } from '../theme/CupThreadThemeProvider.tsx';
+import { useCupThreadTheme } from '../theme/CupThreadThemeProvider';
 
+/**
+ * Props for the {@link MarkdownText} lightweight renderer.
+ *
+ * @example
+ * ```tsx
+ * <MarkdownText
+ *   content="### Release Highlights\n- **Faster sync**\n- See [Docs](https://cupthread.com)"
+ *   style={{ fontSize: 15 }}
+ * />
+ * ```
+ */
 export interface MarkdownTextProps {
+  /**
+   * Markdown formatted string content supporting `#`, `##`, `###`, `- list`, `**bold**`, `*italic*`, `` `code` ``, and `[links](url)`.
+   */
   content: string;
+
+  /**
+   * Optional custom text style overrides applied to rendered paragraph and header texts.
+   */
   style?: TextStyle;
 }
 
+/**
+ * Lightweight, zero-dependency Markdown renderer optimized for React Native release notes and comments.
+ *
+ * @param props - {@link MarkdownTextProps} containing markdown content and text style.
+ *
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { MarkdownText } from '@cupthread/react-native';
+ *
+ * export function FeatureDescription({ text }: { text: string }) {
+ *   return <MarkdownText content={text} />;
+ * }
+ * ```
+ */
 export function MarkdownText({ content, style }: MarkdownTextProps) {
   const { colors } = useCupThreadTheme();
 

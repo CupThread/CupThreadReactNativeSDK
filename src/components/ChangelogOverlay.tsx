@@ -9,27 +9,63 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
-import { useCupThreadTheme, useCupThreadClient } from '../theme/CupThreadThemeProvider.tsx';
-import type { ChangelogEntry, ChangelogOverlayConfig } from '../types/index.ts';
-import { Badge } from './Badge.tsx';
-import { MarkdownText } from './MarkdownText.tsx';
+import {
+  useCupThreadTheme,
+  useCupThreadClient,
+  useCupThreadStrings,
+} from '../theme/CupThreadThemeProvider';
+import type { ChangelogEntry, ChangelogOverlayConfig } from '../types';
+import { UserTokenStore } from '../client/UserTokenStore';
+import { Badge } from './Badge';
+import { MarkdownText } from './MarkdownText';
 
+/**
+ * Props for configuring the {@link ChangelogOverlay} modal sheet.
+ */
 export interface ChangelogOverlayProps {
+  /**
+   * Whether the modal sheet is currently visible.
+   */
   visible: boolean;
+
+  /**
+   * Callback invoked when the user dismisses the overlay.
+   */
   onClose: () => void;
+
+  /**
+   * Whether to automatically mark the latest changelog entry as seen when dismissed.
+   *
+   * @defaultValue `true`
+   */
+  autoMarkSeen?: boolean;
+
+  /**
+   * If `true`, the overlay will not display if the latest version was already seen by the user.
+   *
+   * @defaultValue `false`
+   */
+  onlyIfUnseen?: boolean;
 }
 
-export function ChangelogOverlay({ visible, onClose }: ChangelogOverlayProps) {
+export function ChangelogOverlay({
+  visible,
+  onClose,
+  autoMarkSeen = true,
+  onlyIfUnseen = false,
+}: ChangelogOverlayProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
+  const strings = useCupThreadStrings();
 
   const [entries, setEntries] = useState<ChangelogEntry[]>([]);
+  const [latestKey, setLatestKey] = useState<string | null>(null);
   const [config, setConfig] = useState<ChangelogOverlayConfig>({
-    title: "What's New",
+    title: strings.changelog.overlayTitle,
     subtitle: '',
     entryCount: 3,
-    primaryButton: 'Continue',
-    closeButton: 'Close',
+    primaryButton: strings.changelog.continueButton,
+    closeButton: strings.changelog.closeButton,
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -40,14 +76,19 @@ export function ChangelogOverlay({ visible, onClose }: ChangelogOverlayProps) {
     setIsLoading(true);
 
     client
-      .prepareChangelogOverlay()
+      .prepareChangelogOverlay({ onlyIfUnseen })
       .then((res) => {
         if (!isMounted) return;
-        if (res) {
-          setEntries(res.entries);
-          if (res.appearance.changelogOverlay) {
-            setConfig(res.appearance.changelogOverlay);
+        if (!res) {
+          if (onlyIfUnseen) {
+            onClose();
           }
+          return;
+        }
+        setEntries(res.entries);
+        setLatestKey(res.latestKey);
+        if (res.appearance.changelogOverlay) {
+          setConfig(res.appearance.changelogOverlay);
         }
       })
       .catch(() => {})
@@ -58,16 +99,32 @@ export function ChangelogOverlay({ visible, onClose }: ChangelogOverlayProps) {
     return () => {
       isMounted = false;
     };
-  }, [client, visible]);
+  }, [client, visible, onlyIfUnseen]);
+
+  const handleDismiss = async () => {
+    if (autoMarkSeen && latestKey) {
+      try {
+        await UserTokenStore.shared.markChangelogSeen(latestKey);
+      } catch {
+        // ignore
+      }
+    }
+    onClose();
+  };
 
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleDismiss}>
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.sheet, { backgroundColor: colors.card }]}>
           <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>{config.title}</Text>
+            <TouchableOpacity onPress={handleDismiss} style={styles.closeBtn}>
+              <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
+            </TouchableOpacity>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>
+              {config.title || strings.changelog.overlayTitle}
+            </Text>
             {config.subtitle ? (
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                 {config.subtitle}
@@ -102,12 +159,12 @@ export function ChangelogOverlay({ visible, onClose }: ChangelogOverlayProps) {
 
           <View style={[styles.footer, { borderTopColor: colors.border }]}>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleDismiss}
               style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.8}
             >
               <Text style={[styles.primaryBtnText, { color: colors.primaryText }]}>
-                {config.primaryButton || 'Continue'}
+                {config.primaryButton || strings.changelog.continueButton}
               </Text>
             </TouchableOpacity>
           </View>
@@ -134,6 +191,14 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 12,
     alignItems: 'center',
+    position: 'relative',
+  },
+  closeBtn: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    zIndex: 1,
+    padding: 6,
   },
   title: {
     fontSize: 22,
