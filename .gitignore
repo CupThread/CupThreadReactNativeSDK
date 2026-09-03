@@ -1,4 +1,8 @@
 node_modules/
+example/node_modules/
+example/.expo/
+example/ios/
+example/android/
 dist/
 build/
 docs-site/

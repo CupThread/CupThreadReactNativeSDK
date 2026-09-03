@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "CupThread Showcase",
+    "slug": "cupthread-showcase",
+    "scheme": "cupthread-showcase",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "ios": {
+      "bundleIdentifier": "com.cupthread.reactnativeshowcase"
+    },
+    "android": {
+      "package": "com.cupthread.reactnativeshowcase"
+    }
+  }
+}

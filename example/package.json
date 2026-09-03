@@ -1,0 +1,23 @@
+{
+  "name": "cupthread-react-native-showcase",
+  "private": true,
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios --configuration Release",
+    "android": "expo run:android"
+  },
+  "dependencies": {
+    "@cupthread/react-native": "file:..",
+    "expo": "~52.0.0",
+    "expo-asset": "~11.0.0",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "typescript": "^5.6.0"
+  }
+}

@@ -113,6 +113,22 @@ Wrap your app or screen in `<CupThreadProvider client={client}>` to automaticall
 
 ---
 
+## Visual Showcase
+
+| Roadmap Board | Feature Requests | Submit Request |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/roadmap.png" width="260" alt="Roadmap Board" /> | <img src="assets/screenshots/feature-requests.png" width="260" alt="Feature Requests" /> | <img src="assets/screenshots/submit-request.png" width="260" alt="Submit Feature Request" /> |
+| Kanban columns, stage chips, and votes | Searchable requests with version filters | Focused request composition sheet |
+
+| What's New | Changelog Overlay | Feedback Composer |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/whats-new.png" width="260" alt="What's New Changelog" /> | <img src="assets/screenshots/changelog-overlay.png" width="260" alt="Changelog Overlay" /> | <img src="assets/screenshots/feedback-composer.png" width="260" alt="Feedback Composer" /> |
+| Markdown release notes and subscriptions | In-app release announcement sheet | Structured, prefilled feedback form |
+
+The images above are produced by a deterministic Expo showcase with fixture data. The same image paths are copied into the generated TypeDoc site, so GitHub Pages and this README always show the identical SDK surfaces.
+
+---
+
 ## Key Features & Customization
 
 ### 1. Internationalization (i18n)
@@ -253,10 +269,16 @@ npm test
 # Clean compile ESM, CommonJS, and TypeScript declarations into dist/
 npm run build
 
+# Build the Expo showcase and recapture the six checked-in documentation images
+# Requires Xcode Simulator and AXe (`brew install steipete/tap/axe`)
+npm run screenshots
+
+# Generate the TypeDoc site and copy the checked-in showcase images into it
+npm run docs
+
 # Automated release (validates tests, bumps version, builds dist, tags git release)
 node scripts/release.mjs --version 0.1.1 [--dry-run]
 ```
 
 ## License
 MIT
-

@@ -26,7 +26,8 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npx tsx --test test/*.test.ts",
-    "docs": "typedoc"
+    "docs": "scripts/build-docs.sh",
+    "screenshots": "scripts/capture-screenshots.sh"
   },
   "keywords": [
     "cupthread",

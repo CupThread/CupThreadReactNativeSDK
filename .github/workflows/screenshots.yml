@@ -1,0 +1,30 @@
+name: Capture Documentation Screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install AXe
+        run: brew install steipete/tap/axe
+
+      - name: Capture showcase screens
+        run: npm run screenshots
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: cupthread-react-native-screenshots
+          path: assets/screenshots

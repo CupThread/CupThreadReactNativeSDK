@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "platform": "ios",
+  "bundleId": "com.cupthread.reactnativeshowcase",
+  "screens": [
+    { "name": "roadmap", "url": "cupthread-showcase://?screen=roadmap", "readyText": "Roadmap" },
+    { "name": "feature-requests", "url": "cupthread-showcase://?screen=requests", "readyText": "Feature Requests" },
+    { "name": "submit-request", "url": "cupthread-showcase://?screen=requests&compose=feature-request", "readyText": "Request a Feature" },
+    { "name": "whats-new", "url": "cupthread-showcase://?screen=whats-new", "readyText": "What's New" },
+    { "name": "changelog-overlay", "url": "cupthread-showcase://?screen=whats-new&overlay=changelog", "readyText": "What's new in CupThread" },
+    { "name": "feedback-composer", "url": "cupthread-showcase://?screen=feedback", "readyText": "Send Feedback" }
+  ]
+}
