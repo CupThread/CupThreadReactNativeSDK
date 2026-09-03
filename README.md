@@ -133,7 +133,7 @@ The images above are produced by a deterministic Expo showcase with fixture data
 
 ### 1. Internationalization (i18n)
 
-The SDK includes built-in localization for **English (`en`)** and **Simplified Chinese (`zh-Hans` / `zh-CN`)**. You can configure the locale and provide custom string overrides directly via `<CupThreadProvider>`:
+The SDK includes built-in localization for **English (`en`)**, **French (`fr`)**, **Spanish (`es`)**, **German (`de`)**, **Italian (`it`)**, **Portuguese (`pt` / `pt-BR`)**, **Japanese (`ja` / `ja-JP`)**, **Traditional Chinese (`zh-Hant` / `zh-TW`)**, **Korean (`ko` / `ko-KR`)**, **Polish (`pl`)**, **Norwegian (`no` / `nb-NO`)**, **Turkish (`tr`)**, **Vietnamese (`vi` / `vi-VN`)**, and **Simplified Chinese (`zh-Hans` / `zh-CN`)**. You can configure the locale and provide custom string overrides directly via `<CupThreadProvider>`:
 
 ```tsx
 <CupThreadProvider

@@ -1,6 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getLocaleStrings, enStrings, zhHansStrings } from '../src/i18n';
+import {
+  getLocaleStrings,
+  deStrings,
+  enStrings,
+  esStrings,
+  frStrings,
+  itStrings,
+  jaStrings,
+  koStrings,
+  noStrings,
+  plStrings,
+  ptStrings,
+  trStrings,
+  viStrings,
+  zhHantStrings,
+  zhHansStrings,
+} from '../src/i18n';
 import { formatDate, formatFileSize } from '../src/utils/formatters';
 
 test('i18n default returns English strings', () => {
@@ -24,6 +40,46 @@ test('i18n aliases (zh, zh-CN) map to zh-Hans', () => {
 
   const stringsZhCn = getLocaleStrings('zh-CN');
   assert.equal(stringsZhCn.featureRequests.screenTitle, '需求墙');
+});
+
+test('i18n Japanese locale returns Japanese strings', () => {
+  const strings = getLocaleStrings('ja');
+  assert.equal(strings.feedbackComposer.title, 'フィードバックを送る');
+  assert.equal(strings.featureRequests.screenTitle, '機能リクエスト');
+  assert.equal(strings.common.back, '戻る');
+  assert.equal(strings.featureRequestCompose.modalTitle, '機能を提案');
+  assert.equal(getLocaleStrings('ja-JP').roadmap.screenTitle, 'ロードマップ');
+  assert.equal(getLocaleStrings('ja_JP').common.justNow, 'たった今');
+  assert.equal(jaStrings.comments.commentsCount(2), 'コメント（2）');
+});
+
+test('i18n European and Portuguese locales return translated strings', () => {
+  assert.equal(getLocaleStrings('fr').common.back, 'Retour');
+  assert.equal(getLocaleStrings('es-ES').featureRequests.screenTitle, 'Solicitudes de funciones');
+  assert.equal(getLocaleStrings('de-DE').roadmap.screenTitle, 'Roadmap');
+  assert.equal(getLocaleStrings('it-IT').common.close, 'Chiudi');
+  assert.equal(getLocaleStrings('pt-BR').featureRequestCompose.modalTitle, 'Propor um recurso');
+  assert.equal(frStrings.comments.commentsCount(2), 'Commentaires (2)');
+  assert.equal(esStrings.common.justNow, 'Ahora mismo');
+  assert.equal(deStrings.common.justNow, 'Gerade eben');
+  assert.equal(itStrings.common.justNow, 'Proprio ora');
+  assert.equal(ptStrings.common.justNow, 'Agora mesmo');
+});
+
+test('i18n additional locales return translated strings', () => {
+  assert.equal(getLocaleStrings('zh-Hant').featureRequests.screenTitle, '功能需求');
+  assert.equal(getLocaleStrings('zh-TW').common.back, '返回');
+  assert.equal(getLocaleStrings('ko-KR').roadmap.screenTitle, '로드맵');
+  assert.equal(getLocaleStrings('pl-PL').common.close, 'Zamknij');
+  assert.equal(getLocaleStrings('nb-NO').featureRequests.upvote, 'Stem');
+  assert.equal(getLocaleStrings('tr-TR').common.cancel, 'İptal');
+  assert.equal(zhHantStrings.common.justNow, '剛剛');
+  assert.equal(koStrings.common.justNow, '방금');
+  assert.equal(plStrings.common.justNow, 'Przed chwilą');
+  assert.equal(noStrings.common.justNow, 'Akkurat nå');
+  assert.equal(trStrings.common.justNow, 'Az önce');
+  assert.equal(getLocaleStrings('vi-VN').featureRequests.screenTitle, 'Yêu cầu tính năng');
+  assert.equal(viStrings.common.justNow, 'Vừa xong');
 });
 
 test('i18n custom overrides deeply merge on top of base locale', () => {
