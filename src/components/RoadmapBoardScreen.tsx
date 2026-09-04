@@ -87,29 +87,37 @@ export function RoadmapBoardScreen({
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (signal?: AbortSignal) => {
     try {
       const [cols, reqs] = await Promise.all([
-        client.fetchColumns(),
-        client.fetchFeatureRequests({ userToken, limit: 100 }),
+        client.fetchColumns({ signal }),
+        client.fetchFeatureRequests({ userToken, limit: 100, signal }),
       ]);
 
+      if (signal?.aborted) return;
       const visibleCols = cols.filter((c) => c.isVisible);
       setColumns(visibleCols);
       if (visibleCols.length > 0 && !selectedColumnId) {
         setSelectedColumnId(visibleCols[0].id);
       }
       setRequests(reqs.requests || []);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
       // Non-fatal
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [client, userToken, selectedColumnId]);
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    loadData(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [loadData]);
 
   const handleRefresh = () => {

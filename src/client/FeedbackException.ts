@@ -56,3 +56,16 @@ export class UnreadableUploadResponseException extends FeedbackException {
     this.name = 'UnreadableUploadResponseException';
   }
 }
+
+/**
+ * Thrown when an HTTP request or file upload times out before completion.
+ */
+export class RequestTimeoutException extends FeedbackException {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number, message?: string) {
+    super(message || `Request timed out after ${timeoutMs}ms`);
+    this.name = 'RequestTimeoutException';
+    this.timeoutMs = timeoutMs;
+  }
+}

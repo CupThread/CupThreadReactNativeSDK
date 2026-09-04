@@ -15,6 +15,7 @@ import type {
   ListFeatureRequestsResult,
   PublicAppConfig,
   PublicUserProfileResult,
+  RequestOptions,
   SdkAppearance,
   UserAttributesUpdateResult,
   VoteResult,
@@ -22,12 +23,41 @@ import type {
 import {
   AuthenticationRequiredException,
   InvalidResponseException,
+  RequestTimeoutException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
 } from './FeedbackException';
 import { getRuntimePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
 import { UserTokenStore } from './UserTokenStore';
+
+/**
+ * Default timeout for requests and file uploads in milliseconds (15 seconds).
+ */
+export const DEFAULT_TIMEOUT_MS = 15000;
+
+function extractSignal(
+  optionsOrSignal?: RequestOptions | AbortSignal
+): AbortSignal | undefined {
+  if (!optionsOrSignal) return undefined;
+  if ('aborted' in optionsOrSignal && typeof (optionsOrSignal as AbortSignal).aborted === 'boolean') {
+    return optionsOrSignal as AbortSignal;
+  }
+  if (typeof optionsOrSignal === 'object' && 'signal' in optionsOrSignal) {
+    return (optionsOrSignal as RequestOptions).signal;
+  }
+  return undefined;
+}
+
+function extractTimeoutMs(
+  optionsOrSignal?: RequestOptions | AbortSignal
+): number | undefined {
+  if (!optionsOrSignal) return undefined;
+  if (typeof optionsOrSignal === 'object' && 'timeoutMs' in optionsOrSignal) {
+    return (optionsOrSignal as RequestOptions).timeoutMs;
+  }
+  return undefined;
+}
 
 /**
  * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
@@ -67,6 +97,16 @@ export interface UploadAttachmentOptions {
    * @defaultValue `'image'` if mimeType starts with `'image/'`, else `'r2'`
    */
   preferredKind?: 'image' | 'r2';
+
+  /**
+   * Optional abort signal to cancel the upload operation.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Optional request timeout override in milliseconds for this upload.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -85,6 +125,16 @@ export interface PrepareChangelogOverlayOptions {
    * Defaults to {@link UserTokenStore.shared}.
    */
   tokenStore?: UserTokenStore;
+
+  /**
+   * Optional abort signal to cancel the overlay configuration and changelog fetching.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Optional request timeout override in milliseconds.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -136,6 +186,7 @@ export class FeedbackClient {
       baseUrl: config.baseUrl.replace(/\/+$/, ''),
       appKey: config.appKey,
       defaultPlatform: config.defaultPlatform || getRuntimePlatform(),
+      timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     };
   }
 
@@ -157,7 +208,18 @@ export class FeedbackClient {
    * });
    * ```
    */
-  public async submit(draft: FeedbackDraft, userToken?: string): Promise<FeedbackSubmissionResult> {
+  public async submit(
+    draft: FeedbackDraft,
+    userToken?: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<FeedbackSubmissionResult> {
+    let resolvedUserToken = userToken;
+    let resolvedOptions = options;
+    if (typeof userToken === 'object' && userToken !== null) {
+      resolvedOptions = userToken as any;
+      resolvedUserToken = undefined;
+    }
+
     const platform = draft.platform || this.config.defaultPlatform || getRuntimePlatform();
     const payload = {
       appKey: this.config.appKey,
@@ -181,8 +243,10 @@ export class FeedbackClient {
       method: 'POST',
       path: '/api/v1/feedback',
       body: payload,
-      userToken,
+      userToken: resolvedUserToken,
       accepted: [200, 201, 202],
+      signal: extractSignal(resolvedOptions),
+      timeoutMs: extractTimeoutMs(resolvedOptions),
     });
   }
 
@@ -191,6 +255,7 @@ export class FeedbackClient {
    *
    * @param options - Attachment file payload, filename, and MIME type options.
    * @returns The uploaded attachment descriptor ready to attach to {@link FeedbackDraft.attachments}.
+   * @throws {@link RequestTimeoutException} If upload times out.
    * @throws {@link UnexpectedStatusException} If upload endpoint responds with an error.
    * @throws {@link UnreadableUploadResponseException} If response body is malformed.
    * @throws {@link InvalidResponseException} If network transport fails.
@@ -223,33 +288,99 @@ export class FeedbackClient {
     }
 
     const url = `${this.config.baseUrl}${path}`;
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-      });
-    } catch (err) {
-      throw new InvalidResponseException('Network failure while uploading attachment', err);
+    const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const callerSignal = options.signal;
+
+    if (callerSignal?.aborted) {
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
     }
 
-    if (response.status !== 200 && response.status !== 201) {
-      const text = await response.text().catch(() => '');
-      throw new UnexpectedStatusException(response.status, text);
+    const controller = new AbortController();
+    let didTimeout = false;
+    let timeoutId: any = undefined;
+
+    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, timeoutMs);
+    }
+
+    const onCallerAbort = () => {
+      controller.abort();
+    };
+
+    if (callerSignal) {
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
     try {
-      const json = await response.json();
-      return {
-        kind: json.kind || kind,
-        key: json.key || json.id,
-        url: json.url,
-        filename: json.filename || options.filename,
-        mimeType: json.mimeType || options.mimeType,
-        size: json.size,
-      };
-    } catch {
-      throw new UnreadableUploadResponseException();
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+      } catch (err: any) {
+        if (didTimeout) {
+          throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
+        }
+        if (callerSignal?.aborted || err?.name === 'AbortError') {
+          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
+        throw new InvalidResponseException('Network failure while uploading attachment', err);
+      }
+
+      if (response.status !== 200 && response.status !== 201) {
+        let text = '';
+        try {
+          text = await response.text();
+        } catch (err: any) {
+          if (didTimeout) {
+            throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
+          }
+          if (callerSignal?.aborted || err?.name === 'AbortError') {
+            const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+            abortErr.name = 'AbortError';
+            throw abortErr;
+          }
+        }
+        throw new UnexpectedStatusException(response.status, text);
+      }
+
+      try {
+        const json = await response.json();
+        return {
+          kind: json.kind || kind,
+          key: json.key || json.id,
+          url: json.url,
+          filename: json.filename || options.filename,
+          mimeType: json.mimeType || options.mimeType,
+          size: json.size,
+        };
+      } catch (err: any) {
+        if (didTimeout) {
+          throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
+        }
+        if (callerSignal?.aborted || err?.name === 'AbortError') {
+          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
+        throw new UnreadableUploadResponseException();
+      }
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      if (callerSignal) {
+        callerSignal.removeEventListener('abort', onCallerAbort);
+      }
     }
   }
 
@@ -265,10 +396,12 @@ export class FeedbackClient {
    * console.log(`Loaded settings for ${config.name}, theme: ${config.sdk.theme}`);
    * ```
    */
-  public async fetchAppConfig(): Promise<PublicAppConfig> {
+  public async fetchAppConfig(options?: RequestOptions | AbortSignal): Promise<PublicAppConfig> {
     return this.request<PublicAppConfig>({
       method: 'GET',
       path: `/api/v1/public/config/${this.config.appKey}`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -283,10 +416,12 @@ export class FeedbackClient {
    * columns.forEach(c => console.log(`${c.name} (position: ${c.position})`));
    * ```
    */
-  public async fetchColumns(): Promise<BoardColumn[]> {
+  public async fetchColumns(options?: RequestOptions | AbortSignal): Promise<BoardColumn[]> {
     const res = await this.request<{ columns: BoardColumn[] }>({
       method: 'GET',
       path: `/api/v1/public/columns/${this.config.appKey}`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
     return (res.columns || []).sort((a, b) => a.position - b.position);
   }
@@ -302,10 +437,12 @@ export class FeedbackClient {
    * const shipped = versions.filter(v => v.released);
    * ```
    */
-  public async fetchVersions(): Promise<AppVersion[]> {
+  public async fetchVersions(options?: RequestOptions | AbortSignal): Promise<AppVersion[]> {
     const res = await this.request<{ versions: AppVersion[] }>({
       method: 'GET',
       path: `/api/v1/public/versions/${this.config.appKey}`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
     return (res.versions || []).sort((a, b) => a.position - b.position);
   }
@@ -347,6 +484,14 @@ export class FeedbackClient {
      * Optional search query string.
      */
     query?: string;
+    /**
+     * Optional abort signal to cancel the request.
+     */
+    signal?: AbortSignal;
+    /**
+     * Optional timeout in milliseconds for this request.
+     */
+    timeoutMs?: number;
   }): Promise<ListFeatureRequestsResult> {
     const params = new URLSearchParams({
       appKey: this.config.appKey,
@@ -360,6 +505,8 @@ export class FeedbackClient {
     return this.request<ListFeatureRequestsResult>({
       method: 'GET',
       path: `/api/v1/feature-requests?${params.toString()}`,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -380,7 +527,8 @@ export class FeedbackClient {
    */
   public async submitFeatureRequest(
     draft: FeatureRequestDraft,
-    userToken: string
+    userToken: string,
+    options?: RequestOptions | AbortSignal
   ): Promise<FeatureRequestSubmissionResult> {
     return this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
@@ -393,6 +541,8 @@ export class FeedbackClient {
         requesterToken: userToken,
       },
       accepted: [200, 201],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -409,7 +559,11 @@ export class FeedbackClient {
    * console.log(`Voted: ${vote.voted}, New count: ${vote.voteCount}`);
    * ```
    */
-  public async toggleVote(featureRequestId: string, userToken: string): Promise<VoteResult> {
+  public async toggleVote(
+    featureRequestId: string,
+    userToken: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<VoteResult> {
     return this.request<VoteResult>({
       method: 'POST',
       path: `/api/v1/feature-requests/${featureRequestId}/vote`,
@@ -418,6 +572,8 @@ export class FeedbackClient {
         userToken,
       },
       accepted: [200],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -433,10 +589,15 @@ export class FeedbackClient {
    * console.log(`Loaded ${comments.length} comments.`);
    * ```
    */
-  public async fetchComments(featureRequestId: string): Promise<FeatureRequestComment[]> {
+  public async fetchComments(
+    featureRequestId: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<FeatureRequestComment[]> {
     const res = await this.request<{ comments: FeatureRequestComment[] }>({
       method: 'GET',
       path: `/api/v1/feature-requests/${featureRequestId}/comments`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
     return res.comments || [];
   }
@@ -460,7 +621,8 @@ export class FeedbackClient {
   public async postComment(
     featureRequestId: string,
     draft: CommentDraft,
-    userToken: string
+    userToken: string,
+    options?: RequestOptions | AbortSignal
   ): Promise<FeatureRequestComment> {
     return this.request<FeatureRequestComment>({
       method: 'POST',
@@ -476,6 +638,8 @@ export class FeedbackClient {
       },
       userToken,
       accepted: [200, 201],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -490,10 +654,12 @@ export class FeedbackClient {
    * console.log(`Latest release: ${entries[0]?.title}`);
    * ```
    */
-  public async fetchChangelog(): Promise<ChangelogEntry[]> {
+  public async fetchChangelog(options?: RequestOptions | AbortSignal): Promise<ChangelogEntry[]> {
     const res = await this.request<{ entries: ChangelogEntry[] }>({
       method: 'GET',
       path: `/api/v1/public/apps/${this.config.appKey}/changelog`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
     return (res.entries || []).sort(
       (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
@@ -519,10 +685,12 @@ export class FeedbackClient {
     appearance: SdkAppearance;
     latestKey: string;
   } | null> {
-    const config = await this.fetchAppConfig();
+    const signal = options?.signal;
+    const timeoutMs = options?.timeoutMs;
+    const config = await this.fetchAppConfig({ signal, timeoutMs });
     if (!config.sdk?.features?.changelog) return null;
     const limit = Math.min(Math.max(config.sdk.changelogOverlay?.entryCount || 3, 1), 10);
-    const all = await this.fetchChangelog();
+    const all = await this.fetchChangelog({ signal, timeoutMs });
     const entries = all.slice(0, limit);
     if (entries.length === 0) return null;
 
@@ -561,7 +729,8 @@ export class FeedbackClient {
    */
   public async subscribeToChangelog(
     email: string,
-    userToken: string
+    userToken: string,
+    options?: RequestOptions | AbortSignal
   ): Promise<ChangelogSubscriptionResult> {
     return this.request<ChangelogSubscriptionResult>({
       method: 'POST',
@@ -569,6 +738,8 @@ export class FeedbackClient {
       body: { email: email.trim() },
       userToken,
       accepted: [200, 201],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -583,12 +754,17 @@ export class FeedbackClient {
    * await client.unsubscribeFromChangelog('user@example.com');
    * ```
    */
-  public async unsubscribeFromChangelog(email: string): Promise<ChangelogUnsubscribeResult> {
+  public async unsubscribeFromChangelog(
+    email: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<ChangelogUnsubscribeResult> {
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${this.config.appKey}/changelog/unsubscribe`,
       body: { email: email.trim() },
       accepted: [200],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -615,6 +791,8 @@ export class FeedbackClient {
     plan?: string;
     mrr?: number;
     currency?: string;
+    signal?: AbortSignal;
+    timeoutMs?: number;
   }): Promise<UserAttributesUpdateResult> {
     return this.request<UserAttributesUpdateResult>({
       method: 'PUT',
@@ -627,6 +805,8 @@ export class FeedbackClient {
       },
       userToken: options.userToken,
       accepted: [200],
+      signal: options.signal,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -642,10 +822,15 @@ export class FeedbackClient {
    * console.log(`Developer: ${profile.profile.displayName}`);
    * ```
    */
-  public async fetchUserProfile(userId: string): Promise<PublicUserProfileResult> {
+  public async fetchUserProfile(
+    userId: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<PublicUserProfileResult> {
     return this.request<PublicUserProfileResult>({
       method: 'GET',
       path: `/api/v1/users/${userId}/profile`,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
     });
   }
 
@@ -660,6 +845,8 @@ export class FeedbackClient {
     body?: any;
     userToken?: string;
     accepted?: number[];
+    signal?: AbortSignal;
+    timeoutMs?: number;
   }): Promise<T> {
     const url = `${this.config.baseUrl}${options.path}`;
     const headers: Record<string, string> = {};
@@ -671,35 +858,94 @@ export class FeedbackClient {
       headers['X-User-Token'] = options.userToken;
     }
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: options.method,
-        headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
-      });
-    } catch (err) {
-      throw new InvalidResponseException(`Network request failed for ${url}`, err);
+    const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const callerSignal = options.signal;
+
+    if (callerSignal?.aborted) {
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
     }
 
-    const accepted = options.accepted || [200];
-    if (!accepted.includes(response.status)) {
-      if (response.status === 401) {
-        throw new AuthenticationRequiredException();
+    const controller = new AbortController();
+    let didTimeout = false;
+    let timeoutId: any = undefined;
+
+    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, timeoutMs);
+    }
+
+    const onCallerAbort = () => {
+      controller.abort();
+    };
+
+    if (callerSignal) {
+      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+
+    try {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: options.method,
+          headers,
+          body: options.body ? JSON.stringify(options.body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (err: any) {
+        if (didTimeout) {
+          throw new RequestTimeoutException(timeoutMs, `Request timed out after ${timeoutMs}ms`);
+        }
+        if (callerSignal?.aborted || err?.name === 'AbortError') {
+          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
+        throw new InvalidResponseException(`Network request failed for ${url}`, err);
       }
-      const errText = await response.text().catch(() => '');
-      throw new UnexpectedStatusException(response.status, errText);
-    }
 
-    const text = await response.text().catch(() => '');
-    if (!text) {
-      return {} as T;
-    }
+      let text = '';
+      try {
+        text = await response.text();
+      } catch (err: any) {
+        if (didTimeout) {
+          throw new RequestTimeoutException(timeoutMs, `Request timed out after ${timeoutMs}ms`);
+        }
+        if (callerSignal?.aborted || err?.name === 'AbortError') {
+          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
+        throw new InvalidResponseException(`Failed to read response body from ${url}`, err);
+      }
 
-    try {
-      return JSON.parse(text) as T;
-    } catch (err) {
-      throw new InvalidResponseException(`Failed to parse JSON response from ${url}`, err);
+      const accepted = options.accepted || [200];
+      if (!accepted.includes(response.status)) {
+        if (response.status === 401) {
+          throw new AuthenticationRequiredException();
+        }
+        throw new UnexpectedStatusException(response.status, text);
+      }
+
+      if (!text) {
+        return {} as T;
+      }
+
+      try {
+        return JSON.parse(text) as T;
+      } catch (err) {
+        throw new InvalidResponseException(`Failed to parse JSON response from ${url}`, err);
+      }
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+      if (callerSignal) {
+        callerSignal.removeEventListener('abort', onCallerAbort);
+      }
     }
   }
 }

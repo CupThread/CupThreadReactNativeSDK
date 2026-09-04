@@ -44,20 +44,28 @@ export function WhatsNewScreen({
   const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
   const [isSubscribed, setIsSubscribed] = useState<boolean>(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (signal?: AbortSignal) => {
     try {
-      const list = await client.fetchChangelog();
+      const list = await client.fetchChangelog({ signal });
+      if (signal?.aborted) return;
       setEntries(list || []);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
       // Non-fatal
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [client]);
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    loadData(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [loadData]);
 
   const handleRefresh = () => {
