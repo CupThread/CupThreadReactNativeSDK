@@ -35,19 +35,28 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     setIsLoading(true);
     setError(null);
     client
-      .fetchUserProfile(userId)
+      .fetchUserProfile(userId, { signal: controller.signal })
       .then((res) => {
+        if (controller.signal.aborted) return;
         setData(res);
       })
       .catch((err) => {
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
         setError(err?.message || 'Failed to load profile');
       })
       .finally(() => {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+    };
   }, [client, userId]);
 
   return (

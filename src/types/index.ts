@@ -46,6 +46,29 @@ export interface FeedbackClientConfig {
    * @defaultValue Auto-detected at runtime via React Native `Platform.OS`
    */
   defaultPlatform?: FeedbackPlatform;
+
+  /**
+   * Request timeout in milliseconds for API operations and uploads.
+   * If elapsed before the request settles, a {@link RequestTimeoutException} is thrown.
+   *
+   * @defaultValue 15000 (15 seconds)
+   */
+  timeoutMs?: number;
+}
+
+/**
+ * Options for customizing individual API requests with cancellation and timeout overrides.
+ */
+export interface RequestOptions {
+  /**
+   * Optional AbortSignal to cancel the in-flight request.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Optional request timeout override in milliseconds for this operation.
+   */
+  timeoutMs?: number;
 }
 
 /**

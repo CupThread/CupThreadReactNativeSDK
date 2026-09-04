@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -93,39 +93,62 @@ export function FeatureRequestsScreen({
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
   const [showCompose, setShowCompose] = useState<boolean>(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (signal?: AbortSignal) => {
     try {
       const [requestsRes, versionsRes] = await Promise.all([
         client.fetchFeatureRequests({
           userToken,
           versionId: selectedVersionId || undefined,
           query: searchQuery.trim() || undefined,
+          signal,
         }),
-        client.fetchVersions().catch(() => []),
+        client.fetchVersions({ signal }).catch((err) => {
+          if (err?.name === 'AbortError' || signal?.aborted) throw err;
+          return [];
+        }),
       ]);
 
+      if (signal?.aborted) return;
       setItems(requestsRes.requests || []);
       setVersions(versionsRes || []);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
       // Non-fatal
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [client, userToken, selectedVersionId, searchQuery]);
 
   useEffect(() => {
+    const controller = new AbortController();
     setIsLoading(true);
     const debounce = setTimeout(() => {
-      loadData();
+      loadData(controller.signal);
     }, 250);
-    return () => clearTimeout(debounce);
+    return () => {
+      clearTimeout(debounce);
+      controller.abort();
+    };
   }, [loadData]);
 
-  const handleRefresh = () => {
+  const refreshControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      refreshControllerRef.current?.abort();
+    };
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    refreshControllerRef.current?.abort();
+    const controller = new AbortController();
+    refreshControllerRef.current = controller;
     setIsRefreshing(true);
-    loadData();
-  };
+    loadData(controller.signal);
+  }, [loadData]);
 
   const handleToggleVote = async (target: FeatureRequestItem) => {
     if (target.isOwnRequest) return;

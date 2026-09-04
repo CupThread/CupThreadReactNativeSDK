@@ -72,13 +72,14 @@ export function ChangelogOverlay({
   useEffect(() => {
     if (!visible) return;
 
+    const controller = new AbortController();
     let isMounted = true;
     setIsLoading(true);
 
     client
-      .prepareChangelogOverlay({ onlyIfUnseen })
+      .prepareChangelogOverlay({ onlyIfUnseen, signal: controller.signal })
       .then((res) => {
-        if (!isMounted) return;
+        if (!isMounted || controller.signal.aborted) return;
         if (!res) {
           if (onlyIfUnseen) {
             onClose();
@@ -91,13 +92,16 @@ export function ChangelogOverlay({
           setConfig(res.appearance.changelogOverlay);
         }
       })
-      .catch(() => {})
+      .catch((err: any) => {
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      })
       .finally(() => {
-        if (isMounted) setIsLoading(false);
+        if (isMounted && !controller.signal.aborted) setIsLoading(false);
       });
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [client, visible, onlyIfUnseen]);
 

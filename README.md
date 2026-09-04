@@ -236,24 +236,37 @@ UserTokenStore.configure(AsyncStorage);
 
 ## API Client Surface
 
+### Client Configuration (`FeedbackClientConfig`)
+
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `baseUrl` | `string` | _(required)_ | Root API URL of the CupThread backend instance |
+| `appKey` | `string` | _(required)_ | Unique application key from Developer Console |
+| `defaultPlatform` | `FeedbackPlatform` | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.) |
+| `timeoutMs` | `number` | `15000` | Optional request timeout in milliseconds; throws `RequestTimeoutException` on timeout |
+
+All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
+
+### Methods
+
 | Method | Endpoint | Description |
 | ------ | -------- | ----------- |
-| `submit(draft, userToken?)` | `POST /api/v1/feedback` | Submit feedback draft with metadata and attachments |
-| `uploadAttachment(options)` | `POST /api/v1/uploads/{images,r2}` | Upload screenshot or log attachment |
-| `fetchAppConfig()` | `GET /api/v1/public/config/{appKey}` | Fetch app branding, appearance, and public settings |
-| `fetchColumns()` | `GET /api/v1/public/columns/{appKey}` | Fetch Kanban board columns for roadmap |
-| `fetchVersions()` | `GET /api/v1/public/versions/{appKey}` | Fetch release versions |
-| `fetchFeatureRequests(options)` | `GET /api/v1/feature-requests` | List and search public feature requests |
-| `submitFeatureRequest(draft, userToken)` | `POST /api/v1/feature-requests` | Propose a new feature request proposal |
-| `toggleVote(featureRequestId, userToken)` | `POST /api/v1/feature-requests/{id}/vote` | Upvote or remove upvote |
-| `fetchComments(featureRequestId)` | `GET /api/v1/feature-requests/{id}/comments` | Fetch discussion comments |
-| `postComment(featureRequestId, draft, userToken)` | `POST /api/v1/feature-requests/{id}/comments` | Post a comment or reply |
-| `fetchChangelog()` | `GET /api/v1/public/apps/{appKey}/changelog` | Fetch published release notes |
-| `prepareChangelogOverlay(options?)` | `GET /api/v1/public/config & changelog` | Prepares changelog overlay with `onlyIfUnseen` filter |
-| `subscribeToChangelog(email, userToken)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` | Subscribe email to changelog |
-| `unsubscribeFromChangelog(email)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog |
-| `updateUserAttributes(options)` | `PUT /api/v1/public/apps/{appKey}/user` | Report user attributes (paying, plan, MRR) |
-| `fetchUserProfile(userId)` | `GET /api/v1/users/{userId}/profile` | Fetch public user profile |
+| `submit(draft, userToken?, options?)` | `POST /api/v1/feedback` | Submit feedback draft with metadata and attachments |
+| `uploadAttachment(options)` | `POST /api/v1/uploads/{images,r2}` | Upload screenshot or log attachment (supports `signal`, `timeoutMs`) |
+| `fetchAppConfig(options?)` | `GET /api/v1/public/config/{appKey}` | Fetch app branding, appearance, and public settings |
+| `fetchColumns(options?)` | `GET /api/v1/public/columns/{appKey}` | Fetch Kanban board columns for roadmap |
+| `fetchVersions(options?)` | `GET /api/v1/public/versions/{appKey}` | Fetch release versions |
+| `fetchFeatureRequests(options)` | `GET /api/v1/feature-requests` | List and search public feature requests (supports `signal`, `timeoutMs`) |
+| `submitFeatureRequest(draft, userToken, options?)` | `POST /api/v1/feature-requests` | Propose a new feature request proposal |
+| `toggleVote(featureRequestId, userToken, options?)` | `POST /api/v1/feature-requests/{id}/vote` | Upvote or remove upvote |
+| `fetchComments(featureRequestId, options?)` | `GET /api/v1/feature-requests/{id}/comments` | Fetch discussion comments |
+| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments` | Post a comment or reply |
+| `fetchChangelog(options?)` | `GET /api/v1/public/apps/{appKey}/changelog` | Fetch published release notes |
+| `prepareChangelogOverlay(options?)` | `GET /api/v1/public/config & changelog` | Prepares changelog overlay with `onlyIfUnseen` and `signal` support |
+| `subscribeToChangelog(email, userToken, options?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` | Subscribe email to changelog |
+| `unsubscribeFromChangelog(email, options?)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog |
+| `updateUserAttributes(options)` | `PUT /api/v1/public/apps/{appKey}/user` | Report user attributes (supports `signal`, `timeoutMs`) |
+| `fetchUserProfile(userId, options?)` | `GET /api/v1/users/{userId}/profile` | Fetch public user profile |
 
 ---
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { useColorScheme } from 'react-native';
 import type { SdkTheme, PublicAppConfig } from '../types';
 import { FeedbackClient } from '../client/FeedbackClient';
@@ -163,21 +163,29 @@ export function CupThreadProvider({
     }
   }, [explicitUserToken]);
 
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async (signal?: AbortSignal) => {
     try {
       setIsLoadingConfig(true);
-      const config = await client.fetchAppConfig();
+      const config = await client.fetchAppConfig({ signal });
+      if (signal?.aborted) return;
       setAppConfig(config);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
       // Non-fatal
     } finally {
-      setIsLoadingConfig(false);
+      if (!signal?.aborted) {
+        setIsLoadingConfig(false);
+      }
     }
-  };
+  }, [client]);
 
   useEffect(() => {
-    loadConfig();
-  }, [client]);
+    const controller = new AbortController();
+    loadConfig(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [loadConfig]);
 
   const effectiveTheme: SdkTheme =
     explicitTheme || appConfig?.sdk?.theme || 'system';
