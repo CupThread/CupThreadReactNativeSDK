@@ -59,6 +59,162 @@ function extractTimeoutMs(
   return undefined;
 }
 
+interface TimeoutContext {
+  signal: AbortSignal;
+  race<R>(promise: Promise<R>): Promise<R>;
+  rethrowIfTimeoutOrAbort(err?: any): void;
+}
+
+interface ExecuteWithTimeoutOptions {
+  timeoutMs: number;
+  signal?: AbortSignal;
+  timeoutMessage: string;
+}
+
+/**
+ * Shared helper that wraps an asynchronous network operation with timeout and AbortSignal support.
+ *
+ * Automatically:
+ * - Checks if the caller's signal is pre-aborted and throws AbortError
+ * - Ties the caller signal to an internal AbortController
+ * - Sets up a timeout timer that marks timeout and aborts the internal controller
+ * - Exposes `race()` to race response body reads (or other promises) against the remaining timeout and abort signals
+ * - Cleans up listeners and timers in `finally`
+ */
+async function executeWithTimeout<T>(
+  options: ExecuteWithTimeoutOptions,
+  fn: (context: TimeoutContext) => Promise<T>
+): Promise<T> {
+  const { timeoutMs, signal: callerSignal, timeoutMessage } = options;
+
+  if (callerSignal?.aborted) {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    throw abortError;
+  }
+
+  const startTime = Date.now();
+  const controller = new AbortController();
+  let didTimeout = false;
+  let timeoutId: any = undefined;
+
+  if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+    timeoutId = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, timeoutMs);
+  }
+
+  const onCallerAbort = () => {
+    controller.abort();
+  };
+
+  if (callerSignal) {
+    callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
+  const isTimeout = (): boolean => {
+    if (didTimeout) return true;
+    if (timeoutMs > 0 && Number.isFinite(timeoutMs) && Date.now() - startTime >= timeoutMs) {
+      didTimeout = true;
+      controller.abort();
+      return true;
+    }
+    return false;
+  };
+
+  const rethrowIfTimeoutOrAbort = (err?: any): void => {
+    if (err instanceof RequestTimeoutException) {
+      throw err;
+    }
+    if (isTimeout()) {
+      throw new RequestTimeoutException(timeoutMs, timeoutMessage);
+    }
+    if (callerSignal?.aborted || err?.name === 'AbortError' || controller.signal.aborted) {
+      const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+  };
+
+  const race = <R>(promise: Promise<R>): Promise<R> => {
+    if (isTimeout()) {
+      throw new RequestTimeoutException(timeoutMs, timeoutMessage);
+    }
+    if (callerSignal?.aborted || controller.signal.aborted) {
+      const abortErr = new Error('The operation was aborted');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
+
+    return new Promise<R>((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        controller.signal.removeEventListener('abort', onAbort);
+      };
+
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (isTimeout()) {
+          reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+        } else {
+          const abortErr = new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          reject(abortErr);
+        }
+      };
+
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+
+      promise.then(
+        (res) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (isTimeout()) {
+            reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+          } else {
+            resolve(res);
+          }
+        },
+        (err) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (isTimeout()) {
+            reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+          } else if (callerSignal?.aborted || err?.name === 'AbortError' || controller.signal.aborted) {
+            const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          } else {
+            reject(err);
+          }
+        }
+      );
+    });
+  };
+
+  try {
+    return await fn({
+      signal: controller.signal,
+      race,
+      rethrowIfTimeoutOrAbort,
+    });
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', onCallerAbort);
+    }
+  }
+}
+
+
 /**
  * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
  *
@@ -291,97 +447,51 @@ export class FeedbackClient {
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const callerSignal = options.signal;
 
-    if (callerSignal?.aborted) {
-      const abortError = new Error('The operation was aborted');
-      abortError.name = 'AbortError';
-      throw abortError;
-    }
-
-    const controller = new AbortController();
-    let didTimeout = false;
-    let timeoutId: any = undefined;
-
-    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
-      timeoutId = setTimeout(() => {
-        didTimeout = true;
-        controller.abort();
-      }, timeoutMs);
-    }
-
-    const onCallerAbort = () => {
-      controller.abort();
-    };
-
-    if (callerSignal) {
-      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
-    }
-
-    try {
-      let response: Response;
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-        });
-      } catch (err: any) {
-        if (didTimeout) {
-          throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
-        }
-        if (callerSignal?.aborted || err?.name === 'AbortError') {
-          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
-          abortErr.name = 'AbortError';
-          throw abortErr;
-        }
-        throw new InvalidResponseException('Network failure while uploading attachment', err);
-      }
-
-      if (response.status !== 200 && response.status !== 201) {
-        let text = '';
+    return executeWithTimeout(
+      {
+        timeoutMs,
+        signal: callerSignal,
+        timeoutMessage: `Upload timed out after ${timeoutMs}ms`,
+      },
+      async (context) => {
+        let response: Response;
         try {
-          text = await response.text();
+          response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            signal: context.signal,
+          });
         } catch (err: any) {
-          if (didTimeout) {
-            throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
-          }
-          if (callerSignal?.aborted || err?.name === 'AbortError') {
-            const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
-            abortErr.name = 'AbortError';
-            throw abortErr;
-          }
+          context.rethrowIfTimeoutOrAbort(err);
+          throw new InvalidResponseException('Network failure while uploading attachment', err);
         }
-        throw new UnexpectedStatusException(response.status, text);
-      }
 
-      try {
-        const json = await response.json();
-        return {
-          kind: json.kind || kind,
-          key: json.key || json.id,
-          url: json.url,
-          filename: json.filename || options.filename,
-          mimeType: json.mimeType || options.mimeType,
-          size: json.size,
-        };
-      } catch (err: any) {
-        if (didTimeout) {
-          throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
+        if (response.status !== 200 && response.status !== 201) {
+          let text = '';
+          try {
+            text = await context.race(response.text());
+          } catch (err: any) {
+            context.rethrowIfTimeoutOrAbort(err);
+          }
+          throw new UnexpectedStatusException(response.status, text);
         }
-        if (callerSignal?.aborted || err?.name === 'AbortError') {
-          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
-          abortErr.name = 'AbortError';
-          throw abortErr;
+
+        try {
+          const json = await context.race(response.json());
+          return {
+            kind: json.kind || kind,
+            key: json.key || json.id,
+            url: json.url,
+            filename: json.filename || options.filename,
+            mimeType: json.mimeType || options.mimeType,
+            size: json.size,
+          };
+        } catch (err: any) {
+          context.rethrowIfTimeoutOrAbort(err);
+          throw new UnreadableUploadResponseException();
         }
-        throw new UnreadableUploadResponseException();
       }
-    } finally {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      if (callerSignal) {
-        callerSignal.removeEventListener('abort', onCallerAbort);
-      }
-    }
+    );
   }
 
   /**
@@ -861,91 +971,52 @@ export class FeedbackClient {
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const callerSignal = options.signal;
 
-    if (callerSignal?.aborted) {
-      const abortError = new Error('The operation was aborted');
-      abortError.name = 'AbortError';
-      throw abortError;
-    }
-
-    const controller = new AbortController();
-    let didTimeout = false;
-    let timeoutId: any = undefined;
-
-    if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
-      timeoutId = setTimeout(() => {
-        didTimeout = true;
-        controller.abort();
-      }, timeoutMs);
-    }
-
-    const onCallerAbort = () => {
-      controller.abort();
-    };
-
-    if (callerSignal) {
-      callerSignal.addEventListener('abort', onCallerAbort, { once: true });
-    }
-
-    try {
-      let response: Response;
-      try {
-        response = await fetch(url, {
-          method: options.method,
-          headers,
-          body: options.body ? JSON.stringify(options.body) : undefined,
-          signal: controller.signal,
-        });
-      } catch (err: any) {
-        if (didTimeout) {
-          throw new RequestTimeoutException(timeoutMs, `Request timed out after ${timeoutMs}ms`);
+    return executeWithTimeout<T>(
+      {
+        timeoutMs,
+        signal: callerSignal,
+        timeoutMessage: `Request timed out after ${timeoutMs}ms`,
+      },
+      async (context) => {
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            method: options.method,
+            headers,
+            body: options.body ? JSON.stringify(options.body) : undefined,
+            signal: context.signal,
+          });
+        } catch (err: any) {
+          context.rethrowIfTimeoutOrAbort(err);
+          throw new InvalidResponseException(`Network request failed for ${url}`, err);
         }
-        if (callerSignal?.aborted || err?.name === 'AbortError') {
-          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
-          abortErr.name = 'AbortError';
-          throw abortErr;
-        }
-        throw new InvalidResponseException(`Network request failed for ${url}`, err);
-      }
 
-      let text = '';
-      try {
-        text = await response.text();
-      } catch (err: any) {
-        if (didTimeout) {
-          throw new RequestTimeoutException(timeoutMs, `Request timed out after ${timeoutMs}ms`);
+        let text = '';
+        try {
+          text = await context.race(response.text());
+        } catch (err: any) {
+          context.rethrowIfTimeoutOrAbort(err);
+          throw new InvalidResponseException(`Failed to read response body from ${url}`, err);
         }
-        if (callerSignal?.aborted || err?.name === 'AbortError') {
-          const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
-          abortErr.name = 'AbortError';
-          throw abortErr;
+
+        const accepted = options.accepted || [200];
+        if (!accepted.includes(response.status)) {
+          if (response.status === 401) {
+            throw new AuthenticationRequiredException();
+          }
+          throw new UnexpectedStatusException(response.status, text);
         }
-        throw new InvalidResponseException(`Failed to read response body from ${url}`, err);
-      }
 
-      const accepted = options.accepted || [200];
-      if (!accepted.includes(response.status)) {
-        if (response.status === 401) {
-          throw new AuthenticationRequiredException();
+        if (!text) {
+          return {} as T;
         }
-        throw new UnexpectedStatusException(response.status, text);
-      }
 
-      if (!text) {
-        return {} as T;
+        try {
+          return JSON.parse(text) as T;
+        } catch (err) {
+          throw new InvalidResponseException(`Failed to parse JSON response from ${url}`, err);
+        }
       }
-
-      try {
-        return JSON.parse(text) as T;
-      } catch (err) {
-        throw new InvalidResponseException(`Failed to parse JSON response from ${url}`, err);
-      }
-    } finally {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      if (callerSignal) {
-        callerSignal.removeEventListener('abort', onCallerAbort);
-      }
-    }
+    );
   }
 }

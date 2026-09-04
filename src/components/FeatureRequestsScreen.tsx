@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -134,10 +134,21 @@ export function FeatureRequestsScreen({
     };
   }, [loadData]);
 
-  const handleRefresh = () => {
+  const refreshControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      refreshControllerRef.current?.abort();
+    };
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    refreshControllerRef.current?.abort();
+    const controller = new AbortController();
+    refreshControllerRef.current = controller;
     setIsRefreshing(true);
-    loadData();
-  };
+    loadData(controller.signal);
+  }, [loadData]);
 
   const handleToggleVote = async (target: FeatureRequestItem) => {
     if (target.isOwnRequest) return;
