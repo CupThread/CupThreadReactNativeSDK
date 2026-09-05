@@ -72,17 +72,53 @@ export function formatFileSize(bytes?: number): string {
 }
 
 /**
- * Generates an RFC 4122 v4 compliant UUID in pure JavaScript.
+ * Minimal structural view of the Web Crypto surfaces used by {@link generateUUID}.
+ * Optional members tolerate runtimes and polyfills that expose only one of them.
+ */
+interface SecureRandomSource {
+  randomUUID?: () => string;
+  getRandomValues?: (array: Uint8Array) => Uint8Array;
+}
+
+function uuidHexByte(byte: number): string {
+  return byte.toString(16).padStart(2, '0');
+}
+
+/**
+ * Generates an RFC 4122 v4 compliant UUID from a cryptographically secure source.
+ *
+ * @returns A v4 UUID string.
+ *
+ * @remarks
+ * Prefers `crypto.randomUUID`, then fills the 16 bytes via `crypto.getRandomValues`
+ * with the RFC 4122 version/variant bits applied. The user token store mints
+ * anonymous identity tokens with this function; those tokens authorize votes,
+ * comments, and subscriptions, so `Math.random` must never back them. A runtime
+ * exposing neither secure API throws instead of silently degrading.
  */
 export function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
+  const secureRandom: SecureRandomSource | undefined =
+    typeof crypto !== 'undefined' ? (crypto as SecureRandomSource) : undefined;
+
+  if (secureRandom && typeof secureRandom.randomUUID === 'function') {
+    return secureRandom.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+
+  if (secureRandom && typeof secureRandom.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    secureRandom.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+    const hex = Array.from(bytes, uuidHexByte).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  throw new Error(
+    'generateUUID requires a cryptographically secure random source ' +
+      '(crypto.randomUUID or crypto.getRandomValues). Math.random is not ' +
+      'acceptable for anonymous identity tokens; install a Web Crypto ' +
+      'polyfill such as react-native-get-random-values or expo-crypto.'
+  );
 }
 
 /**
