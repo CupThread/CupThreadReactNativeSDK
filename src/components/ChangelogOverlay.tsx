@@ -18,6 +18,7 @@ import type { ChangelogEntry, ChangelogOverlayConfig } from '../types';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
+import { ErrorState } from './ErrorState';
 
 /**
  * Props for configuring the {@link ChangelogOverlay} modal sheet.
@@ -68,6 +69,8 @@ export function ChangelogOverlay({
     closeButton: strings.changelog.closeButton,
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadFailed, setLoadFailed] = useState<boolean>(false);
+  const [retryToken, setRetryToken] = useState<number>(0);
 
   useEffect(() => {
     if (!visible) return;
@@ -75,6 +78,7 @@ export function ChangelogOverlay({
     const controller = new AbortController();
     let isMounted = true;
     setIsLoading(true);
+    setLoadFailed(false);
 
     client
       .prepareChangelogOverlay({ onlyIfUnseen, signal: controller.signal })
@@ -94,6 +98,7 @@ export function ChangelogOverlay({
       })
       .catch((err: any) => {
         if (err?.name === 'AbortError' || controller.signal.aborted) return;
+        setLoadFailed(true);
       })
       .finally(() => {
         if (isMounted && !controller.signal.aborted) setIsLoading(false);
@@ -103,7 +108,11 @@ export function ChangelogOverlay({
       isMounted = false;
       controller.abort();
     };
-  }, [client, visible, onlyIfUnseen]);
+  }, [client, visible, onlyIfUnseen, retryToken]);
+
+  const handleRetry = () => {
+    setRetryToken((token) => token + 1);
+  };
 
   const handleDismiss = async () => {
     if (autoMarkSeen && latestKey) {
@@ -140,6 +149,13 @@ export function ChangelogOverlay({
             <View style={styles.loadingArea}>
               <ActivityIndicator color={colors.primary} size="large" />
             </View>
+          ) : loadFailed && entries.length === 0 ? (
+            <ErrorState
+              compact
+              message={strings.common.error}
+              retryLabel={strings.common.retry}
+              onRetry={handleRetry}
+            />
           ) : (
             <ScrollView contentContainerStyle={styles.content}>
               {entries.map((item) => (
