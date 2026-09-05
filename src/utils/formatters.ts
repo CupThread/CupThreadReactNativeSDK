@@ -1,11 +1,32 @@
 import type { CommonStrings } from '../i18n';
 
 /**
+ * Tolerance for device clock skew: timestamps up to a day in the future are
+ * still rendered with relative phrasing (clamped to "Just now"). Anything
+ * further ahead is treated as a scheduled or incorrect date and rendered as a
+ * calendar date instead of a permanently stale relative label.
+ */
+const FUTURE_DATE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+function formatCalendarDate(date: Date, now: Date): string {
+  return date.toLocaleDateString(undefined, {
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/**
  * Formats an ISO 8601 date string to a human-friendly relative or calendar date.
  *
  * @param isoDateString - ISO 8601 timestamp string.
  * @param commonStrings - Optional localized relative time strings.
  * @returns Human-friendly relative date representation (e.g. `'Just now'`, `'5m ago'`).
+ *
+ * @remarks
+ * Small device clock skew is clamped, so a timestamp a few seconds or minutes
+ * ahead still renders as `'Just now'`. Dates more than {@link FUTURE_DATE_TOLERANCE_MS}
+ * ahead fall through to the calendar rendering rather than showing a relative label forever.
  */
 export function formatDate(
   isoDateString?: string | null,
@@ -17,7 +38,12 @@ export function formatDate(
 
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffMs < -FUTURE_DATE_TOLERANCE_MS) {
+    return formatCalendarDate(date, now);
+  }
+
+  const diffSec = Math.floor(Math.max(0, diffMs) / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);
@@ -27,11 +53,7 @@ export function formatDate(
   if (diffHours < 24) return commonStrings?.hoursAgo ? commonStrings.hoursAgo(diffHours) : `${diffHours}h ago`;
   if (diffDays < 7) return commonStrings?.daysAgo ? commonStrings.daysAgo(diffDays) : `${diffDays}d ago`;
 
-  return date.toLocaleDateString(undefined, {
-    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatCalendarDate(date, now);
 }
 
 /**

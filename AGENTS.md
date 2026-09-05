@@ -26,6 +26,9 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
   - `GET /api/v1/feature-requests` — Feature requests list and search with `q` query parameter.
   - `POST /api/v1/feature-requests` — Submit new feature request.
   - `POST /api/v1/feature-requests/:id/vote` — Toggle vote on a feature request.
+  - `GET /api/v1/feature-requests/:id/comments` — List discussion comments on a feature request.
+  - `POST /api/v1/feature-requests/:id/comments` — Post a comment or reply on a feature request.
+  - `GET /api/v1/users/:userId/profile` — Public developer profile, authored apps, and recent comments.
   - `POST /api/v1/feedback` — Submit feedback draft with attachments.
   - `POST /api/v1/uploads/images` & `POST /api/v1/uploads/r2` — Media and log attachment uploads.
 

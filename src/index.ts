@@ -8,6 +8,9 @@ export * from './client/FeedbackException';
 export * from './client/FeedbackClient';
 export * from './client/UserTokenStore';
 
+// Export Hooks
+export * from './hooks/useToggleVote';
+
 // Export Theme & i18n
 export * from './theme/SdkTheme';
 export * from './theme/CupThreadThemeProvider';
@@ -30,4 +33,5 @@ export * from './components/UserProfileScreen';
 
 // Export Utils
 export * from './utils/formatters';
+export * from './utils/linkUrl';
 export * from './utils/platform';

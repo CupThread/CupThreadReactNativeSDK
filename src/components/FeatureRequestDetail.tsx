@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { Avatar } from './Avatar';
 import { MarkdownText } from './MarkdownText';
 import { CommentsSection } from './CommentsSection';
 import { formatDate } from '../utils/formatters';
+import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
 
 /**
  * Props for configuring the {@link FeatureRequestDetail} modal view.
@@ -90,30 +91,34 @@ export function FeatureRequestDetail({
   const strings = useCupThreadStrings();
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
-  const [isVoting, setIsVoting] = useState<boolean>(false);
 
-  const handleToggleVote = async () => {
-    if (item.isOwnRequest || isVoting) return;
+  // State updaters must stay pure (React may run them during render and twice
+  // under StrictMode), so vote changes are staged here and the host
+  // `onVoteChange` notification is flushed in an effect after commit.
+  const pendingVoteNotifyRef = useRef<FeatureRequestItem | null>(null);
 
-    const nextVoted = !item.hasVoted;
-    const nextCount = item.voteCount + (nextVoted ? 1 : -1);
-    const updated = { ...item, hasVoted: nextVoted, voteCount: Math.max(0, nextCount) };
-    setItem(updated);
-    if (onVoteChange) onVoteChange(updated);
+  const applyVoteChange = useCallback<VoteChangeApplier>(
+    (_itemId, transform) => {
+      // Use functional state updater like list/board so transforms always land
+      // on the freshest state and rollback reconciles against current item
+      // instead of closing over a stale snapshot or the initialItem prop.
+      setItem((prev) => {
+        const next = transform(prev);
+        pendingVoteNotifyRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
 
-    try {
-      setIsVoting(true);
-      const res = await client.toggleVote(item.id, userToken);
-      const serverUpdated = { ...item, hasVoted: res.voted, voteCount: res.voteCount };
-      setItem(serverUpdated);
-      if (onVoteChange) onVoteChange(serverUpdated);
-    } catch {
-      setItem(initialItem);
-      if (onVoteChange) onVoteChange(initialItem);
-    } finally {
-      setIsVoting(false);
+  useEffect(() => {
+    const pending = pendingVoteNotifyRef.current;
+    if (pending) {
+      pendingVoteNotifyRef.current = null;
+      onVoteChange?.(pending);
     }
-  };
+  }, [item, onVoteChange]);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -140,8 +145,8 @@ export function FeatureRequestDetail({
             <VoteButton
               voteCount={item.voteCount}
               hasVoted={item.hasVoted}
-              onPress={handleToggleVote}
-              disabled={item.isOwnRequest || isVoting}
+              onPress={() => handleToggleVote(item)}
+              disabled={item.isOwnRequest || isVoting(item.id)}
             />
           </View>
 

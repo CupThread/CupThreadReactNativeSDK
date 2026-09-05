@@ -15,8 +15,10 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
+import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
 
 /**
@@ -71,6 +73,7 @@ export function FeatureRequestComposeSheet({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
   const [title, setTitle] = useState(initialDraft?.title || '');
@@ -80,6 +83,7 @@ export function FeatureRequestComposeSheet({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    if (!isTokenReady) return;
     if (title.trim().length < 3) {
       setErrorMessage(strings.featureRequestCompose.titleMinLengthError);
       return;
@@ -99,7 +103,8 @@ export function FeatureRequestComposeSheet({
         requesterName: requesterName.trim() || undefined,
       };
 
-      const result = await client.submitFeatureRequest(draft, userToken);
+      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const result = await client.submitFeatureRequest(draft, effectiveToken);
       setIsSubmitting(false);
 
       if (onSubmitSuccess) {
@@ -197,13 +202,13 @@ export function FeatureRequestComposeSheet({
 
       <TouchableOpacity
         activeOpacity={0.8}
-        disabled={isSubmitting}
+        disabled={isSubmitting || !isTokenReady}
         onPress={handleSubmit}
         style={[
           styles.submitBtn,
           {
             backgroundColor: colors.primary,
-            opacity: isSubmitting ? 0.6 : 1,
+            opacity: isSubmitting || !isTokenReady ? 0.6 : 1,
           },
         ]}
       >

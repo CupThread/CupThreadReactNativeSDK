@@ -14,6 +14,7 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem, AppVersion } from '../types';
@@ -22,6 +23,7 @@ import { Badge } from './Badge';
 import { Avatar } from './Avatar';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
+import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
 
 /**
  * Props for configuring the {@link FeatureRequestsScreen} view.
@@ -80,6 +82,7 @@ export function FeatureRequestsScreen({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
   const title = headerTitle ?? strings.featureRequests.screenTitle;
@@ -94,6 +97,9 @@ export function FeatureRequestsScreen({
   const [showCompose, setShowCompose] = useState<boolean>(false);
 
   const loadData = useCallback(async (signal?: AbortSignal) => {
+    // Wait for the persisted token: fetching earlier would evaluate
+    // hasVoted/isOwnRequest against a throwaway identity.
+    if (!isTokenReady) return;
     try {
       const [requestsRes, versionsRes] = await Promise.all([
         client.fetchFeatureRequests({
@@ -120,7 +126,7 @@ export function FeatureRequestsScreen({
         setIsRefreshing(false);
       }
     }
-  }, [client, userToken, selectedVersionId, searchQuery]);
+  }, [client, userToken, selectedVersionId, searchQuery, isTokenReady]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -143,33 +149,18 @@ export function FeatureRequestsScreen({
   }, []);
 
   const handleRefresh = useCallback(() => {
+    if (!isTokenReady) return;
     refreshControllerRef.current?.abort();
     const controller = new AbortController();
     refreshControllerRef.current = controller;
     setIsRefreshing(true);
     loadData(controller.signal);
-  }, [loadData]);
+  }, [loadData, isTokenReady]);
 
-  const handleToggleVote = async (target: FeatureRequestItem) => {
-    if (target.isOwnRequest) return;
-
-    const nextVoted = !target.hasVoted;
-    const nextCount = target.voteCount + (nextVoted ? 1 : -1);
-    setItems((prev) =>
-      prev.map((i) => (i.id === target.id ? { ...i, hasVoted: nextVoted, voteCount: Math.max(0, nextCount) } : i))
-    );
-
-    try {
-      const res = await client.toggleVote(target.id, userToken);
-      setItems((prev) =>
-        prev.map((i) => (i.id === target.id ? { ...i, hasVoted: res.voted, voteCount: res.voteCount } : i))
-      );
-    } catch {
-      setItems((prev) =>
-        prev.map((i) => (i.id === target.id ? target : i))
-      );
-    }
-  };
+  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
+    setItems((prev) => prev.map((i) => (i.id === itemId ? transform(i) : i)));
+  }, []);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 
   const renderItem = ({ item }: { item: FeatureRequestItem }) => (
     <TouchableOpacity
@@ -196,7 +187,7 @@ export function FeatureRequestsScreen({
           voteCount={item.voteCount}
           hasVoted={item.hasVoted}
           onPress={() => handleToggleVote(item)}
-          disabled={item.isOwnRequest}
+          disabled={item.isOwnRequest || isVoting(item.id)}
         />
       </View>
 
