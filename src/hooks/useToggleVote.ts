@@ -136,7 +136,7 @@ export function useToggleVote(
   );
 
   const isVoting = useCallback(
-    (itemId: string) => pendingIds.includes(itemId),
+    (itemId: string) => pendingIds.includes(itemId) || pendingIdsRef.current.has(itemId),
     [pendingIds]
   );
 

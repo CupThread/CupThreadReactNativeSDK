@@ -15,8 +15,10 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
+import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
@@ -126,6 +128,7 @@ export function FeedbackComposer({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
   const [title, setTitle] = useState(initialDraft?.title || '');
@@ -153,9 +156,10 @@ export function FeedbackComposer({
         if ('url' in item && 'key' in item) {
           newlyAdded.push(item as FeedbackAttachment);
         } else if ('file' in item && 'filename' in item) {
+          const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
           const uploaded = await client.uploadAttachment({
             ...(item as UploadAttachmentOptions),
-            userToken,
+            userToken: effectiveToken,
           });
           newlyAdded.push(uploaded);
         }
@@ -198,7 +202,8 @@ export function FeedbackComposer({
         metadata: initialDraft?.metadata,
       };
 
-      const result = await client.submit(draft, userToken);
+      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const result = await client.submit(draft, effectiveToken);
       setIsSubmitting(false);
 
       if (onSubmitSuccess) {
@@ -385,13 +390,13 @@ export function FeedbackComposer({
 
       <TouchableOpacity
         activeOpacity={0.8}
-        disabled={isSubmitting || isUploadingAttachment}
+        disabled={isSubmitting || isUploadingAttachment || !isTokenReady}
         onPress={handleSubmit}
         style={[
           styles.submitBtn,
           {
             backgroundColor: colors.primary,
-            opacity: isSubmitting || isUploadingAttachment ? 0.6 : 1,
+            opacity: isSubmitting || isUploadingAttachment || !isTokenReady ? 0.6 : 1,
           },
         ]}
       >

@@ -11,8 +11,10 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
+import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeatureRequestComment, CommentDraft } from '../types';
 import { Avatar } from './Avatar';
 import { formatDate } from '../utils/formatters';
@@ -52,6 +54,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
   const [comments, setComments] = useState<FeatureRequestComment[]>([]);
@@ -86,12 +89,13 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   }, [client, featureRequestId]);
 
   const handlePostComment = async () => {
-    if (commentText.trim().length === 0) return;
+    if (commentText.trim().length === 0 || !isTokenReady) return;
 
     try {
       setIsSubmitting(true);
       setError(null);
 
+      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
       const draft: CommentDraft = {
         body: commentText.trim(),
         authorName: authorName.trim() || undefined,
@@ -100,7 +104,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
         replyToAuthorName: replyTo?.authorName || undefined,
       };
 
-      const newComment = await client.postComment(featureRequestId, draft, userToken);
+      const newComment = await client.postComment(featureRequestId, draft, effectiveToken);
       setComments((prev) => [...prev, newComment]);
       setCommentText('');
       setReplyTo(null);
@@ -230,12 +234,12 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
 
         <TouchableOpacity
           onPress={handlePostComment}
-          disabled={isSubmitting || commentText.trim().length === 0}
+          disabled={isSubmitting || !isTokenReady || commentText.trim().length === 0}
           style={[
             styles.sendButton,
             {
               backgroundColor: colors.primary,
-              opacity: isSubmitting || commentText.trim().length === 0 ? 0.5 : 1,
+              opacity: isSubmitting || !isTokenReady || commentText.trim().length === 0 ? 0.5 : 1,
             },
           ]}
           activeOpacity={0.8}

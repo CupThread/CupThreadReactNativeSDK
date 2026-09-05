@@ -93,15 +93,17 @@ export function FeatureRequestDetail({
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
 
   const applyVoteChange = useCallback<VoteChangeApplier>(
-    (itemId, transform) => {
-      // The hook always invokes the latest applier, so `item` here is current
-      // state — the rollback reconciles against it instead of the stale
-      // `initialItem` prop.
-      const next = transform(item);
-      setItem(next);
-      onVoteChange?.(next);
+    (_itemId, transform) => {
+      // Use functional state updater like list/board so transforms always land
+      // on the freshest state and rollback reconciles against current item
+      // instead of closing over a stale snapshot or the initialItem prop.
+      setItem((prev) => {
+        const next = transform(prev);
+        onVoteChange?.(next);
+        return next;
+      });
     },
-    [item, onVoteChange]
+    [onVoteChange]
   );
   const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 

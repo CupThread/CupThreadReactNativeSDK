@@ -416,6 +416,11 @@ export class FeedbackClient {
   /**
    * Uploads a file, image, or log attachment to CupThread storage.
    *
+   * @remarks
+   * Direct callers of `uploadAttachment` should supply `options.userToken`
+   * (e.g. from {@link useCupThreadUserToken}) so uploads are properly attributed
+   * to the user's session and authenticated via the `X-User-Token` header.
+   *
    * @param options - Attachment file payload, filename, MIME type, and optional user token options.
    * @returns The uploaded attachment descriptor ready to attach to {@link FeedbackDraft.attachments}.
    * @throws {@link AuthenticationRequiredException} If the request is rejected as unauthenticated (401).

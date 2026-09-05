@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, View, StyleSheet, Linking, TextStyle } from 'react-native';
 import { useCupThreadTheme } from '../theme/CupThreadThemeProvider';
-import { isSafeLinkUrl } from '../utils/linkUrl';
+import { isSafeLinkUrl, sanitizeSafeLinkUrl } from '../utils/linkUrl';
 
 /**
  * Props for the {@link MarkdownText} lightweight renderer.
@@ -32,6 +32,12 @@ export interface MarkdownTextProps {
    * the default opener — useful for routing through an in-app browser. Return `false`
    * or nothing to fall through to the default handler, which opens only `http:` and
    * `https:` URLs and silently ignores any other scheme.
+   *
+   * @warning **Security Notice**: The raw URL from untrusted user content is passed
+   * directly to this callback. If your custom handler delegates to `Linking.openURL`,
+   * a webview, or an external navigator, you MUST validate it against {@link isSafeLinkUrl}
+   * (or {@link sanitizeSafeLinkUrl}) to protect users from malicious schemes like `tel:`,
+   * `javascript:`, `sms:`, or unintended custom deep links.
    */
   onLinkPress?: (url: string) => boolean | void;
 }
@@ -56,8 +62,9 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
 
   const handleLinkPress = (url: string) => {
     if (onLinkPress && onLinkPress(url) === true) return;
-    if (isSafeLinkUrl(url)) {
-      Linking.openURL(url).catch(() => {});
+    const safeUrl = sanitizeSafeLinkUrl(url);
+    if (safeUrl) {
+      Linking.openURL(safeUrl).catch(() => {});
     }
   };
 

@@ -11,14 +11,13 @@ const DEFAULT_SAFE_SCHEMES = new Set(['http:', 'https:']);
 /**
  * Checks whether a URL coming from untrusted content is safe to open.
  *
- * The scheme is resolved after stripping whitespace and control characters and
- * normalized to lowercase, so inputs like `' HTTPS://example.com'` or
- * `'java\u0000script:alert(1)'` are parsed by their real scheme rather than by
- * a literal prefix match.
+ * URLs containing ASCII control characters are strictly rejected to prevent
+ * parser differentials or smuggling exploits. The scheme is extracted after
+ * trimming leading/trailing whitespace and normalized to lowercase.
  *
  * @param url - Raw URL string extracted from content.
  * @param options - Optional toggles for additional allowed schemes.
- * @returns `true` only when the URL uses an explicitly allowed scheme.
+ * @returns `true` only when the URL uses an explicitly allowed scheme and contains no control characters.
  *
  * @example
  * ```ts
@@ -29,6 +28,7 @@ const DEFAULT_SAFE_SCHEMES = new Set(['http:', 'https:']);
  * isSafeLinkUrl('tel:+18005550199');            // false
  * isSafeLinkUrl('intent://share#Intent');       // false
  * isSafeLinkUrl('javascript:alert(1)');         // false
+ * isSafeLinkUrl('java\nscript:alert(1)');       // false
  * ```
  */
 export function isSafeLinkUrl(
@@ -37,10 +37,13 @@ export function isSafeLinkUrl(
 ): boolean {
   if (!url || typeof url !== 'string') return false;
 
-  const cleaned = url.replace(/[\u0000-\u001f\u007f\s]+/g, '');
-  if (!cleaned) return false;
+  // Reject control characters outright to prevent parser differentials or smuggling
+  if (/[\u0000-\u001f\u007f]/.test(url)) return false;
 
-  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/.exec(cleaned);
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+
+  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/.exec(trimmed);
   if (!schemeMatch) return false;
 
   const scheme = `${schemeMatch[1]}:`.toLowerCase();
@@ -49,3 +52,15 @@ export function isSafeLinkUrl(
   }
   return DEFAULT_SAFE_SCHEMES.has(scheme);
 }
+
+/**
+ * Returns the trimmed URL if it passes {@link isSafeLinkUrl}, or `null` otherwise.
+ */
+export function sanitizeSafeLinkUrl(
+  url: string,
+  options?: { allowMailto?: boolean }
+): string | null {
+  if (!isSafeLinkUrl(url, options)) return null;
+  return url.trim();
+}
+
