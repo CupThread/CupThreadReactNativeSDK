@@ -16,12 +16,14 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import type { BoardColumn, FeatureRequestItem } from '../types';
+import type { FeatureRequestItem } from '../types';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
+import { useAsyncData } from '../hooks/useAsyncData';
+import { ErrorState } from './ErrorState';
 
 /**
  * Props for configuring the {@link RoadmapBoardScreen} component.
@@ -84,9 +86,7 @@ export function RoadmapBoardScreen({
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.roadmap.screenTitle;
 
-  const [columns, setColumns] = useState<BoardColumn[]>([]);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
-  const [isColumnsLoading, setIsColumnsLoading] = useState<boolean>(true);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
 
   const {
@@ -96,8 +96,10 @@ export function RoadmapBoardScreen({
     isLoading: isRequestsLoading,
     isRefreshing,
     isLoadingMore,
+    error: requestsError,
     loadMore,
     refresh: refreshRequests,
+    reload: reloadRequests,
     setItems: setRequests,
     applyItemChange,
   } = useFeatureRequests({
@@ -107,42 +109,33 @@ export function RoadmapBoardScreen({
     pageSize: 100,
   });
 
-  const loadColumns = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!isTokenReady) return;
-      try {
-        const cols = await client.fetchColumns({ signal });
-        if (signal?.aborted) return;
-        const visibleCols = cols.filter((c) => c.isVisible);
-        setColumns(visibleCols);
-        if (visibleCols.length > 0 && !selectedColumnId) {
-          setSelectedColumnId(visibleCols[0].id);
-        }
-      } catch (err: any) {
-        if (err?.name === 'AbortError' || signal?.aborted) return;
-        // Non-fatal
-      } finally {
-        if (!signal?.aborted) {
-          setIsColumnsLoading(false);
-        }
-      }
-    },
-    [client, selectedColumnId, isTokenReady]
+  const fetchColumns = useCallback(
+    (signal: AbortSignal) => client.fetchColumns({ signal }),
+    [client]
   );
+  const {
+    data: columnsData,
+    isLoading: isColumnsLoading,
+    error: columnsError,
+    reload: reloadColumns,
+  } = useAsyncData(fetchColumns, { enabled: isTokenReady });
+
+  const columns = (columnsData ?? []).filter((c) => c.isVisible);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setIsColumnsLoading(true);
-    loadColumns(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [loadColumns]);
+    if (columns.length === 0) return;
+    setSelectedColumnId((prev) => prev ?? columns[0].id);
+  }, [columns]);
 
   const handleRefresh = useCallback(async () => {
     if (!isTokenReady) return;
-    await Promise.all([loadColumns(), refreshRequests()]);
-  }, [loadColumns, refreshRequests, isTokenReady]);
+    await Promise.all([reloadColumns(), refreshRequests()]);
+  }, [reloadColumns, refreshRequests, isTokenReady]);
+
+  const handleRetry = useCallback(() => {
+    void reloadColumns();
+    void reloadRequests();
+  }, [reloadColumns, reloadRequests]);
 
   const activeColumn = columns.find((c) => c.id === selectedColumnId) || columns[0];
   const columnItems = requests.filter((r) => {
@@ -154,6 +147,7 @@ export function RoadmapBoardScreen({
 
   const isLoading =
     (isColumnsLoading && columns.length === 0) || (isRequestsLoading && requests.length === 0);
+  const loadError = requestsError ?? columnsError;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -212,6 +206,12 @@ export function RoadmapBoardScreen({
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      ) : requests.length === 0 && loadError ? (
+        <ErrorState
+          message={strings.common.error}
+          retryLabel={strings.common.retry}
+          onRetry={handleRetry}
+        />
       ) : columnItems.length === 0 ? (
         <View style={styles.centerEmpty}>
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
