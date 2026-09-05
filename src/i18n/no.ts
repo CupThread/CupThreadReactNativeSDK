@@ -7,6 +7,7 @@ export const noStrings: CupThreadStrings = {
     cancel: 'Avbryt',
     confirm: 'Bekreft',
     loading: 'Laster inn...',
+    loadingMore: 'Laster inn mer...',
     submitting: 'Sender inn...',
     error: 'Feil',
     retry: 'Prøv igjen',
@@ -49,6 +50,7 @@ export const noStrings: CupThreadStrings = {
     moreCommenters: '+ flere',
     upvoted: 'Stemt på',
     upvote: 'Stem',
+    loadingMore: 'Laster inn mer...',
   },
   featureRequestCompose: {
     modalTitle: 'Foreslå funksjon',
@@ -70,6 +72,9 @@ export const noStrings: CupThreadStrings = {
     searchPlaceholder: 'Søk i veikartet...',
     emptyColumn: 'Ingen elementer i denne fasen',
     upvotesCount: (count: number) => count === 1 ? '1 stemme' : `${count} stemmer`,
+    loadingMore: 'Laster inn mer...',
+    loadMore: 'Last inn mer',
+    showingCount: (shown: number, total: number) => `Viser ${shown} av ${total}`,
   },
   featureRequestDetail: {
     title: 'Funksjonsforespørsel',

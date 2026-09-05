@@ -7,6 +7,7 @@ export const plStrings: CupThreadStrings = {
     cancel: 'Anuluj',
     confirm: 'Potwierdź',
     loading: 'Ładowanie...',
+    loadingMore: 'Ładowanie kolejnych...',
     submitting: 'Wysyłanie...',
     error: 'Błąd',
     retry: 'Spróbuj ponownie',
@@ -49,6 +50,7 @@ export const plStrings: CupThreadStrings = {
     moreCommenters: '+ więcej',
     upvoted: 'Zagłosowano',
     upvote: 'Głosuj',
+    loadingMore: 'Ładowanie kolejnych...',
   },
   featureRequestCompose: {
     modalTitle: 'Zaproponuj funkcję',
@@ -78,6 +80,9 @@ export const plStrings: CupThreadStrings = {
       }
       return `${count} głosów`;
     },
+    loadingMore: 'Ładowanie kolejnych...',
+    loadMore: 'Załaduj więcej',
+    showingCount: (shown: number, total: number) => `Wyświetlono ${shown} z ${total}`,
   },
   featureRequestDetail: {
     title: 'Prośba o funkcję',

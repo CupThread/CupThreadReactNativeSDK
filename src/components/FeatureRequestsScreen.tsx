@@ -24,6 +24,7 @@ import { Avatar } from './Avatar';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
 import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useFeatureRequests } from '../hooks/useFeatureRequests';
 
 /**
  * Props for configuring the {@link FeatureRequestsScreen} view.
@@ -87,80 +88,50 @@ export function FeatureRequestsScreen({
 
   const title = headerTitle ?? strings.featureRequests.screenTitle;
 
-  const [items, setItems] = useState<FeatureRequestItem[]>([]);
-  const [versions, setVersions] = useState<AppVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [versions, setVersions] = useState<AppVersion[]>([]);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
   const [showCompose, setShowCompose] = useState<boolean>(false);
 
-  const loadData = useCallback(async (signal?: AbortSignal) => {
-    // Wait for the persisted token: fetching earlier would evaluate
-    // hasVoted/isOwnRequest against a throwaway identity.
-    if (!isTokenReady) return;
-    try {
-      const [requestsRes, versionsRes] = await Promise.all([
-        client.fetchFeatureRequests({
-          userToken,
-          versionId: selectedVersionId || undefined,
-          query: searchQuery.trim() || undefined,
-          signal,
-        }),
-        client.fetchVersions({ signal }).catch((err) => {
-          if (err?.name === 'AbortError' || signal?.aborted) throw err;
-          return [];
-        }),
-      ]);
-
-      if (signal?.aborted) return;
-      setItems(requestsRes.requests || []);
-      setVersions(versionsRes || []);
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      // Non-fatal
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    }
-  }, [client, userToken, selectedVersionId, searchQuery, isTokenReady]);
+  const {
+    items,
+    hasMore,
+    isLoading,
+    isRefreshing,
+    isLoadingMore,
+    loadMore,
+    refresh,
+    reload,
+    setItems,
+    applyItemChange,
+  } = useFeatureRequests({
+    client,
+    userToken,
+    isTokenReady,
+    versionId: selectedVersionId,
+    query: searchQuery,
+    pageSize: 50,
+    debounceMs: 250,
+  });
 
   useEffect(() => {
+    if (!isTokenReady) return;
     const controller = new AbortController();
-    setIsLoading(true);
-    const debounce = setTimeout(() => {
-      loadData(controller.signal);
-    }, 250);
+    client
+      .fetchVersions({ signal: controller.signal })
+      .then((v) => {
+        if (!controller.signal.aborted) setVersions(v || []);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      });
     return () => {
-      clearTimeout(debounce);
       controller.abort();
     };
-  }, [loadData]);
+  }, [client, isTokenReady]);
 
-  const refreshControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    return () => {
-      refreshControllerRef.current?.abort();
-    };
-  }, []);
-
-  const handleRefresh = useCallback(() => {
-    if (!isTokenReady) return;
-    refreshControllerRef.current?.abort();
-    const controller = new AbortController();
-    refreshControllerRef.current = controller;
-    setIsRefreshing(true);
-    loadData(controller.signal);
-  }, [loadData, isTokenReady]);
-
-  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
-    setItems((prev) => prev.map((i) => (i.id === itemId ? transform(i) : i)));
-  }, []);
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyItemChange);
 
   const renderItem = ({ item }: { item: FeatureRequestItem }) => (
     <TouchableOpacity
@@ -323,9 +294,25 @@ export function FeatureRequestsScreen({
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={handleRefresh}
+              onRefresh={refresh}
               tintColor={colors.primary}
             />
+          }
+          onEndReached={() => {
+            if (hasMore && !isLoadingMore && !isLoading && !isRefreshing) {
+              loadMore();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.footerText, { color: colors.textMuted }]}>
+                  {strings.common.loadingMore}
+                </Text>
+              </View>
+            ) : null
           }
         />
       )}
@@ -336,7 +323,7 @@ export function FeatureRequestsScreen({
           visible={!!selectedItem}
           onClose={() => setSelectedItem(null)}
           onVoteChange={(updated) => {
-            setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+            applyItemChange(updated.id, () => updated);
           }}
         />
       )}
@@ -346,7 +333,7 @@ export function FeatureRequestsScreen({
         onClose={() => setShowCompose(false)}
         onSubmitSuccess={() => {
           setShowCompose(false);
-          loadData();
+          reload();
         }}
       />
     </SafeAreaView>
@@ -488,5 +475,15 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  footerLoading: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 13,
   },
 });

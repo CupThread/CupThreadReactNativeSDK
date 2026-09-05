@@ -7,6 +7,7 @@ export const zhHantStrings: CupThreadStrings = {
     cancel: '取消',
     confirm: '確認',
     loading: '載入中...',
+    loadingMore: '載入更多...',
     submitting: '提交中...',
     error: '錯誤',
     retry: '重試',
@@ -49,6 +50,7 @@ export const zhHantStrings: CupThreadStrings = {
     moreCommenters: '+ 更多',
     upvoted: '已投票',
     upvote: '投票',
+    loadingMore: '載入更多...',
   },
   featureRequestCompose: {
     modalTitle: '提出功能需求',
@@ -70,6 +72,9 @@ export const zhHantStrings: CupThreadStrings = {
     searchPlaceholder: '搜尋路線圖...',
     emptyColumn: '此階段目前沒有項目',
     upvotesCount: (count: number) => `${count} 票`,
+    loadingMore: '載入更多...',
+    loadMore: '載入更多',
+    showingCount: (shown: number, total: number) => `顯示 ${shown} / ${total} 項`,
   },
   featureRequestDetail: {
     title: '功能需求',

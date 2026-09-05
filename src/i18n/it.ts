@@ -7,6 +7,7 @@ export const itStrings: CupThreadStrings = {
     cancel: 'Annulla',
     confirm: 'Conferma',
     loading: 'Caricamento...',
+    loadingMore: 'Caricamento altri...',
     submitting: 'Invio...',
     error: 'Errore',
     retry: 'Riprova',
@@ -49,6 +50,7 @@ export const itStrings: CupThreadStrings = {
     moreCommenters: '+ altri',
     upvoted: 'Votato',
     upvote: 'Vota',
+    loadingMore: 'Caricamento altri...',
   },
   featureRequestCompose: {
     modalTitle: 'Proponi una funzionalità',
@@ -70,6 +72,9 @@ export const itStrings: CupThreadStrings = {
     searchPlaceholder: 'Cerca nella roadmap...',
     emptyColumn: 'Nessun elemento in questa fase',
     upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} voti`,
+    loadingMore: 'Caricamento altri...',
+    loadMore: 'Carica altri',
+    showingCount: (shown: number, total: number) => `Mostrati ${shown} di ${total}`,
   },
   featureRequestDetail: {
     title: 'Richiesta di funzionalità',

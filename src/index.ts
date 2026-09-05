@@ -10,6 +10,7 @@ export * from './client/UserTokenStore';
 
 // Export Hooks
 export * from './hooks/useToggleVote';
+export * from './hooks/useFeatureRequests';
 
 // Export Theme & i18n
 export * from './theme/SdkTheme';

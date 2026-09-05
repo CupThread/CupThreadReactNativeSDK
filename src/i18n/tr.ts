@@ -7,6 +7,7 @@ export const trStrings: CupThreadStrings = {
     cancel: 'İptal',
     confirm: 'Onayla',
     loading: 'Yükleniyor...',
+    loadingMore: 'Daha fazla yükleniyor...',
     submitting: 'Gönderiliyor...',
     error: 'Hata',
     retry: 'Tekrar dene',
@@ -49,6 +50,7 @@ export const trStrings: CupThreadStrings = {
     moreCommenters: '+ daha fazla',
     upvoted: 'Oy verildi',
     upvote: 'Oy ver',
+    loadingMore: 'Daha fazla yükleniyor...',
   },
   featureRequestCompose: {
     modalTitle: 'Özellik öner',
@@ -70,6 +72,9 @@ export const trStrings: CupThreadStrings = {
     searchPlaceholder: 'Yol haritasında ara...',
     emptyColumn: 'Bu aşamada öğe yok',
     upvotesCount: (count: number) => `${count} oy`,
+    loadingMore: 'Daha fazla yükleniyor...',
+    loadMore: 'Daha fazla yükle',
+    showingCount: (shown: number, total: number) => `${total} öğeden ${shown} tanesi gösteriliyor`,
   },
   featureRequestDetail: {
     title: 'Özellik isteği',

@@ -7,6 +7,7 @@ export const viStrings: CupThreadStrings = {
     cancel: 'Hủy',
     confirm: 'Xác nhận',
     loading: 'Đang tải...',
+    loadingMore: 'Đang tải thêm...',
     submitting: 'Đang gửi...',
     error: 'Lỗi',
     retry: 'Thử lại',
@@ -49,6 +50,7 @@ export const viStrings: CupThreadStrings = {
     moreCommenters: '+ thêm',
     upvoted: 'Đã bình chọn',
     upvote: 'Bình chọn',
+    loadingMore: 'Đang tải thêm...',
   },
   featureRequestCompose: {
     modalTitle: 'Đề xuất tính năng',
@@ -70,6 +72,9 @@ export const viStrings: CupThreadStrings = {
     searchPlaceholder: 'Tìm kiếm trong lộ trình...',
     emptyColumn: 'Không có mục nào trong giai đoạn này',
     upvotesCount: (count: number) => `${count} lượt bình chọn`,
+    loadingMore: 'Đang tải thêm...',
+    loadMore: 'Tải thêm',
+    showingCount: (shown: number, total: number) => `Hiển thị ${shown}/${total}`,
   },
   featureRequestDetail: {
     title: 'Yêu cầu tính năng',

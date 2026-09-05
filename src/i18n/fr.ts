@@ -7,6 +7,7 @@ export const frStrings: CupThreadStrings = {
     cancel: 'Annuler',
     confirm: 'Confirmer',
     loading: 'Chargement...',
+    loadingMore: 'Chargement de la suite...',
     submitting: 'Envoi...',
     error: 'Erreur',
     retry: 'Réessayer',
@@ -49,6 +50,7 @@ export const frStrings: CupThreadStrings = {
     moreCommenters: '+ autres',
     upvoted: 'Voté',
     upvote: 'Voter',
+    loadingMore: 'Chargement de la suite...',
   },
   featureRequestCompose: {
     modalTitle: 'Proposer une fonctionnalité',
@@ -70,6 +72,9 @@ export const frStrings: CupThreadStrings = {
     searchPlaceholder: 'Rechercher dans la feuille de route...',
     emptyColumn: 'Aucun élément à cette étape',
     upvotesCount: (count: number) => count <= 1 ? `${count} vote` : `${count} votes`,
+    loadingMore: 'Chargement de la suite...',
+    loadMore: 'Charger plus',
+    showingCount: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
   },
   featureRequestDetail: {
     title: 'Demande de fonctionnalité',
