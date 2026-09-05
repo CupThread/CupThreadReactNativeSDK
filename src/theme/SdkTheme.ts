@@ -114,6 +114,21 @@ export interface ThemeColors {
    * Horizontal divider rule color.
    */
   divider: string;
+
+  /**
+   * High-contrast text or icon color representing destructive actions, validation errors, or critical alerts.
+   */
+  danger: string;
+
+  /**
+   * Background fill color for error alerts, warning banners, and danger badges.
+   */
+  dangerBg: string;
+
+  /**
+   * Border or outline color for error alerts and invalid form inputs.
+   */
+  dangerBorder: string;
 }
 
 /**
@@ -140,6 +155,9 @@ export const lightTheme: ThemeColors = {
   chipBg: '#f1f5f9',
   chipText: '#334155',
   divider: '#e2e8f0',
+  danger: '#b91c1c',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
 };
 
 /**
@@ -166,6 +184,9 @@ export const darkTheme: ThemeColors = {
   chipBg: '#1e293b',
   chipText: '#cbd5e1',
   divider: '#1e293b',
+  danger: '#f87171',
+  dangerBg: '#450a0a',
+  dangerBorder: '#7f1d1d',
 };
 
 /**
@@ -180,6 +201,9 @@ export const midnightTheme: ThemeColors = {
   primaryHover: '#818cf8',
   voteActiveBg: '#312e81',
   voteActiveText: '#c7d2fe',
+  danger: '#f87171',
+  dangerBg: '#450a0a',
+  dangerBorder: '#7f1d1d',
 };
 
 /**
@@ -206,6 +230,9 @@ export const oceanTheme: ThemeColors = {
   chipBg: '#e6fffa',
   chipText: '#0d9488',
   divider: '#ccfbf1',
+  danger: '#b91c1c',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
 };
 
 /**
@@ -232,6 +259,9 @@ export const forestTheme: ThemeColors = {
   chipBg: '#f7fee7',
   chipText: '#365314',
   divider: '#d9f99d',
+  danger: '#b91c1c',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
 };
 
 /**
@@ -258,6 +288,9 @@ export const sunsetTheme: ThemeColors = {
   chipBg: '#ffedd5',
   chipText: '#7c2d12',
   divider: '#fed7aa',
+  danger: '#b91c1c',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
 };
 
 /**
@@ -284,6 +317,9 @@ export const candyTheme: ThemeColors = {
   chipBg: '#fae8ff',
   chipText: '#701a75',
   divider: '#f5d0fe',
+  danger: '#b91c1c',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
 };
 
 /**
