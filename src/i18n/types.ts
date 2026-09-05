@@ -15,7 +15,6 @@ export interface CommonStrings {
   required: string;
   anonymous: string;
   invalidEmail: string;
-  submitFailed: string;
   justNow: string;
   minutesAgo: (m: number) => string;
   hoursAgo: (h: number) => string;

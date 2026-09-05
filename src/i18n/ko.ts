@@ -15,7 +15,6 @@ export const koStrings: CupThreadStrings = {
     required: '필수',
     anonymous: '익명 사용자',
     invalidEmail: '유효한 이메일 주소를 입력해 주세요.',
-    submitFailed: '제출에 실패했습니다. 다시 시도해 주세요.',
     justNow: '방금',
     minutesAgo: (m: number) => `${m}분 전`,
     hoursAgo: (h: number) => `${h}시간 전`,

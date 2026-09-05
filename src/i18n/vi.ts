@@ -15,7 +15,6 @@ export const viStrings: CupThreadStrings = {
     required: 'bắt buộc',
     anonymous: 'Người dùng ẩn danh',
     invalidEmail: 'Vui lòng nhập địa chỉ email hợp lệ.',
-    submitFailed: 'Gửi thất bại. Vui lòng thử lại.',
     justNow: 'Vừa xong',
     minutesAgo: (m: number) => `${m} phút trước`,
     hoursAgo: (h: number) => `${h} giờ trước`,

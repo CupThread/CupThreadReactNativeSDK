@@ -15,7 +15,6 @@ export const enStrings: CupThreadStrings = {
     required: 'required',
     anonymous: 'Anonymous User',
     invalidEmail: 'Please enter a valid email address.',
-    submitFailed: 'Failed to submit. Please try again.',
     justNow: 'Just now',
     minutesAgo: (m: number) => `${m}m ago`,
     hoursAgo: (h: number) => `${h}h ago`,

@@ -15,7 +15,6 @@ export const ptStrings: CupThreadStrings = {
     required: 'obrigatório',
     anonymous: 'Usuário anônimo',
     invalidEmail: 'Por favor, insira um endereço de e-mail válido.',
-    submitFailed: 'Falha ao enviar. Por favor, tente novamente.',
     justNow: 'Agora mesmo',
     minutesAgo: (m: number) => `Há ${m} min`,
     hoursAgo: (h: number) => `Há ${h} h`,

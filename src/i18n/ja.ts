@@ -15,7 +15,6 @@ export const jaStrings: CupThreadStrings = {
     required: '必須',
     anonymous: '匿名ユーザー',
     invalidEmail: '有効なメールアドレスを入力してください。',
-    submitFailed: '送信に失敗しました。もう一度お試しください。',
     justNow: 'たった今',
     minutesAgo: (m: number) => `${m}分前`,
     hoursAgo: (h: number) => `${h}時間前`,

@@ -15,7 +15,6 @@ export const deStrings: CupThreadStrings = {
     required: 'erforderlich',
     anonymous: 'Anonymer Benutzer',
     invalidEmail: 'Bitte gib eine gültige E-Mail-Adresse ein.',
-    submitFailed: 'Übermittlung fehlgeschlagen. Bitte versuche es erneut.',
     justNow: 'Gerade eben',
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,

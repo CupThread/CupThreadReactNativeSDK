@@ -15,7 +15,6 @@ export const zhHantStrings: CupThreadStrings = {
     required: '必填',
     anonymous: '匿名使用者',
     invalidEmail: '請輸入有效的電子郵件地址。',
-    submitFailed: '提交失敗，請重試。',
     justNow: '剛剛',
     minutesAgo: (m: number) => `${m} 分鐘前`,
     hoursAgo: (h: number) => `${h} 小時前`,

@@ -15,7 +15,6 @@ export const trStrings: CupThreadStrings = {
     required: 'gerekli',
     anonymous: 'Anonim kullanıcı',
     invalidEmail: 'Lütfen geçerli bir e-posta adresi girin.',
-    submitFailed: 'Gönderim başarısız oldu. Lütfen tekrar deneyin.',
     justNow: 'Az önce',
     minutesAgo: (m: number) => `${m} dk önce`,
     hoursAgo: (h: number) => `${h} saat önce`,

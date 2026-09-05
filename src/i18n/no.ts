@@ -15,7 +15,6 @@ export const noStrings: CupThreadStrings = {
     required: 'påkrevd',
     anonymous: 'Anonym bruker',
     invalidEmail: 'Vennligst skriv inn en gyldig e-postadresse.',
-    submitFailed: 'Innsending mislyktes. Vennligst prøv igjen.',
     justNow: 'Akkurat nå',
     minutesAgo: (m: number) => `${m} min siden`,
     hoursAgo: (h: number) => `${h} t siden`,

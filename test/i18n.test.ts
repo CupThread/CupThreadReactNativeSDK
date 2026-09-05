@@ -298,7 +298,6 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
   for (const loc of allLocales) {
     // common
     assert.ok(typeof loc.common.invalidEmail === 'string' && loc.common.invalidEmail.length > 0);
-    assert.ok(typeof loc.common.submitFailed === 'string' && loc.common.submitFailed.length > 0);
 
     // feedbackComposer
     assert.ok(typeof loc.feedbackComposer.uploadFailed === 'string' && loc.feedbackComposer.uploadFailed.length > 0);
