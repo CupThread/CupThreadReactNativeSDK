@@ -20,7 +20,7 @@ import type { BoardColumn, FeatureRequestItem } from '../types';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
-import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 
 /**
@@ -98,7 +98,6 @@ export function RoadmapBoardScreen({
     isLoadingMore,
     loadMore,
     refresh: refreshRequests,
-    setItems: setRequests,
     applyItemChange,
   } = useFeatureRequests({
     client,
@@ -115,9 +114,10 @@ export function RoadmapBoardScreen({
         if (signal?.aborted) return;
         const visibleCols = cols.filter((c) => c.isVisible);
         setColumns(visibleCols);
-        if (visibleCols.length > 0 && !selectedColumnId) {
-          setSelectedColumnId(visibleCols[0].id);
-        }
+        // Seed the initial selection inside a functional updater so loadColumns
+        // does not depend on selectedColumnId — listing it would re-fetch the
+        // whole board every time the user switches column tabs.
+        setSelectedColumnId((current) => current ?? visibleCols[0]?.id ?? null);
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal?.aborted) return;
         // Non-fatal
@@ -127,7 +127,7 @@ export function RoadmapBoardScreen({
         }
       }
     },
-    [client, selectedColumnId, isTokenReady]
+    [client, isTokenReady]
   );
 
   useEffect(() => {

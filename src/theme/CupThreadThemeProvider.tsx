@@ -235,7 +235,7 @@ export function CupThreadProvider({
       strings: resolvedStrings,
       refreshConfig: loadConfig,
     }),
-    [client, resolvedUserToken, isTokenReady, effectiveTheme, colors, appConfig, isLoadingConfig, locale, resolvedStrings]
+    [client, resolvedUserToken, isTokenReady, effectiveTheme, colors, appConfig, isLoadingConfig, locale, resolvedStrings, loadConfig]
   );
 
   return <CupThreadContext.Provider value={value}>{children}</CupThreadContext.Provider>;
