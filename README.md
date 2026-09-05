@@ -256,7 +256,7 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 | `fetchAppConfig(options?)` | `GET /api/v1/public/config/{appKey}` | Fetch app branding, appearance, and public settings |
 | `fetchColumns(options?)` | `GET /api/v1/public/columns/{appKey}` | Fetch Kanban board columns for roadmap |
 | `fetchVersions(options?)` | `GET /api/v1/public/versions/{appKey}` | Fetch release versions |
-| `fetchFeatureRequests(options)` | `GET /api/v1/feature-requests` | List, search, and paginate public feature requests (supports `limit`, `offset`, `columnId`, `signal`, `timeoutMs`) |
+| `fetchFeatureRequests(options)` | `GET /api/v1/feature-requests` | List, search, and paginate public feature requests (supports `limit`, `offset`, `signal`, `timeoutMs`) |
 | `submitFeatureRequest(draft, userToken, options?)` | `POST /api/v1/feature-requests` | Propose a new feature request proposal |
 | `toggleVote(featureRequestId, userToken, options?)` | `POST /api/v1/feature-requests/{id}/vote` | Upvote or remove upvote |
 | `fetchComments(featureRequestId, options?)` | `GET /api/v1/feature-requests/{id}/comments` | Fetch discussion comments |

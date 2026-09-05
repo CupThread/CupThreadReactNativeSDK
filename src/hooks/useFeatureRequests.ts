@@ -34,16 +34,6 @@ export interface UseFeatureRequestsOptions {
   query?: string;
 
   /**
-   * Optional Kanban column ID filter.
-   */
-  columnId?: string | null;
-
-  /**
-   * Optional status slug filter.
-   */
-  status?: string | null;
-
-  /**
    * Number of items to fetch per page.
    *
    * @defaultValue 50
@@ -157,8 +147,6 @@ export function useFeatureRequests(
     isTokenReady = true,
     versionId,
     query,
-    columnId,
-    status,
     pageSize = 50,
     debounceMs = 0,
   } = options;
@@ -196,8 +184,6 @@ export function useFeatureRequests(
           userToken,
           versionId: versionId || undefined,
           query: query?.trim() || undefined,
-          columnId: columnId || undefined,
-          status: status || undefined,
           limit: pageSize,
           offset: 0,
           signal,
@@ -220,7 +206,7 @@ export function useFeatureRequests(
         }
       }
     },
-    [client, userToken, isTokenReady, versionId, query, columnId, status, pageSize]
+    [client, userToken, isTokenReady, versionId, query, pageSize]
   );
 
   useEffect(() => {
@@ -265,8 +251,6 @@ export function useFeatureRequests(
         userToken,
         versionId: versionId || undefined,
         query: query?.trim() || undefined,
-        columnId: columnId || undefined,
-        status: status || undefined,
         limit: pageSize,
         offset: currentOffset,
         signal: controller.signal,
@@ -277,14 +261,22 @@ export function useFeatureRequests(
       const newItems = res.requests || [];
       let nextTotal = typeof res.total === 'number' ? res.total : totalRef.current;
 
+      // Compute the deduped append count from itemsRef instead of inside a
+      // functional updater: React invokes updaters during the next render,
+      // so any value mutated there is not readable at the call site (and
+      // StrictMode invokes updaters twice).
+      const prevItems = itemsRef.current;
+      const existingIds = new Set(prevItems.map((i) => i.id));
+      const freshCount = newItems.filter((i) => !existingIds.has(i.id)).length;
+      if (newItems.length === 0 || newItems.length < pageSize) {
+        // Short page: server has no more data, so clamp total in case the
+        // reported count drifted (e.g. items deleted between page fetches).
+        nextTotal = Math.min(nextTotal, prevItems.length + freshCount);
+      }
+
       setItems((prev) => {
-        const existingIds = new Set(prev.map((i) => i.id));
-        const fresh = newItems.filter((i) => !existingIds.has(i.id));
-        const next = [...prev, ...fresh];
-        if (newItems.length === 0 || newItems.length < pageSize) {
-          nextTotal = Math.min(nextTotal, next.length);
-        }
-        return next;
+        const ids = new Set(prev.map((i) => i.id));
+        return [...prev, ...newItems.filter((i) => !ids.has(i.id))];
       });
 
       setTotal(nextTotal);
@@ -293,12 +285,13 @@ export function useFeatureRequests(
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      if (!controller.signal.aborted) {
-        isLoadingMoreRef.current = false;
-        setIsLoadingMore(false);
-      }
+      // Reset even when aborted: refresh()/reload()/filter changes abort an
+      // in-flight loadMore, and leaving the guard set would permanently
+      // disable infinite scroll.
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
     }
-  }, [client, userToken, isTokenReady, isLoading, isRefreshing, versionId, query, columnId, status, pageSize]);
+  }, [client, userToken, isTokenReady, isLoading, isRefreshing, versionId, query, pageSize]);
 
   // Pull-to-refresh
   const refresh = useCallback(async () => {

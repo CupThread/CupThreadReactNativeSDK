@@ -178,7 +178,7 @@ function makeMockItem(id: string, index: number, overrides?: Partial<FeatureRequ
 // FeedbackClient.fetchFeatureRequests query parameter serialization
 // ---------------------------------------------------------------------------
 
-test('FeedbackClient.fetchFeatureRequests serializes limit, offset, columnId, and status', async () => {
+test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionId', async () => {
   let interceptedUrl = '';
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request) => {
@@ -199,8 +199,6 @@ test('FeedbackClient.fetchFeatureRequests serializes limit, offset, columnId, an
       userToken: 'usr_tok_page',
       limit: 25,
       offset: 50,
-      columnId: 'col_123',
-      status: 'under-review',
       versionId: 'v2.0',
       query: 'bluetooth',
     });
@@ -211,8 +209,6 @@ test('FeedbackClient.fetchFeatureRequests serializes limit, offset, columnId, an
     assert.equal(parsed.searchParams.get('userToken'), 'usr_tok_page');
     assert.equal(parsed.searchParams.get('limit'), '25');
     assert.equal(parsed.searchParams.get('offset'), '50');
-    assert.equal(parsed.searchParams.get('columnId'), 'col_123');
-    assert.equal(parsed.searchParams.get('status'), 'under-review');
     assert.equal(parsed.searchParams.get('versionId'), 'v2.0');
     assert.equal(parsed.searchParams.get('q'), 'bluetooth');
   } finally {
@@ -419,6 +415,102 @@ test('useFeatureRequests pull-to-refresh restarts from page 0', async () => {
   assert.equal(harness.result.items.length, 1);
   assert.equal(harness.result.items[0].id, 'fr_1');
   assert.equal(harness.result.isRefreshing, false);
+});
+
+test('useFeatureRequests loadMore recovers after refresh aborts an in-flight load-more', async () => {
+  let releaseHangingPage: ((value: { requests: FeatureRequestItem[]; total: number }) => void) | null =
+    null;
+  let hangArmed = true;
+  const mockClient = {
+    fetchFeatureRequests: (opts: any) => {
+      const offset = opts.offset ?? 0;
+      if (offset === 1 && hangArmed) {
+        // Hang only the first load-more request until the test releases it,
+        // so refresh() aborts it while still in flight.
+        hangArmed = false;
+        return new Promise<{ requests: FeatureRequestItem[]; total: number }>((resolve) => {
+          releaseHangingPage = resolve;
+        });
+      }
+      return Promise.resolve({
+        requests: [makeMockItem(`fr_${offset + 1}`, offset + 1)],
+        total: 3,
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 1,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 1);
+
+  // Start a load-more that hangs, then pull-to-refresh while it is in flight.
+  const pendingLoadMore = harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoadingMore, true);
+
+  await harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isRefreshing, false);
+
+  releaseHangingPage!({ requests: [makeMockItem('fr_2', 2)], total: 3 });
+  await pendingLoadMore;
+  await new Promise((r) => setTimeout(r, 20));
+
+  // The aborted request must have cleared the loading-more guard.
+  assert.equal(harness.result.isLoadingMore, false);
+
+  // Infinite scroll must still work after the aborted request.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 2);
+  assert.equal(harness.result.items[1].id, 'fr_2');
+});
+
+test('useFeatureRequests clamps total to loaded items when a short page arrives', async () => {
+  // Server reports total 4 but only 3 retrievable items (drift, e.g. an item
+  // deleted between page fetches). The last page is short (1 < pageSize 2),
+  // so `total` must clamp to 3 or hasMore stays true forever and every
+  // scroll-end refetches an empty page.
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      if (offset === 0) {
+        return {
+          requests: [makeMockItem('fr_1', 1), makeMockItem('fr_2', 2)],
+          total: 4,
+        };
+      }
+      return {
+        requests: [makeMockItem('fr_3', 3)],
+        total: 4,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 2);
+  assert.equal(harness.result.total, 4);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 3);
+  assert.equal(harness.result.total, 3, 'total must clamp down to the number of loaded items');
+  assert.equal(harness.result.hasMore, false);
 });
 
 test('useFeatureRequests applyItemChange transforms specific item without refetching', async () => {
