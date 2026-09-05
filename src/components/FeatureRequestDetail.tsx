@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -92,6 +92,11 @@ export function FeatureRequestDetail({
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
 
+  // State updaters must stay pure (React may run them during render and twice
+  // under StrictMode), so vote changes are staged here and the host
+  // `onVoteChange` notification is flushed in an effect after commit.
+  const pendingVoteNotifyRef = useRef<FeatureRequestItem | null>(null);
+
   const applyVoteChange = useCallback<VoteChangeApplier>(
     (_itemId, transform) => {
       // Use functional state updater like list/board so transforms always land
@@ -99,12 +104,20 @@ export function FeatureRequestDetail({
       // instead of closing over a stale snapshot or the initialItem prop.
       setItem((prev) => {
         const next = transform(prev);
-        onVoteChange?.(next);
+        pendingVoteNotifyRef.current = next;
         return next;
       });
     },
-    [onVoteChange]
+    []
   );
+
+  useEffect(() => {
+    const pending = pendingVoteNotifyRef.current;
+    if (pending) {
+      pendingVoteNotifyRef.current = null;
+      onVoteChange?.(pending);
+    }
+  }, [item, onVoteChange]);
   const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 
   return (
