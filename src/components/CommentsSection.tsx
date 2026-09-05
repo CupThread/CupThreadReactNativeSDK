@@ -109,7 +109,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
-      setError(err?.message || 'Failed to post comment');
+      setError(err?.message || strings.comments.postFailed);
     } finally {
       setIsSubmitting(false);
     }

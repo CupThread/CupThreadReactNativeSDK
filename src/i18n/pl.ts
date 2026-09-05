@@ -14,6 +14,8 @@ export const plStrings: CupThreadStrings = {
     optional: 'opcjonalne',
     required: 'wymagane',
     anonymous: 'Anonimowy użytkownik',
+    invalidEmail: 'Wprowadź prawidłowy adres e-mail.',
+    submitFailed: 'Wysyłanie nie powiodło się. Spróbuj ponownie.',
     justNow: 'Przed chwilą',
     minutesAgo: (m: number) => `${m} min temu`,
     hoursAgo: (h: number) => `${h} godz. temu`,
@@ -38,6 +40,8 @@ export const plStrings: CupThreadStrings = {
     uploadingAttachment: 'Przesyłanie załącznika...',
     removeAttachment: 'Usuń',
     attachmentsHeader: 'Załączniki',
+    uploadFailed: 'Nie udało się przesłać załącznika.',
+    submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
   },
   featureRequests: {
     screenTitle: 'Prośby o funkcje',
@@ -66,6 +70,7 @@ export const plStrings: CupThreadStrings = {
     moderationNotice: 'Twoja prośba została wysłana i zostanie opublikowana po moderacji.',
     titleMinLengthError: 'Podaj tytuł zawierający co najmniej 3 znaki.',
     descriptionMinLengthError: 'Podaj opis zawierający co najmniej 5 znaków.',
+    submitFailed: 'Nie udało się przesłać propozycji. Spróbuj ponownie.',
   },
   roadmap: {
     screenTitle: 'Mapa drogowa',
@@ -101,6 +106,7 @@ export const plStrings: CupThreadStrings = {
     replyButton: 'Odpowiedz',
     replyingTo: (name: string) => `Odpowiedź dla @${name}`,
     cancelReply: 'Anuluj odpowiedź',
+    postFailed: 'Nie udało się opublikować komentarza',
   },
   changelog: {
     overlayTitle: 'Co nowego',
@@ -114,10 +120,26 @@ export const plStrings: CupThreadStrings = {
     emailPlaceholder: 'Wpisz swój adres e-mail',
     subscribedSuccess: 'Subskrypcja zakończona powodzeniem!',
     unsubscribeButton: 'Anuluj subskrypcję',
+    subscribeFailed: 'Nie udało się zasubskrybować dziennika zmian.',
   },
   userProfile: {
     screenTitle: 'Profil użytkownika',
     activityTitle: 'Ostatnia aktywność',
     noActivity: 'Brak ostatniej aktywności',
+    loadFailed: 'Nie udało się załadować profilu',
+    notFound: 'Nie znaleziono użytkownika',
+    anonymous: 'Anonimowy programista',
+    recentComments: 'Ostatnie komentarze',
+    appsSection: (count: number) => `Aplikacje (${count})`,
+    requestCount: (count: number) => {
+      if (count === 1) return '1 publiczna propozycja funkcji';
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+        return `${count} publiczne propozycje funkcji`;
+      }
+      return `${count} publicznych propozycji funkcji`;
+    },
+    commentOn: (title: string) => `w ${title}`,
   },
 };

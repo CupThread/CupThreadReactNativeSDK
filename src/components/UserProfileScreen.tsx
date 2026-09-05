@@ -46,7 +46,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
       })
       .catch((err) => {
         if (err?.name === 'AbortError' || controller.signal.aborted) return;
-        setError(err?.message || 'Failed to load profile');
+        setError(err?.message || strings.userProfile.loadFailed);
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -57,7 +57,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     return () => {
       controller.abort();
     };
-  }, [client, userId]);
+  }, [client, userId, strings.userProfile.loadFailed]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -77,7 +77,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
       ) : error || !data ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
-            {error || 'User not found'}
+            {error || strings.userProfile.notFound}
           </Text>
         </View>
       ) : (
@@ -94,7 +94,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               size={64}
             />
             <Text style={[styles.displayName, { color: colors.textPrimary }]}>
-              {data.profile.displayName || 'Anonymous Developer'}
+              {data.profile.displayName || strings.userProfile.anonymous}
             </Text>
             {data.profile.bio ? (
               <Text style={[styles.bio, { color: colors.textSecondary }]}>
@@ -115,7 +115,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
           {data.apps && data.apps.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                Apps ({data.apps.length})
+                {strings.userProfile.appsSection(data.apps.length)}
               </Text>
               {data.apps.map((app) => (
                 <View
@@ -137,7 +137,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                     </Text>
                   )}
                   <Text style={[styles.appRequests, { color: colors.textMuted }]}>
-                    {app.requestCount} public feature requests
+                    {strings.userProfile.requestCount(app.requestCount)}
                   </Text>
                 </View>
               ))}
@@ -147,7 +147,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
           {!data.hideComments && data.recentComments && data.recentComments.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                Recent Comments
+                {strings.userProfile.recentComments}
               </Text>
               {data.recentComments.map((comment) => (
                 <View
@@ -158,7 +158,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                   ]}
                 >
                   <Text style={[styles.commentTitle, { color: colors.textPrimary }]}>
-                    on {comment.featureRequestTitle}
+                    {strings.userProfile.commentOn(comment.featureRequestTitle)}
                   </Text>
                   <Text style={[styles.commentBody, { color: colors.textSecondary }]}>
                     "{comment.body}"
@@ -170,6 +170,18 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               ))}
             </View>
           )}
+
+          {(!data.apps || data.apps.length === 0) &&
+            (!data.recentComments || data.recentComments.length === 0 || data.hideComments) && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                  {strings.userProfile.activityTitle}
+                </Text>
+                <Text style={[{ color: colors.textMuted }]}>
+                  {strings.userProfile.noActivity}
+                </Text>
+              </View>
+            )}
         </ScrollView>
       )}
     </SafeAreaView>

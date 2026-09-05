@@ -14,6 +14,8 @@ export const zhHansStrings: CupThreadStrings = {
     optional: '选填',
     required: '必填',
     anonymous: '匿名用户',
+    invalidEmail: '请输入有效的邮箱地址。',
+    submitFailed: '提交失败，请重试。',
     justNow: '刚刚',
     minutesAgo: (m: number) => `${m} 分钟前`,
     hoursAgo: (h: number) => `${h} 小时前`,
@@ -38,6 +40,8 @@ export const zhHansStrings: CupThreadStrings = {
     uploadingAttachment: '附件上传中...',
     removeAttachment: '删除',
     attachmentsHeader: '已附加文件',
+    uploadFailed: '上传附件失败。',
+    submitFailed: '提交反馈失败，请重试。',
   },
   featureRequests: {
     screenTitle: '需求墙',
@@ -66,6 +70,7 @@ export const zhHansStrings: CupThreadStrings = {
     moderationNotice: '您的需求提案已提交，审核通过后将公开显示在需求墙上。',
     titleMinLengthError: '需求标题至少需要 3 个字符。',
     descriptionMinLengthError: '详细描述至少需要 5 个字符。',
+    submitFailed: '提交需求提案失败，请重试。',
   },
   roadmap: {
     screenTitle: '功能路线图',
@@ -93,6 +98,7 @@ export const zhHansStrings: CupThreadStrings = {
     replyButton: '回复',
     replyingTo: (name: string) => `回复 @${name}`,
     cancelReply: '取消回复',
+    postFailed: '发表评论失败',
   },
   changelog: {
     overlayTitle: '新功能发布',
@@ -106,10 +112,18 @@ export const zhHansStrings: CupThreadStrings = {
     emailPlaceholder: '输入您的邮箱地址',
     subscribedSuccess: '订阅成功！',
     unsubscribeButton: '退订邮件',
+    subscribeFailed: '订阅更新日志失败。',
   },
   userProfile: {
     screenTitle: '用户主页',
     activityTitle: '最近动态',
     noActivity: '暂无最近活动记录',
+    loadFailed: '加载个人主页失败',
+    notFound: '用户不存在',
+    anonymous: '匿名开发者',
+    recentComments: '最近评论',
+    appsSection: (count: number) => `应用 (${count})`,
+    requestCount: (count: number) => `${count} 个公开需求提案`,
+    commentOn: (title: string) => `评论于 ${title}`,
   },
 };

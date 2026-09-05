@@ -75,7 +75,7 @@ export function WhatsNewScreen({
 
   const handleSubscribe = async () => {
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert(strings.common.error, 'Please enter a valid email address.');
+      Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
 
@@ -85,7 +85,7 @@ export function WhatsNewScreen({
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
-      Alert.alert(strings.common.error, err?.message || 'Failed to subscribe to changelog.');
+      Alert.alert(strings.common.error, err?.message || strings.changelog.subscribeFailed);
     } finally {
       setIsSubscribing(false);
     }

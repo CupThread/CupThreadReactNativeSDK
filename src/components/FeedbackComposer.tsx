@@ -169,7 +169,7 @@ export function FeedbackComposer({
         setAttachments((prev) => [...prev, ...newlyAdded]);
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to upload attachment.');
+      setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
     } finally {
       setIsUploadingAttachment(false);
     }
@@ -214,7 +214,7 @@ export function FeedbackComposer({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(err?.message || 'Failed to submit feedback. Please try again.');
+      setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
     }
   };
 

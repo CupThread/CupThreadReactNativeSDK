@@ -14,6 +14,8 @@ export const jaStrings: CupThreadStrings = {
     optional: '任意',
     required: '必須',
     anonymous: '匿名ユーザー',
+    invalidEmail: '有効なメールアドレスを入力してください。',
+    submitFailed: '送信に失敗しました。もう一度お試しください。',
     justNow: 'たった今',
     minutesAgo: (m: number) => `${m}分前`,
     hoursAgo: (h: number) => `${h}時間前`,
@@ -38,6 +40,8 @@ export const jaStrings: CupThreadStrings = {
     uploadingAttachment: '添付ファイルをアップロード中...',
     removeAttachment: '削除',
     attachmentsHeader: '添付ファイル',
+    uploadFailed: '添付ファイルのアップロードに失敗しました。',
+    submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
   },
   featureRequests: {
     screenTitle: '機能リクエスト',
@@ -66,6 +70,7 @@ export const jaStrings: CupThreadStrings = {
     moderationNotice: 'リクエストを送信しました。審査後に公開されます。',
     titleMinLengthError: 'タイトルは3文字以上で入力してください。',
     descriptionMinLengthError: '説明は5文字以上で入力してください。',
+    submitFailed: '機能提案の送信に失敗しました。もう一度お試しください。',
   },
   roadmap: {
     screenTitle: 'ロードマップ',
@@ -93,6 +98,7 @@ export const jaStrings: CupThreadStrings = {
     replyButton: '返信',
     replyingTo: (name: string) => `@${name} に返信`,
     cancelReply: '返信をキャンセル',
+    postFailed: 'コメントの投稿に失敗しました',
   },
   changelog: {
     overlayTitle: '新着情報',
@@ -106,10 +112,18 @@ export const jaStrings: CupThreadStrings = {
     emailPlaceholder: 'メールアドレスを入力',
     subscribedSuccess: '購読しました！',
     unsubscribeButton: '購読を解除',
+    subscribeFailed: '更新情報の購読に失敗しました。',
   },
   userProfile: {
     screenTitle: 'ユーザープロフィール',
     activityTitle: '最近のアクティビティ',
     noActivity: '最近のアクティビティはありません',
+    loadFailed: 'プロフィールの読み込みに失敗しました',
+    notFound: 'ユーザーが見つかりません',
+    anonymous: '匿名の開発者',
+    recentComments: '最近のコメント',
+    appsSection: (count: number) => `アプリ（${count}）`,
+    requestCount: (count: number) => `${count}件の公開機能リクエスト`,
+    commentOn: (title: string) => `「${title}」へのコメント`,
   },
 };

@@ -14,6 +14,8 @@ export const viStrings: CupThreadStrings = {
     optional: 'không bắt buộc',
     required: 'bắt buộc',
     anonymous: 'Người dùng ẩn danh',
+    invalidEmail: 'Vui lòng nhập địa chỉ email hợp lệ.',
+    submitFailed: 'Gửi thất bại. Vui lòng thử lại.',
     justNow: 'Vừa xong',
     minutesAgo: (m: number) => `${m} phút trước`,
     hoursAgo: (h: number) => `${h} giờ trước`,
@@ -38,6 +40,8 @@ export const viStrings: CupThreadStrings = {
     uploadingAttachment: 'Đang tải tệp đính kèm lên...',
     removeAttachment: 'Xóa',
     attachmentsHeader: 'Tệp đính kèm',
+    uploadFailed: 'Tải lên tệp đính kèm thất bại.',
+    submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
   },
   featureRequests: {
     screenTitle: 'Yêu cầu tính năng',
@@ -66,6 +70,7 @@ export const viStrings: CupThreadStrings = {
     moderationNotice: 'Yêu cầu của bạn đã được gửi và sẽ hiển thị công khai sau khi kiểm duyệt.',
     titleMinLengthError: 'Vui lòng nhập tiêu đề có ít nhất 3 ký tự.',
     descriptionMinLengthError: 'Vui lòng nhập mô tả có ít nhất 5 ký tự.',
+    submitFailed: 'Gửi đề xuất tính năng thất bại. Vui lòng thử lại.',
   },
   roadmap: {
     screenTitle: 'Lộ trình',
@@ -93,6 +98,7 @@ export const viStrings: CupThreadStrings = {
     replyButton: 'Trả lời',
     replyingTo: (name: string) => `Đang trả lời @${name}`,
     cancelReply: 'Hủy trả lời',
+    postFailed: 'Đăng bình luận thất bại',
   },
   changelog: {
     overlayTitle: 'Có gì mới',
@@ -106,10 +112,18 @@ export const viStrings: CupThreadStrings = {
     emailPlaceholder: 'Nhập địa chỉ email của bạn',
     subscribedSuccess: 'Đăng ký thành công!',
     unsubscribeButton: 'Hủy đăng ký',
+    subscribeFailed: 'Đăng ký nhận nhật ký thay đổi thất bại.',
   },
   userProfile: {
     screenTitle: 'Hồ sơ người dùng',
     activityTitle: 'Hoạt động gần đây',
     noActivity: 'Không có hoạt động gần đây',
+    loadFailed: 'Không thể tải hồ sơ',
+    notFound: 'Không tìm thấy người dùng',
+    anonymous: 'Nhà phát triển ẩn danh',
+    recentComments: 'Bình luận gần đây',
+    appsSection: (count: number) => `Ứng dụng (${count})`,
+    requestCount: (count: number) => `${count} đề xuất tính năng công khai`,
+    commentOn: (title: string) => `trong ${title}`,
   },
 };

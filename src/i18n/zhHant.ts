@@ -14,6 +14,8 @@ export const zhHantStrings: CupThreadStrings = {
     optional: '選填',
     required: '必填',
     anonymous: '匿名使用者',
+    invalidEmail: '請輸入有效的電子郵件地址。',
+    submitFailed: '提交失敗，請重試。',
     justNow: '剛剛',
     minutesAgo: (m: number) => `${m} 分鐘前`,
     hoursAgo: (h: number) => `${h} 小時前`,
@@ -38,6 +40,8 @@ export const zhHantStrings: CupThreadStrings = {
     uploadingAttachment: '附件上傳中...',
     removeAttachment: '刪除',
     attachmentsHeader: '附件',
+    uploadFailed: '上傳附件失敗。',
+    submitFailed: '提交意見回饋失敗，請重試。',
   },
   featureRequests: {
     screenTitle: '功能需求',
@@ -66,6 +70,7 @@ export const zhHantStrings: CupThreadStrings = {
     moderationNotice: '您的需求已送出，審核後將公開顯示。',
     titleMinLengthError: '標題至少需要 3 個字元。',
     descriptionMinLengthError: '描述至少需要 5 個字元。',
+    submitFailed: '提交功能提案失敗，請重試。',
   },
   roadmap: {
     screenTitle: '產品路線圖',
@@ -93,6 +98,7 @@ export const zhHantStrings: CupThreadStrings = {
     replyButton: '回覆',
     replyingTo: (name: string) => `回覆 @${name}`,
     cancelReply: '取消回覆',
+    postFailed: '發表留言失敗',
   },
   changelog: {
     overlayTitle: '最新消息',
@@ -106,10 +112,18 @@ export const zhHantStrings: CupThreadStrings = {
     emailPlaceholder: '輸入您的電子郵件地址',
     subscribedSuccess: '訂閱成功！',
     unsubscribeButton: '取消訂閱',
+    subscribeFailed: '訂閱更新紀錄失敗。',
   },
   userProfile: {
     screenTitle: '使用者個人檔案',
     activityTitle: '最近活動',
     noActivity: '找不到最近活動',
+    loadFailed: '無法載入個人檔案',
+    notFound: '找不到使用者',
+    anonymous: '匿名開發者',
+    recentComments: '最近留言',
+    appsSection: (count: number) => `應用程式 (${count})`,
+    requestCount: (count: number) => `${count} 個公開功能建議`,
+    commentOn: (title: string) => `留言於 ${title}`,
   },
 };

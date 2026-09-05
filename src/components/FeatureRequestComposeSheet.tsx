@@ -118,7 +118,7 @@ export function FeatureRequestComposeSheet({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(err?.message || 'Failed to submit feature proposal. Please try again.');
+      setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
     }
   };
 

@@ -14,6 +14,8 @@ export const deStrings: CupThreadStrings = {
     optional: 'optional',
     required: 'erforderlich',
     anonymous: 'Anonymer Benutzer',
+    invalidEmail: 'Bitte gib eine gültige E-Mail-Adresse ein.',
+    submitFailed: 'Übermittlung fehlgeschlagen. Bitte versuche es erneut.',
     justNow: 'Gerade eben',
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,
@@ -38,6 +40,8 @@ export const deStrings: CupThreadStrings = {
     uploadingAttachment: 'Anhang wird hochgeladen...',
     removeAttachment: 'Entfernen',
     attachmentsHeader: 'Anhänge',
+    uploadFailed: 'Hochladen des Anhangs fehlgeschlagen.',
+    submitFailed: 'Feedback konnte nicht gesendet werden. Bitte versuche es erneut.',
   },
   featureRequests: {
     screenTitle: 'Feature-Anfragen',
@@ -66,6 +70,7 @@ export const deStrings: CupThreadStrings = {
     moderationNotice: 'Deine Anfrage wurde gesendet und wird nach der Moderation öffentlich angezeigt.',
     titleMinLengthError: 'Bitte gib einen Titel mit mindestens 3 Zeichen ein.',
     descriptionMinLengthError: 'Bitte gib eine Beschreibung mit mindestens 5 Zeichen ein.',
+    submitFailed: 'Funktionsvorschlag konnte nicht gesendet werden. Bitte versuche es erneut.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -93,6 +98,7 @@ export const deStrings: CupThreadStrings = {
     replyButton: 'Antworten',
     replyingTo: (name: string) => `Antwort an @${name}`,
     cancelReply: 'Antwort abbrechen',
+    postFailed: 'Kommentar konnte nicht gesendet werden',
   },
   changelog: {
     overlayTitle: 'Neuigkeiten',
@@ -106,10 +112,18 @@ export const deStrings: CupThreadStrings = {
     emailPlaceholder: 'E-Mail-Adresse eingeben',
     subscribedSuccess: 'Erfolgreich abonniert!',
     unsubscribeButton: 'Abbestellen',
+    subscribeFailed: 'Abonnieren des Changelogs fehlgeschlagen.',
   },
   userProfile: {
     screenTitle: 'Benutzerprofil',
     activityTitle: 'Letzte Aktivitäten',
     noActivity: 'Keine aktuellen Aktivitäten',
+    loadFailed: 'Profil konnte nicht geladen werden',
+    notFound: 'Benutzer nicht gefunden',
+    anonymous: 'Anonymer Entwickler',
+    recentComments: 'Neueste Kommentare',
+    appsSection: (count: number) => `Apps (${count})`,
+    requestCount: (count: number) => `${count} öffentliche${count === 1 ? 'r' : ''} Feature-Request${count === 1 ? '' : 's'}`,
+    commentOn: (title: string) => `zu ${title}`,
   },
 };

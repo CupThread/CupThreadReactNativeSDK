@@ -14,6 +14,8 @@ export const enStrings: CupThreadStrings = {
     optional: 'optional',
     required: 'required',
     anonymous: 'Anonymous User',
+    invalidEmail: 'Please enter a valid email address.',
+    submitFailed: 'Failed to submit. Please try again.',
     justNow: 'Just now',
     minutesAgo: (m: number) => `${m}m ago`,
     hoursAgo: (h: number) => `${h}h ago`,
@@ -38,6 +40,8 @@ export const enStrings: CupThreadStrings = {
     uploadingAttachment: 'Uploading attachment...',
     removeAttachment: 'Remove',
     attachmentsHeader: 'Attachments',
+    uploadFailed: 'Failed to upload attachment.',
+    submitFailed: 'Failed to submit feedback. Please try again.',
   },
   featureRequests: {
     screenTitle: 'Feature Requests',
@@ -66,6 +70,7 @@ export const enStrings: CupThreadStrings = {
     moderationNotice: 'Your request has been submitted and will appear publicly after moderation.',
     titleMinLengthError: 'Please provide a title with at least 3 characters.',
     descriptionMinLengthError: 'Please provide description with at least 5 characters.',
+    submitFailed: 'Failed to submit feature proposal. Please try again.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -93,6 +98,7 @@ export const enStrings: CupThreadStrings = {
     replyButton: 'Reply',
     replyingTo: (name: string) => `Replying to @${name}`,
     cancelReply: 'Cancel',
+    postFailed: 'Failed to post comment',
   },
   changelog: {
     overlayTitle: "What's New",
@@ -106,10 +112,18 @@ export const enStrings: CupThreadStrings = {
     emailPlaceholder: 'Enter your email address',
     subscribedSuccess: 'Subscribed successfully!',
     unsubscribeButton: 'Unsubscribe',
+    subscribeFailed: 'Failed to subscribe to changelog.',
   },
   userProfile: {
     screenTitle: 'User Profile',
     activityTitle: 'Recent Activity',
     noActivity: 'No recent activity found',
+    loadFailed: 'Failed to load profile',
+    notFound: 'User not found',
+    anonymous: 'Anonymous Developer',
+    recentComments: 'Recent Comments',
+    appsSection: (count: number) => `Apps (${count})`,
+    requestCount: (count: number) => `${count} public feature request${count === 1 ? '' : 's'}`,
+    commentOn: (title: string) => `on ${title}`,
   },
 };

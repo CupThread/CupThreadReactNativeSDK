@@ -14,6 +14,8 @@ export const esStrings: CupThreadStrings = {
     optional: 'opcional',
     required: 'obligatorio',
     anonymous: 'Usuario anónimo',
+    invalidEmail: 'Por favor, introduce una dirección de correo electrónico válida.',
+    submitFailed: 'Error al enviar. Por favor, inténtalo de nuevo.',
     justNow: 'Ahora mismo',
     minutesAgo: (m: number) => `Hace ${m} min`,
     hoursAgo: (h: number) => `Hace ${h} h`,
@@ -38,6 +40,8 @@ export const esStrings: CupThreadStrings = {
     uploadingAttachment: 'Subiendo archivo adjunto...',
     removeAttachment: 'Eliminar',
     attachmentsHeader: 'Archivos adjuntos',
+    uploadFailed: 'Error al subir el archivo adjunto.',
+    submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
   },
   featureRequests: {
     screenTitle: 'Solicitudes de funciones',
@@ -66,6 +70,7 @@ export const esStrings: CupThreadStrings = {
     moderationNotice: 'Tu solicitud se ha enviado y aparecerá públicamente tras la moderación.',
     titleMinLengthError: 'Escribe un título de al menos 3 caracteres.',
     descriptionMinLengthError: 'Escribe una descripción de al menos 5 caracteres.',
+    submitFailed: 'Error al enviar la propuesta. Por favor, inténtalo de nuevo.',
   },
   roadmap: {
     screenTitle: 'Hoja de ruta',
@@ -93,6 +98,7 @@ export const esStrings: CupThreadStrings = {
     replyButton: 'Responder',
     replyingTo: (name: string) => `Respondiendo a @${name}`,
     cancelReply: 'Cancelar respuesta',
+    postFailed: 'Error al publicar el comentario',
   },
   changelog: {
     overlayTitle: 'Novedades',
@@ -106,10 +112,18 @@ export const esStrings: CupThreadStrings = {
     emailPlaceholder: 'Introduce tu correo electrónico',
     subscribedSuccess: '¡Suscripción completada!',
     unsubscribeButton: 'Cancelar suscripción',
+    subscribeFailed: 'Error al suscribirse al registro de cambios.',
   },
   userProfile: {
     screenTitle: 'Perfil de usuario',
     activityTitle: 'Actividad reciente',
     noActivity: 'No hay actividad reciente',
+    loadFailed: 'Error al cargar el perfil',
+    notFound: 'Usuario no encontrado',
+    anonymous: 'Desarrollador anónimo',
+    recentComments: 'Comentarios recientes',
+    appsSection: (count: number) => `Aplicaciones (${count})`,
+    requestCount: (count: number) => `${count} solicitud${count === 1 ? '' : 'es'} de función pública${count === 1 ? '' : 's'}`,
+    commentOn: (title: string) => `en ${title}`,
   },
 };

@@ -14,6 +14,8 @@ export const trStrings: CupThreadStrings = {
     optional: 'isteğe bağlı',
     required: 'gerekli',
     anonymous: 'Anonim kullanıcı',
+    invalidEmail: 'Lütfen geçerli bir e-posta adresi girin.',
+    submitFailed: 'Gönderim başarısız oldu. Lütfen tekrar deneyin.',
     justNow: 'Az önce',
     minutesAgo: (m: number) => `${m} dk önce`,
     hoursAgo: (h: number) => `${h} saat önce`,
@@ -38,6 +40,8 @@ export const trStrings: CupThreadStrings = {
     uploadingAttachment: 'Ek yükleniyor...',
     removeAttachment: 'Kaldır',
     attachmentsHeader: 'Ekler',
+    uploadFailed: 'Ek yüklenemedi.',
+    submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
   },
   featureRequests: {
     screenTitle: 'Özellik istekleri',
@@ -66,6 +70,7 @@ export const trStrings: CupThreadStrings = {
     moderationNotice: 'İsteğiniz gönderildi ve moderasyonun ardından herkese açık olacaktır.',
     titleMinLengthError: 'Lütfen en az 3 karakterlik bir başlık girin.',
     descriptionMinLengthError: 'Lütfen en az 5 karakterlik bir açıklama girin.',
+    submitFailed: 'Özellik önerisi gönderilemedi. Lütfen tekrar deneyin.',
   },
   roadmap: {
     screenTitle: 'Yol haritası',
@@ -93,6 +98,7 @@ export const trStrings: CupThreadStrings = {
     replyButton: 'Yanıtla',
     replyingTo: (name: string) => `@${name} kullanıcısına yanıt`,
     cancelReply: 'Yanıtı iptal et',
+    postFailed: 'Yorum paylaşılamadı',
   },
   changelog: {
     overlayTitle: 'Yenilikler',
@@ -106,10 +112,18 @@ export const trStrings: CupThreadStrings = {
     emailPlaceholder: 'E-posta adresinizi girin',
     subscribedSuccess: 'Başarıyla abone oldunuz!',
     unsubscribeButton: 'Abonelikten çık',
+    subscribeFailed: 'Değişiklik günlüğüne abone olunamadı.',
   },
   userProfile: {
     screenTitle: 'Kullanıcı profili',
     activityTitle: 'Son etkinlikler',
     noActivity: 'Son etkinlik bulunamadı',
+    loadFailed: 'Profil yüklenemedi',
+    notFound: 'Kullanıcı bulunamadı',
+    anonymous: 'Anonim Geliştirici',
+    recentComments: 'Son Yorumlar',
+    appsSection: (count: number) => `Uygulamalar (${count})`,
+    requestCount: (count: number) => `${count} herkese açık özellik önerisi`,
+    commentOn: (title: string) => `${title} üzerinde`,
   },
 };

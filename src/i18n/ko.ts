@@ -14,6 +14,8 @@ export const koStrings: CupThreadStrings = {
     optional: '선택 사항',
     required: '필수',
     anonymous: '익명 사용자',
+    invalidEmail: '유효한 이메일 주소를 입력해 주세요.',
+    submitFailed: '제출에 실패했습니다. 다시 시도해 주세요.',
     justNow: '방금',
     minutesAgo: (m: number) => `${m}분 전`,
     hoursAgo: (h: number) => `${h}시간 전`,
@@ -38,6 +40,8 @@ export const koStrings: CupThreadStrings = {
     uploadingAttachment: '첨부 파일 업로드 중...',
     removeAttachment: '삭제',
     attachmentsHeader: '첨부 파일',
+    uploadFailed: '첨부 파일 업로드에 실패했습니다.',
+    submitFailed: '피드백 제출에 실패했습니다. 다시 시도해 주세요.',
   },
   featureRequests: {
     screenTitle: '기능 요청',
@@ -66,6 +70,7 @@ export const koStrings: CupThreadStrings = {
     moderationNotice: '요청이 제출되었으며 검토 후 공개됩니다.',
     titleMinLengthError: '제목은 3자 이상 입력해 주세요.',
     descriptionMinLengthError: '설명은 5자 이상 입력해 주세요.',
+    submitFailed: '기능 제안 제출에 실패했습니다. 다시 시도해 주세요.',
   },
   roadmap: {
     screenTitle: '로드맵',
@@ -93,6 +98,7 @@ export const koStrings: CupThreadStrings = {
     replyButton: '답글',
     replyingTo: (name: string) => `@${name}님에게 답글`,
     cancelReply: '답글 취소',
+    postFailed: '댓글 게시에 실패했습니다',
   },
   changelog: {
     overlayTitle: '새로운 소식',
@@ -106,10 +112,18 @@ export const koStrings: CupThreadStrings = {
     emailPlaceholder: '이메일 주소 입력',
     subscribedSuccess: '성공적으로 구독했습니다!',
     unsubscribeButton: '구독 취소',
+    subscribeFailed: '변경 로그 구독에 실패했습니다.',
   },
   userProfile: {
     screenTitle: '사용자 프로필',
     activityTitle: '최근 활동',
     noActivity: '최근 활동이 없습니다',
+    loadFailed: '프로필을 불러오지 못했습니다',
+    notFound: '사용자를 찾을 수 없습니다',
+    anonymous: '익명 개발자',
+    recentComments: '최근 댓글',
+    appsSection: (count: number) => `앱 (${count})`,
+    requestCount: (count: number) => `${count}개의 공개 기능 제안`,
+    commentOn: (title: string) => `${title}에 남긴 댓글`,
   },
 };
