@@ -20,25 +20,35 @@ const args = process.argv.slice(2);
 let version = null;
 let dryRun = false;
 let noPush = false;
+let allowDirty = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--version') version = args[++i];
   if (args[i] === '--dry-run') dryRun = true;
   if (args[i] === '--no-push') noPush = true;
+  if (args[i] === '--allow-dirty') allowDirty = true;
 }
 
 if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error('Usage: node scripts/release.mjs --version <semver> [--dry-run] [--no-push]');
+  console.error('Usage: node scripts/release.mjs --version <semver> [--dry-run] [--no-push] [--allow-dirty]');
   process.exit(1);
 }
 
 console.log(`\n⚛️ Preparing release for @cupthread/react-native v${version}${dryRun ? ' [DRY RUN]' : ''}`);
 
-// Verify working directory is clean if not dry run
+// Refuse to release from a dirty working tree unless explicitly overridden,
+// so uncommitted changes cannot leak into the release commit/tag
 if (!dryRun) {
   const statusRes = spawnSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' });
-  if (statusRes.stdout && statusRes.stdout.trim().length > 0) {
-    console.warn('⚠️ Warning: Git working directory has uncommitted changes.');
+  const dirtyLines = statusRes.stdout ? statusRes.stdout.trim().split('\n').filter(Boolean) : [];
+  if (dirtyLines.length > 0) {
+    if (!allowDirty) {
+      console.error('❌ Git working directory has uncommitted changes:');
+      for (const line of dirtyLines) console.error(`   ${line}`);
+      console.error('   Commit or stash them first, or pass --allow-dirty to proceed anyway.');
+      process.exit(1);
+    }
+    console.warn(`⚠️ Warning: proceeding with ${dirtyLines.length} uncommitted change(s) (--allow-dirty).`);
   }
 }
 

@@ -18,6 +18,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match package.json version $PKG_VERSION. Retag the correct commit."
+            exit 1
+          fi
+          echo "Tag v$TAG_VERSION matches package.json version $PKG_VERSION"
+
+      - name: Verify NPM_TOKEN is configured
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured. Refusing to continue: a release must not be tagged without publishing to npm."
+            exit 1
+          fi
+          echo "NPM_TOKEN is configured"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -37,6 +57,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -45,9 +70,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to npm
-        if: env.NODE_AUTH_TOKEN != ''
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
