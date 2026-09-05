@@ -14,8 +14,10 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js",
       "default": "./dist/esm/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
+  "sideEffects": false,
   "files": [
     "dist",
     "src",
@@ -23,6 +25,8 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepare": "npm run build",
+    "prepack": "npm run build",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npx tsx --test test/*.test.ts",

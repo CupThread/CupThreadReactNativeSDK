@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { rmSync, writeFileSync, readdirSync, statSync, readFileSync } from 'node:fs';
+import { rmSync, writeFileSync, readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,14 +15,24 @@ function run(cmd, args) {
   }
 }
 
+const localTsc = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
+
+function runTsc(configPath) {
+  if (existsSync(localTsc)) {
+    run(process.execPath, [localTsc, '-p', configPath]);
+  } else {
+    run('npx', ['tsc', '-p', configPath]);
+  }
+}
+
 console.log('📦 Cleaning dist/...');
 rmSync(path.join(ROOT, 'dist'), { recursive: true, force: true });
 
 console.log('🔨 Compiling ESM and TypeScript declarations...');
-run('npx', ['tsc', '-p', 'tsconfig.build.esm.json']);
+runTsc('tsconfig.build.esm.json');
 
 console.log('🔨 Compiling CommonJS modules...');
-run('npx', ['tsc', '-p', 'tsconfig.build.cjs.json']);
+runTsc('tsconfig.build.cjs.json');
 
 console.log('📝 Emitting package markers...');
 writeFileSync(
