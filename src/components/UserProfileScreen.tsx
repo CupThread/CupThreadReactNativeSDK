@@ -17,6 +17,7 @@ import {
 import type { PublicUserProfileResult } from '../types';
 import { Avatar } from './Avatar';
 import { formatDate } from '../utils/formatters';
+import { isSafeLinkUrl, openSafeLinkUrl, sanitizeSafeLinkUrl } from '../utils/linkUrl';
 
 export interface UserProfileScreenProps {
   userId: string;
@@ -102,13 +103,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               </Text>
             ) : null}
             {data.profile.websiteUrl ? (
-              <TouchableOpacity
-                onPress={() => Linking.openURL(data.profile.websiteUrl!).catch(() => {})}
-              >
-                <Text style={[styles.website, { color: colors.primary }]}>
-                  {data.profile.websiteUrl}
-                </Text>
-              </TouchableOpacity>
+              <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl} />
             ) : null}
           </View>
 
@@ -188,6 +183,44 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   );
 }
 
+/**
+ * Renders a profile website link behind the same http(s) scheme allowlist used
+ * for markdown links ({@link sanitizeSafeLinkUrl}), so a remote profile cannot
+ * trigger dialer, SMS, intent, or custom deep-link schemes on tap.
+ *
+ * Safe URLs open once through {@link openSafeLinkUrl}; unsafe URLs fall back to
+ * inert text with no press handler and no link styling.
+ */
+function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
+  const { colors } = useCupThreadTheme();
+  const isPressable = isSafeLinkUrl(websiteUrl);
+
+  if (!isPressable) {
+    return (
+      <Text
+        selectable
+        style={[styles.website, styles.websiteInert, { color: colors.textSecondary }]}
+      >
+        {websiteUrl}
+      </Text>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        openSafeLinkUrl(websiteUrl, (safeUrl) => {
+          Linking.openURL(safeUrl).catch(() => {});
+        });
+      }}
+    >
+      <Text style={[styles.website, { color: colors.primary }]}>
+        {sanitizeSafeLinkUrl(websiteUrl)}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -241,6 +274,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 4,
     textDecorationLine: 'underline',
+  },
+  websiteInert: {
+    textDecorationLine: 'none',
   },
   section: {
     marginBottom: 20,
