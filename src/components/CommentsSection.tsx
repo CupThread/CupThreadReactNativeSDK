@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import {
 import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeatureRequestComment, CommentDraft } from '../types';
 import { Avatar } from './Avatar';
+import { ErrorState } from './ErrorState';
+import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 import { MarkdownText } from './MarkdownText';
 
@@ -57,36 +59,24 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
-  const [comments, setComments] = useState<FeatureRequestComment[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const fetchComments = useCallback(
+    (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
+    [client, featureRequestId]
+  );
+  const {
+    data: commentsData,
+    isLoading: isLoadingComments,
+    error: loadError,
+    reload: reloadComments,
+    setData: setCommentsData,
+  } = useAsyncData(fetchComments);
+  const comments: FeatureRequestComment[] = commentsData ?? [];
+
   const [commentText, setCommentText] = useState<string>('');
   const [authorName, setAuthorName] = useState<string>('');
   const [replyTo, setReplyTo] = useState<FeatureRequestComment | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const loadComments = async () => {
-      try {
-        setIsLoading(true);
-        const list = await client.fetchComments(featureRequestId, { signal: controller.signal });
-        if (controller.signal.aborted) return;
-        setComments(list);
-      } catch (err: any) {
-        if (err?.name === 'AbortError' || controller.signal.aborted) return;
-        // ignore
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
-    };
-    loadComments();
-    return () => {
-      controller.abort();
-    };
-  }, [client, featureRequestId]);
 
   const handlePostComment = async () => {
     if (commentText.trim().length === 0 || !isTokenReady) return;
@@ -105,7 +95,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
       };
 
       const newComment = await client.postComment(featureRequestId, draft, effectiveToken);
-      setComments((prev) => [...prev, newComment]);
+      setCommentsData((prev) => [...(prev ?? []), newComment]);
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
@@ -123,8 +113,17 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
         {strings.comments.commentsCount(activeComments.length)}
       </Text>
 
-      {isLoading ? (
+      {isLoadingComments ? (
         <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+      ) : activeComments.length === 0 && loadError ? (
+        <ErrorState
+          compact
+          message={strings.common.error}
+          retryLabel={strings.common.retry}
+          onRetry={() => {
+            reloadComments();
+          }}
+        />
       ) : activeComments.length === 0 ? (
         <Text style={[styles.emptyText, { color: colors.textMuted }]}>
           {strings.comments.emptyComments}
