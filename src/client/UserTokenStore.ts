@@ -229,7 +229,9 @@ export class UserTokenStore {
       if (this.storage && !this.isAsyncStorage) {
         try {
           this.storage.setItem(STORAGE_KEY, fresh);
-        } catch {}
+        } catch {
+          // Sync persistence is best-effort; the in-memory token stays valid.
+        }
       }
     }
     return this.cachedToken;

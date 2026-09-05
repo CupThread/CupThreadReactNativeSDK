@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,7 @@ import { Badge } from './Badge';
 import { Avatar } from './Avatar';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
-import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 
 /**
@@ -103,7 +103,6 @@ export function FeatureRequestsScreen({
     loadMore,
     refresh,
     reload,
-    setItems,
     applyItemChange,
   } = useFeatureRequests({
     client,

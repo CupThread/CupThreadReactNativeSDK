@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -69,6 +69,11 @@ export function ChangelogOverlay({
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // The dismiss callback is read through a ref so parent-supplied inline
+  // closures don't re-trigger the changelog fetch on every render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!visible) return;
 
@@ -82,7 +87,7 @@ export function ChangelogOverlay({
         if (!isMounted || controller.signal.aborted) return;
         if (!res) {
           if (onlyIfUnseen) {
-            onClose();
+            onCloseRef.current();
           }
           return;
         }

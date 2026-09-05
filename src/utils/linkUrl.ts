@@ -38,12 +38,13 @@ export function isSafeLinkUrl(
   if (!url || typeof url !== 'string') return false;
 
   // Reject control characters outright to prevent parser differentials or smuggling
+  // eslint-disable-next-line no-control-regex -- detecting control characters is the purpose of this check
   if (/[\u0000-\u001f\u007f]/.test(url)) return false;
 
   const trimmed = url.trim();
   if (!trimmed) return false;
 
-  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/.exec(trimmed);
+  const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
   if (!schemeMatch) return false;
 
   const scheme = `${schemeMatch[1]}:`.toLowerCase();
