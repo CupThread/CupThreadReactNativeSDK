@@ -172,7 +172,13 @@ export function FeatureRequestsScreen({
       {item.recentCommenters && item.recentCommenters.length > 0 && (
         <View style={styles.commentersStack}>
           {item.recentCommenters.slice(0, 3).map((commenter, idx) => (
-            <View key={idx} style={[styles.avatarOverlap, { marginLeft: idx > 0 ? -8 : 0 }]}>
+            <View
+              key={idx}
+              style={[
+                styles.avatarOverlap,
+                { marginLeft: idx > 0 ? -8 : 0, borderColor: colors.card },
+              ]}
+            >
               <Avatar url={commenter.avatarUrl} name={commenter.authorName} size={20} />
             </View>
           ))}
@@ -439,7 +445,6 @@ const styles = StyleSheet.create({
   },
   avatarOverlap: {
     borderWidth: 1.5,
-    borderColor: '#ffffff',
     borderRadius: 10,
   },
   moreCommenters: {

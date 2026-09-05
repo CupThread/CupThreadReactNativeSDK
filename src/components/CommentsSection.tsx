@@ -199,7 +199,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
           </View>
         )}
 
-        {error && <Text style={styles.inputError}>{error}</Text>}
+        {error && <Text style={[styles.inputError, { color: colors.danger }]}>{error}</Text>}
 
         <TextInput
           style={[
@@ -325,7 +325,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   inputError: {
-    color: '#b91c1c',
     fontSize: 12,
     marginBottom: 6,
   },
