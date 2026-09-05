@@ -14,6 +14,7 @@ export const itStrings: CupThreadStrings = {
     optional: 'facoltativo',
     required: 'obbligatorio',
     anonymous: 'Utente anonimo',
+    invalidEmail: 'Inserisci un indirizzo e-mail valido.',
     justNow: 'Proprio ora',
     minutesAgo: (m: number) => `${m} min fa`,
     hoursAgo: (h: number) => h === 1 ? '1 ora fa' : `${h} ore fa`,
@@ -38,6 +39,8 @@ export const itStrings: CupThreadStrings = {
     uploadingAttachment: 'Caricamento allegato...',
     removeAttachment: 'Rimuovi',
     attachmentsHeader: 'Allegati',
+    uploadFailed: "Caricamento dell'allegato non riuscito.",
+    submitFailed: 'Impossibile inviare il feedback. Riprova.',
   },
   featureRequests: {
     screenTitle: 'Richieste di funzionalità',
@@ -66,6 +69,7 @@ export const itStrings: CupThreadStrings = {
     moderationNotice: 'La richiesta è stata inviata e sarà pubblicata dopo la moderazione.',
     titleMinLengthError: 'Inserisci un titolo di almeno 3 caratteri.',
     descriptionMinLengthError: 'Inserisci una descrizione di almeno 5 caratteri.',
+    submitFailed: 'Impossibile inviare la proposta. Riprova.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -93,6 +97,7 @@ export const itStrings: CupThreadStrings = {
     replyButton: 'Rispondi',
     replyingTo: (name: string) => `Risposta a @${name}`,
     cancelReply: 'Annulla risposta',
+    postFailed: 'Impossibile pubblicare il commento',
   },
   changelog: {
     overlayTitle: 'Novità',
@@ -106,10 +111,18 @@ export const itStrings: CupThreadStrings = {
     emailPlaceholder: 'Inserisci il tuo indirizzo e-mail',
     subscribedSuccess: 'Iscrizione completata!',
     unsubscribeButton: 'Annulla iscrizione',
+    subscribeFailed: 'Impossibile iscriversi al registro delle modifiche.',
   },
   userProfile: {
     screenTitle: 'Profilo utente',
     activityTitle: 'Attività recente',
     noActivity: 'Nessuna attività recente',
+    loadFailed: 'Impossibile caricare il profilo',
+    notFound: 'Utente non trovato',
+    anonymous: 'Sviluppatore anonimo',
+    recentComments: 'Commenti recenti',
+    appsSection: (count: number) => `App (${count})`,
+    requestCount: (count: number) => `${count} richiest${count === 1 ? 'a' : 'e'} di funzionalità pubblic${count === 1 ? 'a' : 'he'}`,
+    commentOn: (title: string) => `su ${title}`,
   },
 };

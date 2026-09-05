@@ -14,6 +14,7 @@ export interface CommonStrings {
   optional: string;
   required: string;
   anonymous: string;
+  invalidEmail: string;
   justNow: string;
   minutesAgo: (m: number) => string;
   hoursAgo: (h: number) => string;
@@ -42,6 +43,8 @@ export interface FeedbackComposerStrings {
   uploadingAttachment: string;
   removeAttachment: string;
   attachmentsHeader: string;
+  uploadFailed: string;
+  submitFailed: string;
 }
 
 /**
@@ -78,6 +81,7 @@ export interface FeatureRequestComposeStrings {
   moderationNotice: string;
   titleMinLengthError: string;
   descriptionMinLengthError: string;
+  submitFailed: string;
 }
 
 /**
@@ -117,6 +121,7 @@ export interface CommentsStrings {
   replyButton: string;
   replyingTo: (name: string) => string;
   cancelReply: string;
+  postFailed: string;
 }
 
 /**
@@ -134,6 +139,7 @@ export interface ChangelogStrings {
   emailPlaceholder: string;
   subscribedSuccess: string;
   unsubscribeButton: string;
+  subscribeFailed: string;
 }
 
 /**
@@ -143,6 +149,13 @@ export interface UserProfileStrings {
   screenTitle: string;
   activityTitle: string;
   noActivity: string;
+  loadFailed: string;
+  notFound: string;
+  anonymous: string;
+  recentComments: string;
+  appsSection: (count: number) => string;
+  requestCount: (count: number) => string;
+  commentOn: (title: string) => string;
 }
 
 /**

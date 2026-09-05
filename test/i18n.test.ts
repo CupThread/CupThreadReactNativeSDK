@@ -174,3 +174,151 @@ test('i18n grammatical gender agreement and UI polish', () => {
   assert.equal(jaStrings.changelog.continueButton, '次へ');
   assert.equal(koStrings.featureRequests.upvoted, '추천됨');
 });
+
+test('i18n userProfile strings are localized across locales', () => {
+  assert.equal(enStrings.userProfile.screenTitle, 'User Profile');
+  assert.equal(enStrings.userProfile.notFound, 'User not found');
+  assert.equal(enStrings.userProfile.anonymous, 'Anonymous Developer');
+  assert.equal(enStrings.userProfile.recentComments, 'Recent Comments');
+  assert.equal(enStrings.userProfile.loadFailed, 'Failed to load profile');
+  assert.equal(enStrings.userProfile.appsSection(3), 'Apps (3)');
+  assert.equal(enStrings.userProfile.requestCount(1), '1 public feature request');
+  assert.equal(enStrings.userProfile.requestCount(3), '3 public feature requests');
+  assert.equal(enStrings.userProfile.commentOn('Dark Mode'), 'on Dark Mode');
+
+  assert.equal(zhHansStrings.userProfile.notFound, '用户不存在');
+  assert.equal(zhHansStrings.userProfile.anonymous, '匿名开发者');
+  assert.equal(zhHansStrings.userProfile.recentComments, '最近评论');
+  assert.equal(zhHansStrings.userProfile.loadFailed, '加载个人主页失败');
+  assert.equal(zhHansStrings.userProfile.appsSection(2), '应用 (2)');
+  assert.equal(zhHansStrings.userProfile.requestCount(5), '5 个公开需求提案');
+  assert.equal(zhHansStrings.userProfile.commentOn('深色模式'), '评论于 深色模式');
+
+  assert.equal(zhHantStrings.userProfile.notFound, '找不到使用者');
+  assert.equal(zhHantStrings.userProfile.anonymous, '匿名開發者');
+  assert.equal(zhHantStrings.userProfile.recentComments, '最近留言');
+  assert.equal(zhHantStrings.userProfile.appsSection(2), '應用程式 (2)');
+  assert.equal(zhHantStrings.userProfile.commentOn('深色模式'), '留言於 深色模式');
+
+  assert.equal(jaStrings.userProfile.notFound, 'ユーザーが見つかりません');
+  assert.equal(jaStrings.userProfile.anonymous, '匿名の開発者');
+  assert.equal(jaStrings.userProfile.recentComments, '最近のコメント');
+  assert.equal(jaStrings.userProfile.loadFailed, 'プロフィールの読み込みに失敗しました');
+  assert.equal(jaStrings.userProfile.appsSection(1), 'アプリ（1）');
+  assert.equal(jaStrings.userProfile.requestCount(4), '4件の公開機能リクエスト');
+  assert.equal(jaStrings.userProfile.commentOn('ダークモード'), '「ダークモード」へのコメント');
+
+  assert.equal(deStrings.userProfile.notFound, 'Benutzer nicht gefunden');
+  assert.equal(deStrings.userProfile.anonymous, 'Anonymer Entwickler');
+  assert.equal(deStrings.userProfile.appsSection(2), 'Apps (2)');
+  assert.equal(deStrings.userProfile.requestCount(1), '1 öffentlicher Feature-Request');
+  assert.equal(deStrings.userProfile.requestCount(2), '2 öffentliche Feature-Requests');
+  assert.equal(deStrings.userProfile.commentOn('Dark Mode'), 'zu Dark Mode');
+
+  assert.equal(frStrings.userProfile.notFound, 'Utilisateur introuvable');
+  assert.equal(frStrings.userProfile.anonymous, 'Développeur anonyme');
+  assert.equal(frStrings.userProfile.appsSection(3), 'Applications (3)');
+  assert.equal(frStrings.userProfile.requestCount(1), '1 suggestion publique');
+  assert.equal(frStrings.userProfile.requestCount(2), '2 suggestions publiques');
+  assert.equal(frStrings.userProfile.commentOn('Mode sombre'), 'sur Mode sombre');
+
+  assert.equal(esStrings.userProfile.notFound, 'Usuario no encontrado');
+  assert.equal(esStrings.userProfile.anonymous, 'Desarrollador anónimo');
+  assert.equal(esStrings.userProfile.appsSection(1), 'Aplicaciones (1)');
+  assert.equal(esStrings.userProfile.requestCount(1), '1 solicitud de función pública');
+  assert.equal(esStrings.userProfile.requestCount(3), '3 solicitudes de función públicas');
+  assert.equal(esStrings.userProfile.commentOn('Modo oscuro'), 'en Modo oscuro');
+
+  assert.equal(itStrings.userProfile.notFound, 'Utente non trovato');
+  assert.equal(itStrings.userProfile.anonymous, 'Sviluppatore anonimo');
+  assert.equal(itStrings.userProfile.appsSection(1), 'App (1)');
+  assert.equal(itStrings.userProfile.requestCount(1), '1 richiesta di funzionalità pubblica');
+  assert.equal(itStrings.userProfile.requestCount(2), '2 richieste di funzionalità pubbliche');
+  assert.equal(itStrings.userProfile.commentOn('Tema scuro'), 'su Tema scuro');
+
+  assert.equal(ptStrings.userProfile.notFound, 'Usuário não encontrado');
+  assert.equal(ptStrings.userProfile.anonymous, 'Desenvolvedor anônimo');
+  assert.equal(ptStrings.userProfile.appsSection(2), 'Aplicativos (2)');
+  assert.equal(ptStrings.userProfile.requestCount(1), '1 solicitação de recurso pública');
+  assert.equal(ptStrings.userProfile.requestCount(2), '2 solicitações de recurso públicas');
+  assert.equal(ptStrings.userProfile.commentOn('Modo escuro'), 'em Modo escuro');
+
+  assert.equal(noStrings.userProfile.notFound, 'Bruker ikke funnet');
+  assert.equal(noStrings.userProfile.anonymous, 'Anonym utvikler');
+  assert.equal(noStrings.userProfile.appsSection(1), 'Apper (1)');
+  assert.equal(noStrings.userProfile.requestCount(1), '1 offentlig funksjonsforslag');
+  assert.equal(noStrings.userProfile.requestCount(2), '2 offentlige funksjonsforslag');
+  assert.equal(noStrings.userProfile.commentOn('Mørk modus'), 'på Mørk modus');
+
+  assert.equal(plStrings.userProfile.notFound, 'Nie znaleziono użytkownika');
+  assert.equal(plStrings.userProfile.anonymous, 'Anonimowy programista');
+  assert.equal(plStrings.userProfile.appsSection(3), 'Aplikacje (3)');
+  assert.equal(plStrings.userProfile.requestCount(1), '1 publiczna propozycja funkcji');
+  assert.equal(plStrings.userProfile.requestCount(2), '2 publiczne propozycje funkcji');
+  assert.equal(plStrings.userProfile.requestCount(5), '5 publicznych propozycji funkcji');
+  assert.equal(plStrings.userProfile.commentOn('Tryb ciemny'), 'w Tryb ciemny');
+
+  assert.equal(koStrings.userProfile.notFound, '사용자를 찾을 수 없습니다');
+  assert.equal(koStrings.userProfile.anonymous, '익명 개발자');
+  assert.equal(koStrings.userProfile.appsSection(2), '앱 (2)');
+  assert.equal(koStrings.userProfile.requestCount(3), '3개의 공개 기능 제안');
+  assert.equal(koStrings.userProfile.commentOn('다크 모드'), '다크 모드에 남긴 댓글');
+
+  assert.equal(trStrings.userProfile.notFound, 'Kullanıcı bulunamadı');
+  assert.equal(trStrings.userProfile.anonymous, 'Anonim Geliştirici');
+  assert.equal(trStrings.userProfile.appsSection(2), 'Uygulamalar (2)');
+  assert.equal(trStrings.userProfile.requestCount(3), '3 herkese açık özellik önerisi');
+  assert.equal(trStrings.userProfile.commentOn('Karanlık mod'), 'Karanlık mod üzerinde');
+
+  assert.equal(viStrings.userProfile.notFound, 'Không tìm thấy người dùng');
+  assert.equal(viStrings.userProfile.anonymous, 'Nhà phát triển ẩn danh');
+  assert.equal(viStrings.userProfile.appsSection(2), 'Ứng dụng (2)');
+  assert.equal(viStrings.userProfile.requestCount(3), '3 đề xuất tính năng công khai');
+  assert.equal(viStrings.userProfile.commentOn('Chế độ tối'), 'trong Chế độ tối');
+});
+
+test('i18n all 14 locales define all newly added error and validation keys', () => {
+  const allLocales = [
+    deStrings,
+    enStrings,
+    esStrings,
+    frStrings,
+    itStrings,
+    jaStrings,
+    koStrings,
+    noStrings,
+    plStrings,
+    ptStrings,
+    trStrings,
+    viStrings,
+    zhHantStrings,
+    zhHansStrings,
+  ];
+
+  for (const loc of allLocales) {
+    // common
+    assert.ok(typeof loc.common.invalidEmail === 'string' && loc.common.invalidEmail.length > 0);
+
+    // feedbackComposer
+    assert.ok(typeof loc.feedbackComposer.uploadFailed === 'string' && loc.feedbackComposer.uploadFailed.length > 0);
+    assert.ok(typeof loc.feedbackComposer.submitFailed === 'string' && loc.feedbackComposer.submitFailed.length > 0);
+
+    // featureRequestCompose
+    assert.ok(typeof loc.featureRequestCompose.submitFailed === 'string' && loc.featureRequestCompose.submitFailed.length > 0);
+
+    // comments
+    assert.ok(typeof loc.comments.postFailed === 'string' && loc.comments.postFailed.length > 0);
+
+    // changelog
+    assert.ok(typeof loc.changelog.subscribeFailed === 'string' && loc.changelog.subscribeFailed.length > 0);
+
+    // userProfile
+    assert.ok(typeof loc.userProfile.loadFailed === 'string' && loc.userProfile.loadFailed.length > 0);
+    assert.ok(typeof loc.userProfile.notFound === 'string' && loc.userProfile.notFound.length > 0);
+    assert.ok(typeof loc.userProfile.anonymous === 'string' && loc.userProfile.anonymous.length > 0);
+    assert.ok(typeof loc.userProfile.recentComments === 'string' && loc.userProfile.recentComments.length > 0);
+    assert.ok(typeof loc.userProfile.appsSection(2) === 'string' && loc.userProfile.appsSection(2).length > 0);
+    assert.ok(typeof loc.userProfile.requestCount(3) === 'string' && loc.userProfile.requestCount(3).length > 0);
+    assert.ok(typeof loc.userProfile.commentOn('Feature') === 'string' && loc.userProfile.commentOn('Feature').length > 0);
+  }
+});

@@ -14,6 +14,7 @@ export const noStrings: CupThreadStrings = {
     optional: 'valgfritt',
     required: 'påkrevd',
     anonymous: 'Anonym bruker',
+    invalidEmail: 'Vennligst skriv inn en gyldig e-postadresse.',
     justNow: 'Akkurat nå',
     minutesAgo: (m: number) => `${m} min siden`,
     hoursAgo: (h: number) => `${h} t siden`,
@@ -38,6 +39,8 @@ export const noStrings: CupThreadStrings = {
     uploadingAttachment: 'Laster opp vedlegg...',
     removeAttachment: 'Fjern',
     attachmentsHeader: 'Vedlegg',
+    uploadFailed: 'Kunne ikke laste opp vedlegg.',
+    submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
   },
   featureRequests: {
     screenTitle: 'Funksjonsforespørsler',
@@ -66,6 +69,7 @@ export const noStrings: CupThreadStrings = {
     moderationNotice: 'Forespørselen er sendt inn og blir offentlig etter moderering.',
     titleMinLengthError: 'Skriv inn en tittel på minst 3 tegn.',
     descriptionMinLengthError: 'Skriv inn en beskrivelse på minst 5 tegn.',
+    submitFailed: 'Kunne ikke sende funksjonsforslag. Vennligst prøv igjen.',
   },
   roadmap: {
     screenTitle: 'Veikart',
@@ -93,6 +97,7 @@ export const noStrings: CupThreadStrings = {
     replyButton: 'Svar',
     replyingTo: (name: string) => `Svarer @${name}`,
     cancelReply: 'Avbryt svar',
+    postFailed: 'Kunne ikke publisere kommentar',
   },
   changelog: {
     overlayTitle: 'Hva er nytt',
@@ -106,10 +111,18 @@ export const noStrings: CupThreadStrings = {
     emailPlaceholder: 'Skriv inn e-postadressen din',
     subscribedSuccess: 'Abonnementet er aktivert!',
     unsubscribeButton: 'Avslutt abonnement',
+    subscribeFailed: 'Kunne ikke abonnere på endringsloggen.',
   },
   userProfile: {
     screenTitle: 'Brukerprofil',
     activityTitle: 'Nylig aktivitet',
     noActivity: 'Ingen nylig aktivitet',
+    loadFailed: 'Kunne ikke laste profilen',
+    notFound: 'Bruker ikke funnet',
+    anonymous: 'Anonym utvikler',
+    recentComments: 'Nylige kommentarer',
+    appsSection: (count: number) => `Apper (${count})`,
+    requestCount: (count: number) => `${count} offentlig${count === 1 ? '' : 'e'} funksjonsforslag`,
+    commentOn: (title: string) => `på ${title}`,
   },
 };
