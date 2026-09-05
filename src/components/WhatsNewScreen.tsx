@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import {
 import type { ChangelogEntry } from '../types';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
+import { ErrorState } from './ErrorState';
+import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 
 export interface WhatsNewScreenProps {
@@ -37,41 +39,23 @@ export function WhatsNewScreen({
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
-  const [entries, setEntries] = useState<ChangelogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const fetchChangelog = useCallback(
+    (signal: AbortSignal) => client.fetchChangelog({ signal }),
+    [client]
+  );
+  const {
+    data: changelogData,
+    isLoading,
+    isRefreshing,
+    error: loadError,
+    reload,
+    refresh,
+  } = useAsyncData(fetchChangelog);
+  const entries: ChangelogEntry[] = changelogData ?? [];
+
   const [email, setEmail] = useState<string>('');
   const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
   const [isSubscribed, setIsSubscribed] = useState<boolean>(false);
-
-  const loadData = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const list = await client.fetchChangelog({ signal });
-      if (signal?.aborted) return;
-      setEntries(list || []);
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      // Non-fatal
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    }
-  }, [client]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadData(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [loadData]);
-
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    loadData();
-  };
 
   const handleSubscribe = async () => {
     if (!email.trim() || !email.includes('@')) {
@@ -165,6 +149,14 @@ export function WhatsNewScreen({
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      ) : entries.length === 0 && loadError ? (
+        <ErrorState
+          message={strings.common.error}
+          retryLabel={strings.common.retry}
+          onRetry={() => {
+            reload();
+          }}
+        />
       ) : (
         <FlatList
           data={entries}
@@ -174,7 +166,7 @@ export function WhatsNewScreen({
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={handleRefresh}
+              onRefresh={refresh}
               tintColor={colors.primary}
             />
           }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { isSafeLinkUrl, sanitizeSafeLinkUrl } from '../src/utils/linkUrl';
+import { isSafeLinkUrl, openSafeLinkUrl, sanitizeSafeLinkUrl } from '../src/utils/linkUrl';
 import { formatDate } from '../src/utils/formatters';
 import {
   useToggleVote,
@@ -522,4 +522,49 @@ test('UserTokenStore: persisted token wins even if the sync getter was read duri
   assert.equal(store.token, EXISTING_TOKEN);
   // The throwaway UUID must never have been persisted.
   assert.equal(mem['cupthread_user_token_v1'], EXISTING_TOKEN);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #24 — UserProfileScreen websiteUrl scheme allowlist
+// ---------------------------------------------------------------------------
+
+test('openSafeLinkUrl opens a safe profile website exactly once with the trimmed URL', () => {
+  const opened: string[] = [];
+  const opener = (safeUrl: string) => {
+    opened.push(safeUrl);
+  };
+
+  assert.equal(openSafeLinkUrl('https://example.com', opener), true);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0], 'https://example.com');
+
+  // Whitespace and scheme casing are normalized before reaching the opener.
+  assert.equal(openSafeLinkUrl('  HTTPS://Example.com/page ', opener), true);
+  assert.equal(opened.length, 2);
+  assert.equal(opened[1], 'HTTPS://Example.com/page');
+});
+
+test('openSafeLinkUrl never opens phone, SMS, intent, or custom deep-link schemes', () => {
+  let openCalls = 0;
+  const opener = () => {
+    openCalls += 1;
+  };
+
+  const unsafeUrls = [
+    'tel:+18005550199',
+    'sms:+18005550199',
+    'facetime:+18005550199',
+    'intent://share#Intent;end',
+    'myapp://deep/link',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'file:///etc/passwd',
+    '  tel:+18005550199  ',
+  ];
+
+  for (const url of unsafeUrls) {
+    assert.equal(openSafeLinkUrl(url, opener), false, `expected ${url} to be rejected`);
+  }
+
+  assert.equal(openCalls, 0, 'opener must never be called for unsafe schemes');
 });

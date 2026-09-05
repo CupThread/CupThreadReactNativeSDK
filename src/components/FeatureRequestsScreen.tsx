@@ -25,6 +25,7 @@ import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
 import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
+import { ErrorState } from './ErrorState';
 
 /**
  * Props for configuring the {@link FeatureRequestsScreen} view.
@@ -100,6 +101,7 @@ export function FeatureRequestsScreen({
     isLoading,
     isRefreshing,
     isLoadingMore,
+    error: loadError,
     loadMore,
     refresh,
     reload,
@@ -273,6 +275,14 @@ export function FeatureRequestsScreen({
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      ) : items.length === 0 && loadError ? (
+        <ErrorState
+          message={strings.common.error}
+          retryLabel={strings.common.retry}
+          onRetry={() => {
+            reload();
+          }}
+        />
       ) : items.length === 0 ? (
         <View style={styles.centerEmpty}>
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
