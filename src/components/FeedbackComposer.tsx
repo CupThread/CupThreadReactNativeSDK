@@ -153,7 +153,10 @@ export function FeedbackComposer({
         if ('url' in item && 'key' in item) {
           newlyAdded.push(item as FeedbackAttachment);
         } else if ('file' in item && 'filename' in item) {
-          const uploaded = await client.uploadAttachment(item as UploadAttachmentOptions);
+          const uploaded = await client.uploadAttachment({
+            ...(item as UploadAttachmentOptions),
+            userToken,
+          });
           newlyAdded.push(uploaded);
         }
       }

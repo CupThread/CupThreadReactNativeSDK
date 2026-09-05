@@ -263,6 +263,13 @@ export interface UploadAttachmentOptions {
    * Optional request timeout override in milliseconds for this upload.
    */
   timeoutMs?: number;
+
+  /**
+   * Optional persistent user token sent as the `X-User-Token` header so the
+   * upload can be attributed to the uploading user, matching every other
+   * authenticated API call.
+   */
+  userToken?: string;
 }
 
 /**
@@ -409,8 +416,9 @@ export class FeedbackClient {
   /**
    * Uploads a file, image, or log attachment to CupThread storage.
    *
-   * @param options - Attachment file payload, filename, and MIME type options.
+   * @param options - Attachment file payload, filename, MIME type, and optional user token options.
    * @returns The uploaded attachment descriptor ready to attach to {@link FeedbackDraft.attachments}.
+   * @throws {@link AuthenticationRequiredException} If the request is rejected as unauthenticated (401).
    * @throws {@link RequestTimeoutException} If upload times out.
    * @throws {@link UnexpectedStatusException} If upload endpoint responds with an error.
    * @throws {@link UnreadableUploadResponseException} If response body is malformed.
@@ -422,6 +430,7 @@ export class FeedbackClient {
    *   file: { uri: 'file:///path/to/screenshot.jpg' },
    *   filename: 'screenshot.jpg',
    *   mimeType: 'image/jpeg',
+   *   userToken,
    * });
    * ```
    */
@@ -443,55 +452,28 @@ export class FeedbackClient {
       formData.append('file', options.file, options.filename);
     }
 
-    const url = `${this.config.baseUrl}${path}`;
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const callerSignal = options.signal;
 
-    return executeWithTimeout(
-      {
-        timeoutMs,
-        signal: callerSignal,
-        timeoutMessage: `Upload timed out after ${timeoutMs}ms`,
-      },
-      async (context) => {
-        let response: Response;
-        try {
-          response = await fetch(url, {
-            method: 'POST',
-            body: formData,
-            signal: context.signal,
-          });
-        } catch (err: any) {
-          context.rethrowIfTimeoutOrAbort(err);
-          throw new InvalidResponseException('Network failure while uploading attachment', err);
-        }
+    const json = await this.request<Record<string, any>>({
+      method: 'POST',
+      path,
+      body: formData,
+      userToken: options.userToken,
+      accepted: [200, 201, 202],
+      uploadResponse: true,
+      signal: options.signal,
+      timeoutMs,
+      timeoutMessage: `Upload timed out after ${timeoutMs}ms`,
+    });
 
-        if (response.status !== 200 && response.status !== 201) {
-          let text = '';
-          try {
-            text = await context.race(response.text());
-          } catch (err: any) {
-            context.rethrowIfTimeoutOrAbort(err);
-          }
-          throw new UnexpectedStatusException(response.status, text);
-        }
-
-        try {
-          const json = await context.race(response.json());
-          return {
-            kind: json.kind || kind,
-            key: json.key || json.id,
-            url: json.url,
-            filename: json.filename || options.filename,
-            mimeType: json.mimeType || options.mimeType,
-            size: json.size,
-          };
-        } catch (err: any) {
-          context.rethrowIfTimeoutOrAbort(err);
-          throw new UnreadableUploadResponseException();
-        }
-      }
-    );
+    return {
+      kind: json.kind || kind,
+      key: json.key || json.id,
+      url: json.url,
+      filename: json.filename || options.filename,
+      mimeType: json.mimeType || options.mimeType,
+      size: json.size,
+    };
   }
 
   /**
@@ -957,11 +939,17 @@ export class FeedbackClient {
     accepted?: number[];
     signal?: AbortSignal;
     timeoutMs?: number;
+    timeoutMessage?: string;
+    uploadResponse?: boolean;
   }): Promise<T> {
     const url = `${this.config.baseUrl}${options.path}`;
+    const isFormData =
+      typeof FormData !== 'undefined' && options.body instanceof FormData;
     const headers: Record<string, string> = {};
 
-    if (options.body) {
+    // FormData bodies must not carry an explicit Content-Type: the fetch
+    // implementation sets the multipart boundary header itself.
+    if (options.body && !isFormData) {
       headers['Content-Type'] = 'application/json';
     }
     if (options.userToken) {
@@ -975,7 +963,7 @@ export class FeedbackClient {
       {
         timeoutMs,
         signal: callerSignal,
-        timeoutMessage: `Request timed out after ${timeoutMs}ms`,
+        timeoutMessage: options.timeoutMessage ?? `Request timed out after ${timeoutMs}ms`,
       },
       async (context) => {
         let response: Response;
@@ -983,7 +971,11 @@ export class FeedbackClient {
           response = await fetch(url, {
             method: options.method,
             headers,
-            body: options.body ? JSON.stringify(options.body) : undefined,
+            body: options.body
+              ? isFormData
+                ? (options.body as FormData)
+                : JSON.stringify(options.body)
+              : undefined,
             signal: context.signal,
           });
         } catch (err: any) {
@@ -1008,12 +1000,18 @@ export class FeedbackClient {
         }
 
         if (!text) {
+          if (options.uploadResponse) {
+            throw new UnreadableUploadResponseException();
+          }
           return {} as T;
         }
 
         try {
           return JSON.parse(text) as T;
         } catch (err) {
+          if (options.uploadResponse) {
+            throw new UnreadableUploadResponseException();
+          }
           throw new InvalidResponseException(`Failed to parse JSON response from ${url}`, err);
         }
       }

@@ -13,12 +13,14 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import type { BoardColumn, FeatureRequestItem } from '../types';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
+import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
 
 /**
  * Props for configuring the {@link RoadmapBoardScreen} component.
@@ -77,6 +79,7 @@ export function RoadmapBoardScreen({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.roadmap.screenTitle;
 
@@ -88,6 +91,9 @@ export function RoadmapBoardScreen({
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
 
   const loadData = useCallback(async (signal?: AbortSignal) => {
+    // Wait for the persisted token: fetching earlier would evaluate
+    // hasVoted/isOwnRequest against a throwaway identity.
+    if (!isTokenReady) return;
     try {
       const [cols, reqs] = await Promise.all([
         client.fetchColumns({ signal }),
@@ -110,7 +116,7 @@ export function RoadmapBoardScreen({
         setIsRefreshing(false);
       }
     }
-  }, [client, userToken, selectedColumnId]);
+  }, [client, userToken, selectedColumnId, isTokenReady]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,10 +126,11 @@ export function RoadmapBoardScreen({
     };
   }, [loadData]);
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
+    if (!isTokenReady) return;
     setIsRefreshing(true);
     loadData();
-  };
+  }, [loadData, isTokenReady]);
 
   const activeColumn = columns.find((c) => c.id === selectedColumnId) || columns[0];
   const columnItems = requests.filter((r) => {
@@ -131,26 +138,10 @@ export function RoadmapBoardScreen({
     return r.columnId === activeColumn.id || (!r.columnId && r.status === activeColumn.slug);
   });
 
-  const handleToggleVote = async (target: FeatureRequestItem) => {
-    if (target.isOwnRequest) return;
-
-    const nextVoted = !target.hasVoted;
-    const nextCount = target.voteCount + (nextVoted ? 1 : -1);
-    setRequests((prev) =>
-      prev.map((i) => (i.id === target.id ? { ...i, hasVoted: nextVoted, voteCount: Math.max(0, nextCount) } : i))
-    );
-
-    try {
-      const res = await client.toggleVote(target.id, userToken);
-      setRequests((prev) =>
-        prev.map((i) => (i.id === target.id ? { ...i, hasVoted: res.voted, voteCount: res.voteCount } : i))
-      );
-    } catch {
-      setRequests((prev) =>
-        prev.map((i) => (i.id === target.id ? target : i))
-      );
-    }
-  };
+  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
+    setRequests((prev) => prev.map((i) => (i.id === itemId ? transform(i) : i)));
+  }, []);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -254,7 +245,7 @@ export function RoadmapBoardScreen({
                   voteCount={item.voteCount}
                   hasVoted={item.hasVoted}
                   onPress={() => handleToggleVote(item)}
-                  disabled={item.isOwnRequest}
+                  disabled={item.isOwnRequest || isVoting(item.id)}
                 />
               </View>
 

@@ -18,8 +18,20 @@ export interface CupThreadContextValue {
 
   /**
    * Current active anonymous or user authentication token.
+   *
+   * @remarks
+   * When no explicit `userToken` prop is provided and an async storage adapter
+   * (AsyncStorage / SecureStore) is configured, this is an empty string until
+   * the persisted token has been recovered — see {@link CupThreadContextValue.isTokenReady}.
    */
   userToken: string;
+
+  /**
+   * True once {@link CupThreadContextValue.userToken} reflects the persisted
+   * token (or the explicit prop). Token-dependent fetches should wait for this
+   * to avoid attributing early requests to a throwaway identity.
+   */
+  isTokenReady: boolean;
 
   /**
    * Resolved theme name (e.g. `'system'`, `'midnight'`, `'ocean'`).
@@ -147,20 +159,32 @@ export function CupThreadProvider({
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
 
-  const [resolvedUserToken, setResolvedUserToken] = useState<string>(
-    explicitUserToken || UserTokenStore.shared.token
-  );
+  // Never seed from the synchronous `.token` getter here: with an async
+  // storage adapter it would mint a throwaway UUID before the persisted
+  // token finishes loading, and requests fired in that window would be
+  // attributed to a throwaway identity.
+  const [resolvedUserToken, setResolvedUserToken] = useState<string>(explicitUserToken || '');
+  const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(explicitUserToken));
   const [appConfig, setAppConfig] = useState<PublicAppConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState<boolean>(true);
 
   useEffect(() => {
     if (explicitUserToken) {
       setResolvedUserToken(explicitUserToken);
-    } else {
-      UserTokenStore.shared.getToken().then((token) => {
-        setResolvedUserToken(token);
-      });
+      setIsTokenReady(true);
+      return;
     }
+    let cancelled = false;
+    setIsTokenReady(false);
+    UserTokenStore.shared.getToken().then((token) => {
+      if (!cancelled) {
+        setResolvedUserToken(token);
+        setIsTokenReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [explicitUserToken]);
 
   const loadConfig = useCallback(async (signal?: AbortSignal) => {
@@ -202,6 +226,7 @@ export function CupThreadProvider({
     () => ({
       client,
       userToken: resolvedUserToken,
+      isTokenReady,
       themeName: effectiveTheme,
       colors,
       appConfig,
@@ -210,7 +235,7 @@ export function CupThreadProvider({
       strings: resolvedStrings,
       refreshConfig: loadConfig,
     }),
-    [client, resolvedUserToken, effectiveTheme, colors, appConfig, isLoadingConfig, locale, resolvedStrings]
+    [client, resolvedUserToken, isTokenReady, effectiveTheme, colors, appConfig, isLoadingConfig, locale, resolvedStrings]
   );
 
   return <CupThreadContext.Provider value={value}>{children}</CupThreadContext.Provider>;
@@ -296,7 +321,10 @@ export function useCupThreadClient(): FeedbackClient {
 /**
  * Hook retrieving the current user or device authentication token.
  *
- * @returns Active user token string.
+ * @returns Active user token string. Inside a `<CupThreadProvider>` without an
+ * explicit `userToken` prop and with an async storage adapter configured, this
+ * is `''` until the persisted token resolves — gate token-dependent fetches on
+ * `useCupThreadTokenReadiness()`.
  *
  * @example
  * ```tsx
@@ -312,6 +340,33 @@ export function useCupThreadUserToken(): string {
     return UserTokenStore.shared.token;
   }
   return ctx.userToken;
+}
+
+/**
+ * Hook reporting whether the resolved user token is final.
+ *
+ * @returns `true` once the token reflects the persisted value (or an explicit
+ * prop). Token-dependent data fetches should wait for this to avoid racing an
+ * async storage adapter and attributing early requests to a throwaway identity.
+ *
+ * @example
+ * ```tsx
+ * function Requests() {
+ *   const isTokenReady = useCupThreadTokenReadiness();
+ *   useEffect(() => {
+ *     if (!isTokenReady) return;
+ *     // fetch with the resolved user token
+ *   }, [isTokenReady]);
+ *   return null;
+ * }
+ * ```
+ */
+export function useCupThreadTokenReadiness(): boolean {
+  const ctx = useContext(CupThreadContext);
+  if (!ctx) {
+    return true;
+  }
+  return ctx.isTokenReady;
 }
 
 /**

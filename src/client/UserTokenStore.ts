@@ -206,8 +206,15 @@ export class UserTokenStore {
    * If not already initialized, generates and caches a new in-memory UUID.
    *
    * @remarks
-   * When using an asynchronous storage adapter, prefer awaiting {@link getToken}
-   * to ensure any pre-existing token in storage is properly recovered before use.
+   * **Warning — async storage adapters:** with AsyncStorage / SecureStore the
+   * persisted token loads asynchronously, and accessing `.token` before that
+   * load finishes mints and caches a *throwaway* in-memory UUID that is never
+   * persisted and will be replaced once storage resolves. Any request sent in
+   * that window is attributed to the throwaway identity. With async adapters
+   * always `await` {@link UserTokenStore.getToken} instead (the SDK's
+   * `<CupThreadProvider>` does this for you and exposes readiness through
+   * `useCupThreadTokenReadiness()`). The synchronous contract is only safe for
+   * synchronous adapters or no-adapter setups.
    *
    * @example
    * ```ts

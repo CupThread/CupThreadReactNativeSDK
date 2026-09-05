@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { Avatar } from './Avatar';
 import { MarkdownText } from './MarkdownText';
 import { CommentsSection } from './CommentsSection';
 import { formatDate } from '../utils/formatters';
+import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
 
 /**
  * Props for configuring the {@link FeatureRequestDetail} modal view.
@@ -90,30 +91,19 @@ export function FeatureRequestDetail({
   const strings = useCupThreadStrings();
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
-  const [isVoting, setIsVoting] = useState<boolean>(false);
 
-  const handleToggleVote = async () => {
-    if (item.isOwnRequest || isVoting) return;
-
-    const nextVoted = !item.hasVoted;
-    const nextCount = item.voteCount + (nextVoted ? 1 : -1);
-    const updated = { ...item, hasVoted: nextVoted, voteCount: Math.max(0, nextCount) };
-    setItem(updated);
-    if (onVoteChange) onVoteChange(updated);
-
-    try {
-      setIsVoting(true);
-      const res = await client.toggleVote(item.id, userToken);
-      const serverUpdated = { ...item, hasVoted: res.voted, voteCount: res.voteCount };
-      setItem(serverUpdated);
-      if (onVoteChange) onVoteChange(serverUpdated);
-    } catch {
-      setItem(initialItem);
-      if (onVoteChange) onVoteChange(initialItem);
-    } finally {
-      setIsVoting(false);
-    }
-  };
+  const applyVoteChange = useCallback<VoteChangeApplier>(
+    (itemId, transform) => {
+      // The hook always invokes the latest applier, so `item` here is current
+      // state — the rollback reconciles against it instead of the stale
+      // `initialItem` prop.
+      const next = transform(item);
+      setItem(next);
+      onVoteChange?.(next);
+    },
+    [item, onVoteChange]
+  );
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -140,8 +130,8 @@ export function FeatureRequestDetail({
             <VoteButton
               voteCount={item.voteCount}
               hasVoted={item.hasVoted}
-              onPress={handleToggleVote}
-              disabled={item.isOwnRequest || isVoting}
+              onPress={() => handleToggleVote(item)}
+              disabled={item.isOwnRequest || isVoting(item.id)}
             />
           </View>
 

@@ -635,7 +635,7 @@ test('FeedbackClient uploadAttachment aborts when success response json read sta
     receivedSignal = init?.signal as AbortSignal;
     return {
       status: 200,
-      json: () =>
+      text: () =>
         new Promise((_resolve, reject) => {
           receivedSignal?.addEventListener('abort', () => {
             const err = new Error('The operation was aborted');
@@ -769,7 +769,7 @@ test('FeedbackClient uploadAttachment cancels stalled body read when caller sign
   globalThis.fetch = (async () => {
     return {
       status: 200,
-      json: () => new Promise(() => {}), // Stalled promise that never resolves
+      text: () => new Promise(() => {}), // Stalled promise that never resolves
     } as any;
   }) as any;
 

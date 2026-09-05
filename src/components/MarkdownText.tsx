@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, View, StyleSheet, Linking, TextStyle } from 'react-native';
 import { useCupThreadTheme } from '../theme/CupThreadThemeProvider';
+import { isSafeLinkUrl } from '../utils/linkUrl';
 
 /**
  * Props for the {@link MarkdownText} lightweight renderer.
@@ -23,6 +24,16 @@ export interface MarkdownTextProps {
    * Optional custom text style overrides applied to rendered paragraph and header texts.
    */
   style?: TextStyle;
+
+  /**
+   * Optional link press interceptor invoked whenever a `[label](url)` link is tapped.
+   *
+   * Return `true` to mark the press as handled (or intentionally suppressed) and skip
+   * the default opener — useful for routing through an in-app browser. Return `false`
+   * or nothing to fall through to the default handler, which opens only `http:` and
+   * `https:` URLs and silently ignores any other scheme.
+   */
+  onLinkPress?: (url: string) => boolean | void;
 }
 
 /**
@@ -40,8 +51,15 @@ export interface MarkdownTextProps {
  * }
  * ```
  */
-export function MarkdownText({ content, style }: MarkdownTextProps) {
+export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps) {
   const { colors } = useCupThreadTheme();
+
+  const handleLinkPress = (url: string) => {
+    if (onLinkPress && onLinkPress(url) === true) return;
+    if (isSafeLinkUrl(url)) {
+      Linking.openURL(url).catch(() => {});
+    }
+  };
 
   if (!content) return null;
 
@@ -90,11 +108,18 @@ export function MarkdownText({ content, style }: MarkdownTextProps) {
         );
       } else if (match[5] && match[6]) {
         const url = match[6];
+        // Links with disallowed schemes render as plain text unless the host app
+        // supplies an onLinkPress interceptor that opts into handling them.
+        const isPressable = Boolean(onLinkPress) || isSafeLinkUrl(url);
         elements.push(
           <Text
             key={`${baseKey}-a-${match.index}`}
-            style={{ color: colors.primary, textDecorationLine: 'underline' }}
-            onPress={() => Linking.openURL(url).catch(() => {})}
+            style={
+              isPressable
+                ? { color: colors.primary, textDecorationLine: 'underline' }
+                : { color: colors.textPrimary }
+            }
+            onPress={isPressable ? () => handleLinkPress(url) : undefined}
           >
             {match[5]}
           </Text>
