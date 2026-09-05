@@ -21,6 +21,7 @@ import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useFeatureRequests } from '../hooks/useFeatureRequests';
 
 /**
  * Props for configuring the {@link RoadmapBoardScreen} component.
@@ -84,53 +85,64 @@ export function RoadmapBoardScreen({
   const title = headerTitle ?? strings.roadmap.screenTitle;
 
   const [columns, setColumns] = useState<BoardColumn[]>([]);
-  const [requests, setRequests] = useState<FeatureRequestItem[]>([]);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isColumnsLoading, setIsColumnsLoading] = useState<boolean>(true);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
 
-  const loadData = useCallback(async (signal?: AbortSignal) => {
-    // Wait for the persisted token: fetching earlier would evaluate
-    // hasVoted/isOwnRequest against a throwaway identity.
-    if (!isTokenReady) return;
-    try {
-      const [cols, reqs] = await Promise.all([
-        client.fetchColumns({ signal }),
-        client.fetchFeatureRequests({ userToken, limit: 100, signal }),
-      ]);
+  const {
+    items: requests,
+    total,
+    hasMore,
+    isLoading: isRequestsLoading,
+    isRefreshing,
+    isLoadingMore,
+    loadMore,
+    refresh: refreshRequests,
+    setItems: setRequests,
+    applyItemChange,
+  } = useFeatureRequests({
+    client,
+    userToken,
+    isTokenReady,
+    pageSize: 100,
+  });
 
-      if (signal?.aborted) return;
-      const visibleCols = cols.filter((c) => c.isVisible);
-      setColumns(visibleCols);
-      if (visibleCols.length > 0 && !selectedColumnId) {
-        setSelectedColumnId(visibleCols[0].id);
+  const loadColumns = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!isTokenReady) return;
+      try {
+        const cols = await client.fetchColumns({ signal });
+        if (signal?.aborted) return;
+        const visibleCols = cols.filter((c) => c.isVisible);
+        setColumns(visibleCols);
+        if (visibleCols.length > 0 && !selectedColumnId) {
+          setSelectedColumnId(visibleCols[0].id);
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal?.aborted) return;
+        // Non-fatal
+      } finally {
+        if (!signal?.aborted) {
+          setIsColumnsLoading(false);
+        }
       }
-      setRequests(reqs.requests || []);
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      // Non-fatal
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    }
-  }, [client, userToken, selectedColumnId, isTokenReady]);
+    },
+    [client, selectedColumnId, isTokenReady]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    loadData(controller.signal);
+    setIsColumnsLoading(true);
+    loadColumns(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [loadData]);
+  }, [loadColumns]);
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     if (!isTokenReady) return;
-    setIsRefreshing(true);
-    loadData();
-  }, [loadData, isTokenReady]);
+    await Promise.all([loadColumns(), refreshRequests()]);
+  }, [loadColumns, refreshRequests, isTokenReady]);
 
   const activeColumn = columns.find((c) => c.id === selectedColumnId) || columns[0];
   const columnItems = requests.filter((r) => {
@@ -138,10 +150,10 @@ export function RoadmapBoardScreen({
     return r.columnId === activeColumn.id || (!r.columnId && r.status === activeColumn.slug);
   });
 
-  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
-    setRequests((prev) => prev.map((i) => (i.id === itemId ? transform(i) : i)));
-  }, []);
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyItemChange);
+
+  const isLoading =
+    (isColumnsLoading && columns.length === 0) || (isRequestsLoading && requests.length === 0);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -205,6 +217,27 @@ export function RoadmapBoardScreen({
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
             {strings.roadmap.emptyColumn}
           </Text>
+          {hasMore && (
+            <>
+              <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+                {strings.roadmap.showingCount(requests.length, total)}
+              </Text>
+              <TouchableOpacity
+                onPress={() => loadMore()}
+                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+                activeOpacity={0.8}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? (
+                  <ActivityIndicator size="small" color={colors.primaryText} />
+                ) : (
+                  <Text style={[styles.emptyButtonText, { color: colors.primaryText }]}>
+                    {strings.roadmap.loadMore}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
@@ -217,6 +250,37 @@ export function RoadmapBoardScreen({
               onRefresh={handleRefresh}
               tintColor={colors.primary}
             />
+          }
+          onEndReached={() => {
+            if (hasMore && !isLoadingMore && !isRequestsLoading && !isRefreshing) {
+              loadMore();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.footerText, { color: colors.textMuted }]}>
+                  {strings.common.loadingMore}
+                </Text>
+              </View>
+            ) : hasMore ? (
+              <View style={styles.footerAffordance}>
+                <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
+                  {strings.roadmap.showingCount(requests.length, total)}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => loadMore()}
+                  style={[styles.loadMoreBtn, { borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
+                    {strings.roadmap.loadMore}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -266,7 +330,7 @@ export function RoadmapBoardScreen({
           visible={!!selectedItem}
           onClose={() => setSelectedItem(null)}
           onVoteChange={(updated) => {
-            setRequests((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+            applyItemChange(updated.id, () => updated);
           }}
         />
       )}
@@ -356,5 +420,45 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 13,
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  emptyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  footerLoading: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 13,
+  },
+  footerAffordance: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 12,
+  },
+  footerAffordanceText: {
+    fontSize: 13,
+  },
+  loadMoreBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  loadMoreBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

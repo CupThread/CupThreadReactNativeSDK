@@ -7,6 +7,7 @@ export interface CommonStrings {
   cancel: string;
   confirm: string;
   loading: string;
+  loadingMore: string;
   submitting: string;
   error: string;
   retry: string;
@@ -57,6 +58,7 @@ export interface FeatureRequestsStrings {
   moreCommenters: string;
   upvoted: string;
   upvote: string;
+  loadingMore: string;
 }
 
 /**
@@ -86,6 +88,9 @@ export interface RoadmapStrings {
   searchPlaceholder: string;
   emptyColumn: string;
   upvotesCount: (count: number) => string;
+  loadingMore: string;
+  loadMore: string;
+  showingCount: (shown: number, total: number) => string;
 }
 
 /**

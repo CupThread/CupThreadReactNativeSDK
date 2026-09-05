@@ -7,6 +7,7 @@ export const koStrings: CupThreadStrings = {
     cancel: '취소',
     confirm: '확인',
     loading: '로드 중...',
+    loadingMore: '더 불러오는 중...',
     submitting: '제출 중...',
     error: '오류',
     retry: '다시 시도',
@@ -49,6 +50,7 @@ export const koStrings: CupThreadStrings = {
     moreCommenters: '+ 더 보기',
     upvoted: '추천됨',
     upvote: '투표',
+    loadingMore: '더 불러오는 중...',
   },
   featureRequestCompose: {
     modalTitle: '기능 제안',
@@ -70,6 +72,9 @@ export const koStrings: CupThreadStrings = {
     searchPlaceholder: '로드맵 검색...',
     emptyColumn: '이 단계에는 항목이 없습니다',
     upvotesCount: (count: number) => `${count}표`,
+    loadingMore: '더 불러오는 중...',
+    loadMore: '더 불러오기',
+    showingCount: (shown: number, total: number) => `전체 ${total}개 중 ${shown}개 표시`,
   },
   featureRequestDetail: {
     title: '기능 요청',

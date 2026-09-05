@@ -7,6 +7,7 @@ export const zhHansStrings: CupThreadStrings = {
     cancel: '取消',
     confirm: '确认',
     loading: '加载中...',
+    loadingMore: '加载更多...',
     submitting: '提交中...',
     error: '错误',
     retry: '重试',
@@ -49,6 +50,7 @@ export const zhHansStrings: CupThreadStrings = {
     moreCommenters: '+更多',
     upvoted: '已投票',
     upvote: '投票',
+    loadingMore: '加载更多...',
   },
   featureRequestCompose: {
     modalTitle: '提出新需求',
@@ -70,6 +72,9 @@ export const zhHansStrings: CupThreadStrings = {
     searchPlaceholder: '搜索路线图规划...',
     emptyColumn: '当前阶段暂无规划项',
     upvotesCount: (count: number) => `${count} 票`,
+    loadingMore: '加载更多...',
+    loadMore: '加载更多',
+    showingCount: (shown: number, total: number) => `显示 ${shown} / ${total} 项`,
   },
   featureRequestDetail: {
     title: '需求详情',

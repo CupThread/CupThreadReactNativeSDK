@@ -7,6 +7,7 @@ export const esStrings: CupThreadStrings = {
     cancel: 'Cancelar',
     confirm: 'Confirmar',
     loading: 'Cargando...',
+    loadingMore: 'Cargando más...',
     submitting: 'Enviando...',
     error: 'Error',
     retry: 'Reintentar',
@@ -49,6 +50,7 @@ export const esStrings: CupThreadStrings = {
     moreCommenters: '+ más',
     upvoted: 'Votado',
     upvote: 'Votar',
+    loadingMore: 'Cargando más...',
   },
   featureRequestCompose: {
     modalTitle: 'Proponer una función',
@@ -70,6 +72,9 @@ export const esStrings: CupThreadStrings = {
     searchPlaceholder: 'Buscar en la hoja de ruta...',
     emptyColumn: 'No hay elementos en esta etapa',
     upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} votos`,
+    loadingMore: 'Cargando más...',
+    loadMore: 'Cargar más',
+    showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
   },
   featureRequestDetail: {
     title: 'Solicitud de función',

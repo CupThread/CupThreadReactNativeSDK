@@ -7,6 +7,7 @@ export const deStrings: CupThreadStrings = {
     cancel: 'Abbrechen',
     confirm: 'Bestätigen',
     loading: 'Wird geladen...',
+    loadingMore: 'Weitere werden geladen...',
     submitting: 'Wird gesendet...',
     error: 'Fehler',
     retry: 'Erneut versuchen',
@@ -49,6 +50,7 @@ export const deStrings: CupThreadStrings = {
     moreCommenters: '+ weitere',
     upvoted: 'Abgestimmt',
     upvote: 'Abstimmen',
+    loadingMore: 'Weitere werden geladen...',
   },
   featureRequestCompose: {
     modalTitle: 'Feature vorschlagen',
@@ -70,6 +72,9 @@ export const deStrings: CupThreadStrings = {
     searchPlaceholder: 'Roadmap durchsuchen...',
     emptyColumn: 'Keine Einträge in dieser Phase',
     upvotesCount: (count: number) => count === 1 ? '1 Stimme' : `${count} Stimmen`,
+    loadingMore: 'Weitere werden geladen...',
+    loadMore: 'Mehr laden',
+    showingCount: (shown: number, total: number) => `${shown} von ${total} angezeigt`,
   },
   featureRequestDetail: {
     title: 'Feature-Anfrage',

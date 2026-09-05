@@ -7,6 +7,7 @@ export const enStrings: CupThreadStrings = {
     cancel: 'Cancel',
     confirm: 'Confirm',
     loading: 'Loading...',
+    loadingMore: 'Loading more...',
     submitting: 'Submitting...',
     error: 'Error',
     retry: 'Retry',
@@ -49,6 +50,7 @@ export const enStrings: CupThreadStrings = {
     moreCommenters: '+more',
     upvoted: 'Upvoted',
     upvote: 'Upvote',
+    loadingMore: 'Loading more...',
   },
   featureRequestCompose: {
     modalTitle: 'Propose Feature',
@@ -70,6 +72,9 @@ export const enStrings: CupThreadStrings = {
     searchPlaceholder: 'Search roadmap...',
     emptyColumn: 'No items in this stage',
     upvotesCount: (count: number) => `${count} votes`,
+    loadingMore: 'Loading more...',
+    loadMore: 'Load more',
+    showingCount: (shown: number, total: number) => `Showing ${shown} of ${total}`,
   },
   featureRequestDetail: {
     title: 'Feature Request',

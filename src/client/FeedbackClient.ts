@@ -582,6 +582,14 @@ export class FeedbackClient {
      */
     query?: string;
     /**
+     * Optional column ID filter.
+     */
+    columnId?: string;
+    /**
+     * Optional column status slug filter.
+     */
+    status?: string;
+    /**
      * Optional abort signal to cancel the request.
      */
     signal?: AbortSignal;
@@ -598,6 +606,8 @@ export class FeedbackClient {
     });
     if (options.versionId) params.append('versionId', options.versionId);
     if (options.query) params.append('q', options.query);
+    if (options.columnId) params.append('columnId', options.columnId);
+    if (options.status) params.append('status', options.status);
 
     return this.request<ListFeatureRequestsResult>({
       method: 'GET',

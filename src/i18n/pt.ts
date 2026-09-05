@@ -7,6 +7,7 @@ export const ptStrings: CupThreadStrings = {
     cancel: 'Cancelar',
     confirm: 'Confirmar',
     loading: 'Carregando...',
+    loadingMore: 'Carregando mais...',
     submitting: 'Enviando...',
     error: 'Erro',
     retry: 'Tentar novamente',
@@ -49,6 +50,7 @@ export const ptStrings: CupThreadStrings = {
     moreCommenters: '+ mais',
     upvoted: 'Votado',
     upvote: 'Votar',
+    loadingMore: 'Carregando mais...',
   },
   featureRequestCompose: {
     modalTitle: 'Propor um recurso',
@@ -70,6 +72,9 @@ export const ptStrings: CupThreadStrings = {
     searchPlaceholder: 'Pesquisar no roadmap...',
     emptyColumn: 'Nenhum item nesta etapa',
     upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} votos`,
+    loadingMore: 'Carregando mais...',
+    loadMore: 'Carregar mais',
+    showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
   },
   featureRequestDetail: {
     title: 'Solicitação de recurso',

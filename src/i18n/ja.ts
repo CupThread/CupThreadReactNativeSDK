@@ -7,6 +7,7 @@ export const jaStrings: CupThreadStrings = {
     cancel: 'キャンセル',
     confirm: '確認',
     loading: '読み込み中...',
+    loadingMore: 'さらに読み込み中...',
     submitting: '送信中...',
     error: 'エラー',
     retry: '再試行',
@@ -49,6 +50,7 @@ export const jaStrings: CupThreadStrings = {
     moreCommenters: '+他',
     upvoted: '投票済み',
     upvote: '投票',
+    loadingMore: 'さらに読み込み中...',
   },
   featureRequestCompose: {
     modalTitle: '機能を提案',
@@ -70,6 +72,9 @@ export const jaStrings: CupThreadStrings = {
     searchPlaceholder: 'ロードマップを検索...',
     emptyColumn: 'このステージには項目がありません',
     upvotesCount: (count: number) => `${count}票`,
+    loadingMore: 'さらに読み込み中...',
+    loadMore: 'もっと読み込む',
+    showingCount: (shown: number, total: number) => `${total}件中${shown}件を表示`,
   },
   featureRequestDetail: {
     title: '機能リクエスト',
