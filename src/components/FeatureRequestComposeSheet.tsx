@@ -136,8 +136,8 @@ export function FeatureRequestComposeSheet({
       </View>
 
       {errorMessage && (
-        <View style={[styles.errorBox, { backgroundColor: '#fef2f2', borderColor: '#fca5a5' }]}>
-          <Text style={{ color: '#b91c1c', fontSize: 13 }}>{errorMessage}</Text>
+        <View style={[styles.errorBox, { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder }]}>
+          <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
         </View>
       )}
 
