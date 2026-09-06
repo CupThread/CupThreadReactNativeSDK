@@ -13,8 +13,11 @@ import type { TokenStorageAdapter } from '../src/client/UserTokenStore';
 // render-level tests below are skipped (store-level coverage is unaffected).
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 if (supportsModuleMocks) {
+  // `namedExports` is what Node 22 (the CI baseline) uses to link ESM named
+  // imports against the mock; newer runtimes still accept it (deprecation
+  // warning only), while the replacement `exports` option breaks Node 22.
   (test as any).mock.module('react-native', {
-    exports: { useColorScheme: () => 'light' },
+    namedExports: { useColorScheme: () => 'light' },
   });
 }
 
