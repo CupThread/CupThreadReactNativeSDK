@@ -2,7 +2,11 @@ import type { FeedbackPlatform } from '../types';
 
 export function getRuntimePlatform(): FeedbackPlatform {
   try {
-    // Dynamically check React Native Platform if running in RN runtime
+    // Dynamically check React Native Platform if running in RN runtime.
+    // A runtime require is deliberate: a static import would make this module
+    // (and everything transitively importing it) fail to load in plain Node
+    // environments where the react-native peer dependency is absent.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Platform } = require('react-native');
     if (Platform && Platform.OS) {
       switch (Platform.OS) {

@@ -20,7 +20,7 @@ import type { FeatureRequestItem } from '../types';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
-import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
@@ -100,7 +100,6 @@ export function RoadmapBoardScreen({
     loadMore,
     refresh: refreshRequests,
     reload: reloadRequests,
-    setItems: setRequests,
     applyItemChange,
   } = useFeatureRequests({
     client,
