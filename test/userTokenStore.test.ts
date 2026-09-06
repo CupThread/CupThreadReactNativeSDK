@@ -197,6 +197,79 @@ test('UserTokenStore: throwaway .token mint during pending load is replaced by t
   );
 });
 
+test('UserTokenStore notifies subscribers on explicit identity switches', async () => {
+  const store = new UserTokenStore();
+  let changes = 0;
+  const unsubscribe = store.subscribe(() => {
+    changes++;
+  });
+
+  await store.setToken('identity-a');
+  assert.equal(changes, 1, 'setToken with a new identity must notify');
+
+  await store.setToken('identity-a');
+  assert.equal(changes, 1, 'setting the identical token must not notify');
+
+  const fresh = await store.resetToken();
+  assert.equal(changes, 2, 'resetToken must notify');
+  assert.equal(store.token, fresh);
+
+  unsubscribe();
+  unsubscribe(); // idempotent
+  await store.setToken('identity-b');
+  assert.equal(changes, 2, 'unsubscribed listeners stop receiving notifications');
+});
+
+test('UserTokenStore getToken notifies only on identity change', async () => {
+  const EXISTING_TOKEN = 'persisted-identity-token';
+  const mem: Record<string, string> = { [TOKEN_KEY]: EXISTING_TOKEN };
+  // Keep the constructor's initial storage read pending so the cache is still
+  // empty when getToken() runs and its adoption is observable.
+  const firstRead = deferred<string | null>();
+  let getItemCalls = 0;
+  const adapter = {
+    getItem: (key: string) => {
+      getItemCalls++;
+      if (getItemCalls === 1) return firstRead.promise;
+      return Promise.resolve(mem[key] ?? null);
+    },
+    setItem: async (key: string, val: string) => {
+      mem[key] = val;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  let changes = 0;
+  store.subscribe(() => {
+    changes++;
+  });
+
+  await store.getToken();
+  assert.equal(changes, 1, 'recovering a persisted token into an empty cache must notify');
+
+  await store.getToken();
+  assert.equal(changes, 1, 're-resolving the same identity must not notify');
+
+  firstRead.resolve(EXISTING_TOKEN);
+  await flushMicrotasks();
+  assert.equal(changes, 1, 'the late initial read must not double-notify');
+});
+
+test('UserTokenStore subscriber errors never break token resolution', async () => {
+  const store = new UserTokenStore();
+  store.subscribe(() => {
+    throw new Error('subscriber boom');
+  });
+  let notified = 0;
+  store.subscribe(() => {
+    notified++;
+  });
+
+  const fresh = await store.resetToken();
+  assert.equal(notified, 1, 'listeners after a throwing one must still run');
+  assert.equal(store.token, fresh, 'token resolution must complete');
+});
+
 test('UserTokenStore manages changelog seen status with persistence', async () => {
   const mem: Record<string, string> = {};
   const asyncAdapter = {

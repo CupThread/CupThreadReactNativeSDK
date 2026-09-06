@@ -232,6 +232,24 @@ import { UserTokenStore } from '@cupthread/react-native';
 UserTokenStore.configure(AsyncStorage);
 ```
 
+#### Login / Logout Identity Switching
+
+To attribute SDK activity to your own signed-in users, call `setToken()` after login and `resetToken()` on logout. `<CupThreadProvider>` (mounted without an explicit `userToken` prop) subscribes to these switches automatically — every mounted SDK screen re-resolves its token and subsequent votes, comments, and feedback are attributed to the new identity:
+
+```tsx
+// After your auth flow signs the user in:
+await UserTokenStore.shared.setToken(user.id);
+
+// On logout:
+await UserTokenStore.shared.resetToken();
+```
+
+Notes:
+
+- Call these after `UserTokenStore.configure(...)`; there is no need to remount the provider.
+- An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
+- Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
+
 ---
 
 ## API Client Surface
