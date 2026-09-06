@@ -243,7 +243,8 @@ UserTokenStore.configure(AsyncStorage);
 | `baseUrl` | `string` | _(required)_ | Root API URL of the CupThread backend instance |
 | `appKey` | `string` | _(required)_ | Unique application key from Developer Console |
 | `defaultPlatform` | `FeedbackPlatform` | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.) |
-| `timeoutMs` | `number` | `15000` | Optional request timeout in milliseconds; throws `RequestTimeoutException` on timeout |
+| `timeoutMs` | `number` | `15000` | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout |
+| `uploadTimeoutMs` | `number` | `60000` | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })` |
 
 All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
 

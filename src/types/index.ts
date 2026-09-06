@@ -48,12 +48,25 @@ export interface FeedbackClientConfig {
   defaultPlatform?: FeedbackPlatform;
 
   /**
-   * Request timeout in milliseconds for API operations and uploads.
+   * Request timeout in milliseconds for API (JSON) operations.
    * If elapsed before the request settles, a {@link RequestTimeoutException} is thrown.
+   *
+   * Attachment uploads use a separate budget; see {@link FeedbackClientConfig.uploadTimeoutMs}.
    *
    * @defaultValue 15000 (15 seconds)
    */
   timeoutMs?: number;
+
+  /**
+   * Completion budget in milliseconds for attachment uploads
+   * ({@link FeedbackClient.uploadAttachment}). Screenshots and diagnostic
+   * archives routinely need longer than the JSON request budget on mobile
+   * uplinks, so uploads default to a dedicated, larger value. A per-call
+   * `timeoutMs` override on `uploadAttachment` still takes precedence.
+   *
+   * @defaultValue 60000 (60 seconds)
+   */
+  uploadTimeoutMs?: number;
 }
 
 /**

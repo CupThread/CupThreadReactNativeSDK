@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FeedbackClient, DEFAULT_TIMEOUT_MS } from '../src/client/FeedbackClient';
+import { FeedbackClient, DEFAULT_TIMEOUT_MS, DEFAULT_UPLOAD_TIMEOUT_MS } from '../src/client/FeedbackClient';
 import {
   RequestTimeoutException,
   FeedbackException,
@@ -83,7 +83,7 @@ test('FeedbackClient request aborts after timeoutMs and throws RequestTimeoutExc
   }
 });
 
-test('FeedbackClient uploadAttachment aborts after timeoutMs and throws RequestTimeoutException', async () => {
+test('FeedbackClient uploadAttachment aborts after uploadTimeoutMs and throws RequestTimeoutException', async () => {
   const originalFetch = globalThis.fetch;
   let receivedSignal: AbortSignal | undefined;
 
@@ -102,7 +102,7 @@ test('FeedbackClient uploadAttachment aborts after timeoutMs and throws RequestT
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_test_upload_timeout',
-      timeoutMs: 50,
+      uploadTimeoutMs: 50,
     });
 
     await assert.rejects(
@@ -627,7 +627,7 @@ test('FeedbackClient request aborts when response body read stalls past timeoutM
   }
 });
 
-test('FeedbackClient uploadAttachment aborts when success response json read stalls past timeoutMs and throws RequestTimeoutException', async () => {
+test('FeedbackClient uploadAttachment aborts when success response json read stalls past uploadTimeoutMs and throws RequestTimeoutException', async () => {
   const originalFetch = globalThis.fetch;
   let receivedSignal: AbortSignal | undefined;
 
@@ -650,7 +650,7 @@ test('FeedbackClient uploadAttachment aborts when success response json read sta
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_test_upload_stalled_json',
-      timeoutMs: 50,
+      uploadTimeoutMs: 50,
     });
 
     const start = Date.now();
@@ -676,7 +676,7 @@ test('FeedbackClient uploadAttachment aborts when success response json read sta
   }
 });
 
-test('FeedbackClient uploadAttachment aborts when error response text read stalls past timeoutMs and throws RequestTimeoutException', async () => {
+test('FeedbackClient uploadAttachment aborts when error response text read stalls past uploadTimeoutMs and throws RequestTimeoutException', async () => {
   const originalFetch = globalThis.fetch;
   let receivedSignal: AbortSignal | undefined;
 
@@ -699,7 +699,7 @@ test('FeedbackClient uploadAttachment aborts when error response text read stall
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_test_upload_stalled_text',
-      timeoutMs: 50,
+      uploadTimeoutMs: 50,
     });
 
     const start = Date.now();
@@ -797,6 +797,190 @@ test('FeedbackClient uploadAttachment cancels stalled body read when caller sign
       (err: any) => {
         assert.equal(err.name, 'AbortError');
         assert.ok(!(err instanceof RequestTimeoutException));
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClientConfig defaults uploadTimeoutMs to 60000 independently of the JSON timeoutMs', () => {
+  const defaultClient = new FeedbackClient({
+    baseUrl: 'https://api.cupthread.com',
+    appKey: 'app_test_123',
+  });
+  assert.equal(defaultClient.config.uploadTimeoutMs, DEFAULT_UPLOAD_TIMEOUT_MS);
+  assert.ok(
+    DEFAULT_UPLOAD_TIMEOUT_MS >= 60000,
+    `Expected DEFAULT_UPLOAD_TIMEOUT_MS >= 60000, got ${DEFAULT_UPLOAD_TIMEOUT_MS}`
+  );
+  assert.equal(defaultClient.config.timeoutMs, DEFAULT_TIMEOUT_MS);
+  assert.equal(defaultClient.config.timeoutMs, 15000);
+
+  const customClient = new FeedbackClient({
+    baseUrl: 'https://api.cupthread.com',
+    appKey: 'app_test_123',
+    uploadTimeoutMs: 120000,
+  });
+  assert.equal(customClient.config.uploadTimeoutMs, 120000);
+});
+
+test('uploadAttachment uses the dedicated upload budget even when a JSON timeoutMs is configured', async () => {
+  const originalFetch = globalThis.fetch;
+  let receivedSignal: AbortSignal | undefined;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    receivedSignal = init?.signal as AbortSignal;
+    return new Promise((_resolve, reject) => {
+      receivedSignal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      }, { once: true });
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_budget',
+      timeoutMs: 15000,
+      uploadTimeoutMs: 50,
+    });
+
+    await assert.rejects(
+      async () => {
+        await client.uploadAttachment({
+          file: new Blob(['test-content'], { type: 'image/png' }),
+          filename: 'test.png',
+          mimeType: 'image/png',
+        });
+      },
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.equal(err.timeoutMs, 50);
+        return true;
+      }
+    );
+
+    assert.ok(receivedSignal);
+    assert.equal(receivedSignal.aborted, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment completes past the configured JSON timeoutMs budget', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    void init;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    return {
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          kind: 'image',
+          key: 'upload-key',
+          url: 'https://cdn.cupthread.com/upload-key',
+          filename: 'test.png',
+          mimeType: 'image/png',
+          size: 12,
+        }),
+    } as any;
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_not_clamped',
+      timeoutMs: 40,
+    });
+
+    const attachment = await client.uploadAttachment({
+      file: new Blob(['test-content'], { type: 'image/png' }),
+      filename: 'test.png',
+      mimeType: 'image/png',
+    });
+    assert.equal(attachment.key, 'upload-key');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment honors per-call timeoutMs override over the upload budget', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const signal = init?.signal as AbortSignal;
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      }, { once: true });
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_override',
+      uploadTimeoutMs: 5000,
+    });
+
+    const start = Date.now();
+    await assert.rejects(
+      async () => {
+        await client.uploadAttachment({
+          file: new Blob(['test-content'], { type: 'image/png' }),
+          filename: 'test.png',
+          mimeType: 'image/png',
+          timeoutMs: 40,
+        });
+      },
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.equal(err.timeoutMs, 40);
+        return true;
+      }
+    );
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 1000, `Expected operation to timeout quickly, took ${elapsed}ms`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('JSON endpoints still time out with config.timeoutMs after the upload-budget change', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const signal = init?.signal as AbortSignal;
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      }, { once: true });
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_json_budget',
+      timeoutMs: 40,
+    });
+
+    await assert.rejects(
+      async () => {
+        await client.fetchColumns();
+      },
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.equal(err.timeoutMs, 40);
         return true;
       }
     );
