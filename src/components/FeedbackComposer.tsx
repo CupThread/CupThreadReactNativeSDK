@@ -22,6 +22,7 @@ import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
+import { processPickedAttachments } from '../utils/attachments';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -135,7 +136,9 @@ export function FeedbackComposer({
   const [description, setDescription] = useState(initialDraft?.description || '');
   const [reporterName, setReporterName] = useState(initialDraft?.reporterName || '');
   const [reporterEmail, setReporterEmail] = useState(initialDraft?.reporterEmail || '');
-  const [attachments, setAttachments] = useState<FeedbackAttachment[]>(initialDraft?.attachments || []);
+  const [attachments, setAttachments] = useState<FeedbackAttachment[]>(
+    initialDraft?.attachments || []
+  );
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -150,23 +153,18 @@ export function FeedbackComposer({
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
-      const newlyAdded: FeedbackAttachment[] = [];
-
-      for (const item of items) {
-        if ('url' in item && 'key' in item) {
-          newlyAdded.push(item as FeedbackAttachment);
-        } else if ('file' in item && 'filename' in item) {
+      const { succeeded, failed } = await processPickedAttachments(items, {
+        upload: async (options) => {
           const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
-          const uploaded = await client.uploadAttachment({
-            ...(item as UploadAttachmentOptions),
-            userToken: effectiveToken,
-          });
-          newlyAdded.push(uploaded);
-        }
-      }
+          return client.uploadAttachment({ ...options, userToken: effectiveToken });
+        },
+      });
 
-      if (newlyAdded.length > 0) {
-        setAttachments((prev) => [...prev, ...newlyAdded]);
+      if (succeeded.length > 0) {
+        setAttachments((prev) => [...prev, ...succeeded]);
+      }
+      if (failed.length > 0) {
+        setErrorMessage(strings.feedbackComposer.someUploadsFailed(failed.length));
       }
     } catch (err: any) {
       setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
@@ -232,7 +230,12 @@ export function FeedbackComposer({
       </View>
 
       {errorMessage && (
-        <View style={[styles.errorBox, { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder }]}>
+        <View
+          style={[
+            styles.errorBox,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
           <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
         </View>
       )}
@@ -334,7 +337,9 @@ export function FeedbackComposer({
               {isUploadingAttachment ? (
                 <View style={styles.uploadingRow}>
                   <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={[styles.addAttachmentText, { color: colors.primary, marginLeft: 6 }]}>
+                  <Text
+                    style={[styles.addAttachmentText, { color: colors.primary, marginLeft: 6 }]}
+                  >
                     {strings.feedbackComposer.uploadingAttachment}
                   </Text>
                 </View>
@@ -358,9 +363,7 @@ export function FeedbackComposer({
                 ]}
               >
                 <View style={styles.attachmentInfo}>
-                  <Text style={styles.attachmentIcon}>
-                    {att.kind === 'image' ? '🖼️' : '📄'}
-                  </Text>
+                  <Text style={styles.attachmentIcon}>{att.kind === 'image' ? '🖼️' : '📄'}</Text>
                   <View style={styles.attachmentDetails}>
                     <Text
                       numberOfLines={1}

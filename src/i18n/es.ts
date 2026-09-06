@@ -40,6 +40,8 @@ export const esStrings: CupThreadStrings = {
     removeAttachment: 'Eliminar',
     attachmentsHeader: 'Archivos adjuntos',
     uploadFailed: 'Error al subir el archivo adjunto.',
+    someUploadsFailed: (count: number) =>
+      count === 1 ? 'No se pudo subir 1 adjunto.' : `No se pudieron subir ${count} adjuntos.`,
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
   },
   featureRequests: {
@@ -75,7 +77,7 @@ export const esStrings: CupThreadStrings = {
     screenTitle: 'Hoja de ruta',
     searchPlaceholder: 'Buscar en la hoja de ruta...',
     emptyColumn: 'No hay elementos en esta etapa',
-    upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} votos`,
+    upvotesCount: (count: number) => (count === 1 ? '1 voto' : `${count} votos`),
     loadingMore: 'Cargando más...',
     loadMore: 'Cargar más',
     showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
@@ -122,7 +124,8 @@ export const esStrings: CupThreadStrings = {
     anonymous: 'Desarrollador anónimo',
     recentComments: 'Comentarios recientes',
     appsSection: (count: number) => `Aplicaciones (${count})`,
-    requestCount: (count: number) => `${count} solicitud${count === 1 ? '' : 'es'} de función pública${count === 1 ? '' : 's'}`,
+    requestCount: (count: number) =>
+      `${count} solicitud${count === 1 ? '' : 'es'} de función pública${count === 1 ? '' : 's'}`,
     commentOn: (title: string) => `en ${title}`,
   },
 };

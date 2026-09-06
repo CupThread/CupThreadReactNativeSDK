@@ -40,6 +40,8 @@ export const enStrings: CupThreadStrings = {
     removeAttachment: 'Remove',
     attachmentsHeader: 'Attachments',
     uploadFailed: 'Failed to upload attachment.',
+    someUploadsFailed: (count: number) =>
+      `${count} attachment${count === 1 ? '' : 's'} failed to upload.`,
     submitFailed: 'Failed to submit feedback. Please try again.',
   },
   featureRequests: {

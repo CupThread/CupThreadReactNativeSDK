@@ -40,6 +40,7 @@ export const koStrings: CupThreadStrings = {
     removeAttachment: '삭제',
     attachmentsHeader: '첨부 파일',
     uploadFailed: '첨부 파일 업로드에 실패했습니다.',
+    someUploadsFailed: (count: number) => `${count}개의 첨부 파일 업로드에 실패했습니다.`,
     submitFailed: '피드백 제출에 실패했습니다. 다시 시도해 주세요.',
   },
   featureRequests: {
