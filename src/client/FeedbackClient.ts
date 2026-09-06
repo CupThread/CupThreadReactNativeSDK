@@ -354,6 +354,16 @@ export class FeedbackClient {
   }
 
   /**
+   * Encodes a value interpolated into a URL path segment so reserved
+   * characters (`/`, `?`, `#`, `%`, whitespace, …) cannot alter the request
+   * target. The server decodes path segments before matching, so values
+   * without reserved characters produce byte-identical URLs.
+   */
+  private static encodeSegment(segment: string): string {
+    return encodeURIComponent(segment);
+  }
+
+  /**
    * Submits a user feedback draft, bug report, or feature inquiry.
    *
    * @param draft - The feedback payload including title, description, and optional attachments.
@@ -496,7 +506,7 @@ export class FeedbackClient {
   public async fetchAppConfig(options?: RequestOptions | AbortSignal): Promise<PublicAppConfig> {
     return this.request<PublicAppConfig>({
       method: 'GET',
-      path: `/api/v1/public/config/${this.config.appKey}`,
+      path: `/api/v1/public/config/${FeedbackClient.encodeSegment(this.config.appKey)}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -516,7 +526,7 @@ export class FeedbackClient {
   public async fetchColumns(options?: RequestOptions | AbortSignal): Promise<BoardColumn[]> {
     const res = await this.request<{ columns: BoardColumn[] }>({
       method: 'GET',
-      path: `/api/v1/public/columns/${this.config.appKey}`,
+      path: `/api/v1/public/columns/${FeedbackClient.encodeSegment(this.config.appKey)}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -537,7 +547,7 @@ export class FeedbackClient {
   public async fetchVersions(options?: RequestOptions | AbortSignal): Promise<AppVersion[]> {
     const res = await this.request<{ versions: AppVersion[] }>({
       method: 'GET',
-      path: `/api/v1/public/versions/${this.config.appKey}`,
+      path: `/api/v1/public/versions/${FeedbackClient.encodeSegment(this.config.appKey)}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -663,7 +673,7 @@ export class FeedbackClient {
   ): Promise<VoteResult> {
     return this.request<VoteResult>({
       method: 'POST',
-      path: `/api/v1/feature-requests/${featureRequestId}/vote`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/vote`,
       body: {
         appKey: this.config.appKey,
         userToken,
@@ -692,7 +702,7 @@ export class FeedbackClient {
   ): Promise<FeatureRequestComment[]> {
     const res = await this.request<{ comments: FeatureRequestComment[] }>({
       method: 'GET',
-      path: `/api/v1/feature-requests/${featureRequestId}/comments`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -723,7 +733,7 @@ export class FeedbackClient {
   ): Promise<FeatureRequestComment> {
     return this.request<FeatureRequestComment>({
       method: 'POST',
-      path: `/api/v1/feature-requests/${featureRequestId}/comments`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
       body: {
         body: draft.body.trim(),
         authorName: draft.authorName?.trim() || undefined,
@@ -754,7 +764,7 @@ export class FeedbackClient {
   public async fetchChangelog(options?: RequestOptions | AbortSignal): Promise<ChangelogEntry[]> {
     const res = await this.request<{ entries: ChangelogEntry[] }>({
       method: 'GET',
-      path: `/api/v1/public/apps/${this.config.appKey}/changelog`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -831,7 +841,7 @@ export class FeedbackClient {
   ): Promise<ChangelogSubscriptionResult> {
     return this.request<ChangelogSubscriptionResult>({
       method: 'POST',
-      path: `/api/v1/public/apps/${this.config.appKey}/changelog/subscribe`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/subscribe`,
       body: { email: email.trim() },
       userToken,
       accepted: [200, 201],
@@ -857,7 +867,7 @@ export class FeedbackClient {
   ): Promise<ChangelogUnsubscribeResult> {
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
-      path: `/api/v1/public/apps/${this.config.appKey}/changelog/unsubscribe`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/unsubscribe`,
       body: { email: email.trim() },
       accepted: [200],
       signal: extractSignal(options),
@@ -893,7 +903,7 @@ export class FeedbackClient {
   }): Promise<UserAttributesUpdateResult> {
     return this.request<UserAttributesUpdateResult>({
       method: 'PUT',
-      path: `/api/v1/public/apps/${this.config.appKey}/user`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/user`,
       body: {
         isPaying: options.isPaying,
         plan: options.plan?.trim(),
@@ -925,7 +935,7 @@ export class FeedbackClient {
   ): Promise<PublicUserProfileResult> {
     return this.request<PublicUserProfileResult>({
       method: 'GET',
-      path: `/api/v1/users/${userId}/profile`,
+      path: `/api/v1/users/${FeedbackClient.encodeSegment(userId)}/profile`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
