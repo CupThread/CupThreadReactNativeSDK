@@ -139,3 +139,217 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+const HOSTILE_SEGMENT = 'a b/c?d=e#f%g';
+const HOSTILE_SEGMENT_ENCODED = 'a%20b%2Fc%3Fd%3De%23f%25g';
+
+test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path segments', async () => {
+  const originalFetch = globalThis.fetch;
+  const interceptedUrls: string[] = [];
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    interceptedUrls.push(url.toString());
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: HOSTILE_SEGMENT,
+    });
+
+    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+      {
+        label: 'fetchAppConfig',
+        run: () => client.fetchAppConfig(),
+        expected: `https://api.cupthread.com/api/v1/public/config/${HOSTILE_SEGMENT_ENCODED}`,
+      },
+      {
+        label: 'fetchColumns',
+        run: () => client.fetchColumns(),
+        expected: `https://api.cupthread.com/api/v1/public/columns/${HOSTILE_SEGMENT_ENCODED}`,
+      },
+      {
+        label: 'fetchVersions',
+        run: () => client.fetchVersions(),
+        expected: `https://api.cupthread.com/api/v1/public/versions/${HOSTILE_SEGMENT_ENCODED}`,
+      },
+      {
+        label: 'toggleVote',
+        run: () => client.toggleVote(HOSTILE_SEGMENT, 'usr_tok'),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/vote`,
+      },
+      {
+        label: 'fetchComments',
+        run: () => client.fetchComments(HOSTILE_SEGMENT),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/comments`,
+      },
+      {
+        label: 'postComment',
+        run: () => client.postComment(HOSTILE_SEGMENT, { body: 'Looks great!' }, 'usr_tok'),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/comments`,
+      },
+      {
+        label: 'fetchChangelog',
+        run: () => client.fetchChangelog(),
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog`,
+      },
+      {
+        label: 'subscribeToChangelog',
+        run: () => client.subscribeToChangelog('user@example.com', 'usr_tok'),
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog/subscribe`,
+      },
+      {
+        label: 'unsubscribeFromChangelog',
+        run: () => client.unsubscribeFromChangelog('user@example.com'),
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog/unsubscribe`,
+      },
+      {
+        label: 'updateUserAttributes',
+        run: () => client.updateUserAttributes({ userToken: 'usr_tok', isPaying: true }),
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/user`,
+      },
+      {
+        label: 'fetchUserProfile',
+        run: () => client.fetchUserProfile(HOSTILE_SEGMENT),
+        expected: `https://api.cupthread.com/api/v1/users/${HOSTILE_SEGMENT_ENCODED}/profile`,
+      },
+    ];
+
+    for (const testCase of cases) {
+      interceptedUrls.length = 0;
+      await testCase.run();
+      assert.equal(interceptedUrls.length, 1, testCase.label);
+      const url = interceptedUrls[0];
+      assert.equal(url, testCase.expected, testCase.label);
+      // Segment containment: reserved characters must never escape into the
+      // URL structure (no stray query, fragment, or unencoded separators).
+      assert.ok(!url.includes('?'), `${testCase.label}: no raw "?" in URL`);
+      assert.ok(!url.includes('#'), `${testCase.label}: no raw "#" in URL`);
+      assert.ok(!url.includes(' '), `${testCase.label}: no raw space in URL`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient leaves ordinary path segments byte-identical (no double-encoding)', async () => {
+  const originalFetch = globalThis.fetch;
+  const interceptedUrls: string[] = [];
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    interceptedUrls.push(url.toString());
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_key_abc',
+    });
+
+    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+      {
+        label: 'fetchAppConfig',
+        run: () => client.fetchAppConfig(),
+        expected: 'https://api.cupthread.com/api/v1/public/config/app_key_abc',
+      },
+      {
+        label: 'fetchColumns',
+        run: () => client.fetchColumns(),
+        expected: 'https://api.cupthread.com/api/v1/public/columns/app_key_abc',
+      },
+      {
+        label: 'fetchVersions',
+        run: () => client.fetchVersions(),
+        expected: 'https://api.cupthread.com/api/v1/public/versions/app_key_abc',
+      },
+      {
+        label: 'toggleVote',
+        run: () => client.toggleVote('fr_123', 'usr_tok'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/vote',
+      },
+      {
+        label: 'fetchComments',
+        run: () => client.fetchComments('fr_123'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments',
+      },
+      {
+        label: 'postComment',
+        run: () => client.postComment('fr_123', { body: 'Nice' }, 'usr_tok'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments',
+      },
+      {
+        label: 'fetchChangelog',
+        run: () => client.fetchChangelog(),
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog',
+      },
+      {
+        label: 'subscribeToChangelog',
+        run: () => client.subscribeToChangelog('user@example.com', 'usr_tok'),
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog/subscribe',
+      },
+      {
+        label: 'unsubscribeFromChangelog',
+        run: () => client.unsubscribeFromChangelog('user@example.com'),
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog/unsubscribe',
+      },
+      {
+        label: 'updateUserAttributes',
+        run: () => client.updateUserAttributes({ userToken: 'usr_tok', isPaying: true }),
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/user',
+      },
+      {
+        label: 'fetchUserProfile',
+        run: () => client.fetchUserProfile('user_42'),
+        expected: 'https://api.cupthread.com/api/v1/users/user_42/profile',
+      },
+    ];
+
+    for (const testCase of cases) {
+      interceptedUrls.length = 0;
+      await testCase.run();
+      assert.equal(interceptedUrls.length, 1, testCase.label);
+      assert.equal(interceptedUrls[0], testCase.expected, testCase.label);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient round-trips non-ASCII path segments through UTF-8 percent-encoding', async () => {
+  const originalFetch = globalThis.fetch;
+  let interceptedUrl = '';
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    interceptedUrl = url.toString();
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_key_abc',
+    });
+
+    await client.fetchUserProfile('üser-42');
+
+    assert.equal(interceptedUrl, 'https://api.cupthread.com/api/v1/users/%C3%BCser-42/profile');
+    const encodedSegment = interceptedUrl.slice(
+      interceptedUrl.indexOf('/api/v1/users/') + '/api/v1/users/'.length,
+      interceptedUrl.lastIndexOf('/profile')
+    );
+    assert.equal(decodeURIComponent(encodedSegment), 'üser-42');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
