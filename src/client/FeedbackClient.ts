@@ -32,9 +32,16 @@ import { iso8601Now } from '../utils/formatters';
 import { UserTokenStore } from './UserTokenStore';
 
 /**
- * Default timeout for requests and file uploads in milliseconds (15 seconds).
+ * Default timeout for API (JSON) requests in milliseconds (15 seconds).
  */
 export const DEFAULT_TIMEOUT_MS = 15000;
+
+/**
+ * Default completion budget for attachment uploads in milliseconds (60 seconds).
+ * Uploads of screenshots and diagnostic archives routinely exceed the 15s JSON
+ * budget on mobile uplinks, so they get their own, larger default.
+ */
+export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
 
 function extractSignal(
   optionsOrSignal?: RequestOptions | AbortSignal
@@ -260,7 +267,9 @@ export interface UploadAttachmentOptions {
   signal?: AbortSignal;
 
   /**
-   * Optional request timeout override in milliseconds for this upload.
+   * Optional completion-budget override in milliseconds for this upload.
+   * Falls back to `uploadTimeoutMs` from the client config, which defaults to
+   * 60 seconds — uploads do not inherit the shorter JSON-request `timeoutMs`.
    */
   timeoutMs?: number;
 
@@ -350,6 +359,7 @@ export class FeedbackClient {
       appKey: config.appKey,
       defaultPlatform: config.defaultPlatform || getRuntimePlatform(),
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      uploadTimeoutMs: config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
     };
   }
 
@@ -467,7 +477,10 @@ export class FeedbackClient {
       formData.append('file', options.file, options.filename);
     }
 
-    const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    // Uploads use the dedicated upload budget: an explicit global `timeoutMs`
+    // tuned for fail-fast JSON calls must not clamp large attachment uploads.
+    const timeoutMs =
+      options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
 
     const json = await this.request<Record<string, any>>({
       method: 'POST',
