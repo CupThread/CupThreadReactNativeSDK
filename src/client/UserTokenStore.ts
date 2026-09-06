@@ -106,6 +106,13 @@ export class UserTokenStore {
   private identityLocked: boolean = false;
 
   /**
+   * Subscribers notified whenever the active identity changes (setToken /
+   * resetToken / getToken adoption). Lets reactive consumers such as
+   * `<CupThreadProvider>` follow explicit login/logout identity switches.
+   */
+  private listeners: Set<() => void> = new Set();
+
+  /**
    * In-memory cache of seen changelog versions/IDs.
    */
   private seenChangelogsCache: Set<string> | null = null;
@@ -278,7 +285,12 @@ export class UserTokenStore {
         try {
           const stored = await this.storage.getItem(STORAGE_KEY);
           if (stored && typeof stored === 'string' && stored.trim().length > 0) {
-            this.cachedToken = stored.trim();
+            const storedToken = stored.trim();
+            const changed = this.cachedToken !== storedToken;
+            this.cachedToken = storedToken;
+            if (changed) {
+              this.emitChange();
+            }
             return this.cachedToken;
           }
         } catch {
@@ -308,6 +320,7 @@ export class UserTokenStore {
           // ignore
         }
       }
+      this.emitChange();
       return newToken;
     })().finally(() => {
       this.pendingGetToken = null;
@@ -332,6 +345,7 @@ export class UserTokenStore {
    * ```
    */
   public async setToken(token: string): Promise<void> {
+    const previous = this.cachedToken;
     this.identityLocked = true;
     this.cachedToken = token;
     if (this.storage) {
@@ -340,6 +354,11 @@ export class UserTokenStore {
       } catch {
         // ignore
       }
+    }
+    // Notify only after storage has settled so a re-resolving subscriber reads
+    // the new value, and only on an actual identity change.
+    if (previous !== token) {
+      this.emitChange();
     }
   }
 
@@ -360,6 +379,7 @@ export class UserTokenStore {
    * ```
    */
   public async resetToken(): Promise<string> {
+    const previous = this.cachedToken;
     const newToken = generateUUID();
     this.identityLocked = true;
     this.cachedToken = newToken;
@@ -370,7 +390,53 @@ export class UserTokenStore {
         // ignore
       }
     }
+    // Notify only after storage has settled so a re-resolving subscriber reads
+    // the new value.
+    if (previous !== newToken) {
+      this.emitChange();
+    }
     return newToken;
+  }
+
+  /**
+   * Subscribes a listener that is notified whenever the active identity changes.
+   *
+   * @remarks
+   * Listeners fire after {@link UserTokenStore.setToken}, {@link UserTokenStore.resetToken},
+   * or an identity-changing {@link UserTokenStore.getToken} resolution completes
+   * (memory and storage both settled). Reactive consumers such as
+   * `<CupThreadProvider>` use this to follow documented login/logout flows.
+   *
+   * @param listener - Callback invoked with no arguments on identity changes.
+   * @returns An unsubscribe function; safe to call multiple times.
+   *
+   * @example
+   * ```ts
+   * const unsubscribe = UserTokenStore.shared.subscribe(() => {
+   *   console.log('identity changed:', UserTokenStore.shared.token);
+   * });
+   * unsubscribe();
+   * ```
+   */
+  public subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Notifies all subscribers of an identity change. Listener errors are
+   * swallowed so token resolution can never be broken by a subscriber.
+   */
+  private emitChange(): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener();
+      } catch {
+        // ignore
+      }
+    });
   }
 
   /**
