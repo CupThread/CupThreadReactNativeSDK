@@ -101,7 +101,10 @@ export class UserTokenStore {
   /**
    * Whether an explicit identity was installed via {@link UserTokenStore.setToken}
    * or {@link UserTokenStore.resetToken}. Once set, the constructor's initial
-   * storage read must never overwrite the cached token when it resolves late.
+   * storage read must never overwrite the cached token when it resolves late,
+   * and {@link UserTokenStore.getToken} must never adopt a stale persisted
+   * value over it — including a re-read whose storage lookup was already in
+   * flight when the explicit identity was installed.
    */
   private identityLocked: boolean = false;
 
@@ -230,7 +233,8 @@ export class UserTokenStore {
    *
    * Explicit identities installed during the async load window via
    * {@link UserTokenStore.setToken} or {@link UserTokenStore.resetToken} are
-   * authoritative and are never reverted by the initial storage read.
+   * authoritative and are never reverted by any storage re-read (the initial
+   * load or a later {@link UserTokenStore.getToken}).
    *
    * @example
    * ```ts
@@ -260,6 +264,13 @@ export class UserTokenStore {
    * If storage already contains a token, it is restored into memory and returned.
    * A new UUID is generated and persisted only when storage is verified to be empty.
    *
+   * Explicit identities installed via {@link UserTokenStore.setToken} or
+   * {@link UserTokenStore.resetToken} are authoritative: `getToken()` never
+   * re-reads storage past one, and a storage read that was already in flight
+   * when the explicit identity was installed cannot revert it either. This
+   * also holds when the explicit identity's own persistence write failed
+   * (storage keeps an older token while the cache holds the explicit one).
+   *
    * @returns A promise resolving to the user token string.
    *
    * @example
@@ -273,10 +284,21 @@ export class UserTokenStore {
     }
 
     this.pendingGetToken = (async () => {
+      // An identity installed via setToken()/resetToken() is authoritative:
+      // never re-read storage past it. Checked up-front for calls made after
+      // the explicit identity exists, and re-checked once more after the
+      // storage read below resolves, so a setToken()/resetToken() landing
+      // while that read was in flight cannot be reverted by the stale value.
+      if (this.identityLocked && this.cachedToken) {
+        return this.cachedToken;
+      }
       // 1. First, check persistent storage adapter if available
       if (this.storage) {
         try {
           const stored = await this.storage.getItem(STORAGE_KEY);
+          if (this.identityLocked && this.cachedToken) {
+            return this.cachedToken;
+          }
           if (stored && typeof stored === 'string' && stored.trim().length > 0) {
             this.cachedToken = stored.trim();
             return this.cachedToken;
@@ -322,9 +344,12 @@ export class UserTokenStore {
    * @param token - Custom user identifier or token string.
    *
    * @remarks
-   * The explicit token is authoritative: if the constructor's initial storage
-   * read (async adapters) is still in flight, it can no longer overwrite the
-   * cache or revert the identity when it resolves.
+   * The explicit token is authoritative: neither the constructor's initial
+   * storage read nor any later {@link UserTokenStore.getToken} re-read (async
+   * adapters) can overwrite the cache or revert the identity — including
+   * reads that were already in flight when `setToken()` was called, and
+   * including after a failed persistence write (storage may keep an older
+   * token; the in-memory identity still wins).
    *
    * @example
    * ```ts
@@ -349,9 +374,9 @@ export class UserTokenStore {
    * @returns The newly generated user token.
    *
    * @remarks
-   * Like {@link UserTokenStore.setToken}, the reset is authoritative: an
-   * in-flight initial storage read (async adapters) can no longer overwrite
-   * the cache or revert the identity when it resolves.
+   * Like {@link UserTokenStore.setToken}, the reset is authoritative: neither
+   * an in-flight initial storage read nor a later {@link UserTokenStore.getToken}
+   * re-read (async adapters) can overwrite the cache or revert the identity.
    *
    * @example
    * ```ts
