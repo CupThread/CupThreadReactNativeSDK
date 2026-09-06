@@ -99,6 +99,13 @@ export class UserTokenStore {
   private pendingGetToken: Promise<string> | null = null;
 
   /**
+   * Whether an explicit identity was installed via {@link UserTokenStore.setToken}
+   * or {@link UserTokenStore.resetToken}. Once set, the constructor's initial
+   * storage read must never overwrite the cached token when it resolves late.
+   */
+  private identityLocked: boolean = false;
+
+  /**
    * In-memory cache of seen changelog versions/IDs.
    */
   private seenChangelogsCache: Set<string> | null = null;
@@ -177,6 +184,11 @@ export class UserTokenStore {
         // Doing so would overwrite the existing persistent token in storage.
         (item as Promise<string | null>)
           .then((resolved) => {
+            // An explicit setToken()/resetToken() that landed while this read
+            // was in flight is authoritative: never revert the identity to the
+            // stale persisted value. A still-empty cache (or a throwaway
+            // `.token` mint) still adopts the persisted token.
+            if (this.identityLocked) return;
             if (resolved && typeof resolved === 'string' && resolved.trim().length > 0) {
               this.cachedToken = resolved.trim();
             }
@@ -215,6 +227,10 @@ export class UserTokenStore {
    * `<CupThreadProvider>` does this for you and exposes readiness through
    * `useCupThreadTokenReadiness()`). The synchronous contract is only safe for
    * synchronous adapters or no-adapter setups.
+   *
+   * Explicit identities installed during the async load window via
+   * {@link UserTokenStore.setToken} or {@link UserTokenStore.resetToken} are
+   * authoritative and are never reverted by the initial storage read.
    *
    * @example
    * ```ts
@@ -305,12 +321,18 @@ export class UserTokenStore {
    *
    * @param token - Custom user identifier or token string.
    *
+   * @remarks
+   * The explicit token is authoritative: if the constructor's initial storage
+   * read (async adapters) is still in flight, it can no longer overwrite the
+   * cache or revert the identity when it resolves.
+   *
    * @example
    * ```ts
    * await UserTokenStore.shared.setToken(user.id);
    * ```
    */
   public async setToken(token: string): Promise<void> {
+    this.identityLocked = true;
     this.cachedToken = token;
     if (this.storage) {
       try {
@@ -326,6 +348,11 @@ export class UserTokenStore {
    *
    * @returns The newly generated user token.
    *
+   * @remarks
+   * Like {@link UserTokenStore.setToken}, the reset is authoritative: an
+   * in-flight initial storage read (async adapters) can no longer overwrite
+   * the cache or revert the identity when it resolves.
+   *
    * @example
    * ```ts
    * const newToken = await UserTokenStore.shared.resetToken();
@@ -334,6 +361,7 @@ export class UserTokenStore {
    */
   public async resetToken(): Promise<string> {
     const newToken = generateUUID();
+    this.identityLocked = true;
     this.cachedToken = newToken;
     if (this.storage) {
       try {

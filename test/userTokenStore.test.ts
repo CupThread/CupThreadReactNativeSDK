@@ -2,6 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { UserTokenStore } from '../src/client/UserTokenStore';
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** Flush pending microtasks so a resolved storage read can run its adoption handler. */
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+const TOKEN_KEY = 'cupthread_user_token_v1';
+
 test('UserTokenStore generates valid UUID', () => {
   const store = new UserTokenStore();
   const token = store.token;
@@ -92,6 +110,91 @@ test('UserTokenStore persists new token to async storage when initially empty', 
   // Subsequent call returns identical token
   const token2 = await store.getToken();
   assert.equal(token2, token);
+});
+
+test('UserTokenStore: setToken wins over late-resolving initial storage read', async () => {
+  const read1 = deferred<string | null>();
+  const writes: Array<[string, string]> = [];
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read1.promise : Promise.resolve(null)),
+    setItem: (key: string, val: string) => {
+      writes.push([key, val]);
+      return Promise.resolve();
+    },
+  };
+
+  // Constructor issues a pending storage read R1.
+  const store = new UserTokenStore(adapter);
+  // Host restores auth while R1 is still in flight; the write lands in storage.
+  await store.setToken('token-explicit-new-user');
+  // R1 resolves LAST, carrying the stale previous identity.
+  read1.resolve('token-old-user');
+  await flushMicrotasks();
+
+  assert.equal(
+    store.token,
+    'token-explicit-new-user',
+    'the explicit setToken() must not be reverted by the late initial read',
+  );
+  const lastTokenWrite = [...writes].reverse().find(([key]) => key === TOKEN_KEY);
+  assert.equal(lastTokenWrite?.[1], 'token-explicit-new-user', 'storage must keep the explicit token');
+});
+
+test('UserTokenStore: resetToken wins over late-resolving initial storage read', async () => {
+  const read1 = deferred<string | null>();
+  const writes: Array<[string, string]> = [];
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read1.promise : Promise.resolve(null)),
+    setItem: (key: string, val: string) => {
+      writes.push([key, val]);
+      return Promise.resolve();
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  const fresh = await store.resetToken();
+  read1.resolve('token-old-user');
+  await flushMicrotasks();
+
+  assert.notEqual(fresh, 'token-old-user');
+  assert.match(fresh, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.equal(store.token, fresh, 'the reset identity must not be reverted by the late initial read');
+  const lastTokenWrite = [...writes].reverse().find(([key]) => key === TOKEN_KEY);
+  assert.equal(lastTokenWrite?.[1], fresh, 'storage must keep the reset token');
+});
+
+test('UserTokenStore: initial read still adopts persisted token when no interim call happens', async () => {
+  const read1 = deferred<string | null>();
+  const adapter = {
+    getItem: () => read1.promise,
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+  read1.resolve('persisted-token');
+  await flushMicrotasks();
+
+  assert.equal(store.token, 'persisted-token', 'a still-empty cache must adopt the persisted token');
+});
+
+test('UserTokenStore: throwaway .token mint during pending load is replaced by the persisted token', async () => {
+  const read1 = deferred<string | null>();
+  const adapter = {
+    getItem: () => read1.promise,
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+  const throwaway = store.token; // sync access mints a throwaway in-memory UUID
+  assert.notEqual(throwaway, 'persisted-token');
+  read1.resolve('persisted-token');
+  await flushMicrotasks();
+
+  assert.equal(
+    store.token,
+    'persisted-token',
+    'a throwaway .token mint must still be replaced once storage resolves',
+  );
 });
 
 test('UserTokenStore manages changelog seen status with persistence', async () => {
