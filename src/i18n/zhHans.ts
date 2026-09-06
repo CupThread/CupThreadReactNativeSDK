@@ -40,6 +40,7 @@ export const zhHansStrings: CupThreadStrings = {
     removeAttachment: '删除',
     attachmentsHeader: '已附加文件',
     uploadFailed: '上传附件失败。',
+    someUploadsFailed: (count: number) => `${count} 个附件上传失败。`,
     submitFailed: '提交反馈失败，请重试。',
   },
   featureRequests: {

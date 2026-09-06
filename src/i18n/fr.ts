@@ -40,6 +40,10 @@ export const frStrings: CupThreadStrings = {
     removeAttachment: 'Supprimer',
     attachmentsHeader: 'Pièces jointes',
     uploadFailed: 'Échec du téléversement de la pièce jointe.',
+    someUploadsFailed: (count: number) =>
+      count === 1
+        ? 'Impossible de téléverser 1 pièce jointe.'
+        : `Impossible de téléverser ${count} pièces jointes.`,
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
   },
   featureRequests: {
@@ -75,7 +79,7 @@ export const frStrings: CupThreadStrings = {
     screenTitle: 'Feuille de route',
     searchPlaceholder: 'Rechercher dans la feuille de route...',
     emptyColumn: 'Aucun élément à cette étape',
-    upvotesCount: (count: number) => count <= 1 ? `${count} vote` : `${count} votes`,
+    upvotesCount: (count: number) => (count <= 1 ? `${count} vote` : `${count} votes`),
     loadingMore: 'Chargement de la suite...',
     loadMore: 'Charger plus',
     showingCount: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
@@ -122,7 +126,8 @@ export const frStrings: CupThreadStrings = {
     anonymous: 'Développeur anonyme',
     recentComments: 'Commentaires récents',
     appsSection: (count: number) => `Applications (${count})`,
-    requestCount: (count: number) => `${count} suggestion${count > 1 ? 's' : ''} publique${count > 1 ? 's' : ''}`,
+    requestCount: (count: number) =>
+      `${count} suggestion${count > 1 ? 's' : ''} publique${count > 1 ? 's' : ''}`,
     commentOn: (title: string) => `sur ${title}`,
   },
 };
