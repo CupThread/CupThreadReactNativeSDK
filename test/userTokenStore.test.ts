@@ -197,6 +197,65 @@ test('UserTokenStore: throwaway .token mint during pending load is replaced by t
   );
 });
 
+test('UserTokenStore: getToken() in-flight read does not revert an interim setToken identity', async () => {
+  const read = deferred<string | null>();
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read.promise : Promise.resolve(null)),
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter); // constructor read pending
+  const pending = store.getToken(); // getToken()'s own storage read pending
+  await store.setToken('token-explicit'); // explicit identity lands mid-read
+  read.resolve('token-old-user'); // stale persisted value arrives last
+
+  const resolved = await pending;
+  assert.equal(
+    resolved,
+    'token-explicit',
+    'a getToken() whose storage read was in flight during setToken() must resolve the explicit identity',
+  );
+  assert.equal(store.token, 'token-explicit', 'the cache must keep the explicit identity');
+  assert.equal(await store.getToken(), 'token-explicit', 'later getToken() calls must keep the explicit identity');
+});
+
+test('UserTokenStore: getToken() in-flight read does not revert an interim resetToken identity', async () => {
+  const read = deferred<string | null>();
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read.promise : Promise.resolve(null)),
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+  const pending = store.getToken();
+  const fresh = await store.resetToken(); // explicit reset lands mid-read
+  read.resolve('token-old-user');
+
+  const resolved = await pending;
+  assert.notEqual(fresh, 'token-old-user');
+  assert.equal(resolved, fresh, 'a getToken() racing resetToken() must resolve the reset identity');
+  assert.equal(store.token, fresh, 'the cache must keep the reset identity');
+});
+
+test('UserTokenStore: getToken() keeps the explicit identity after a failed storage write', async () => {
+  const stored: Record<string, string> = { [TOKEN_KEY]: 'token-old-user' };
+  const adapter = {
+    getItem: (key: string) => Promise.resolve(stored[key] ?? null),
+    setItem: () => Promise.reject(new Error('quota exceeded')), // persistence keeps failing
+  };
+
+  const store = new UserTokenStore(adapter);
+  await store.setToken('token-explicit'); // write fails silently; cache holds the explicit token
+  assert.equal(store.token, 'token-explicit');
+
+  const retrieved = await store.getToken();
+  assert.equal(retrieved, 'token-explicit', 'getToken() must not re-adopt the stale persisted token');
+  assert.equal(store.token, 'token-explicit', 'the identity must not be permanently reverted');
+
+  const again = await store.getToken();
+  assert.equal(again, 'token-explicit', 'repeated getToken() calls must keep the explicit identity');
+});
+
 test('UserTokenStore manages changelog seen status with persistence', async () => {
   const mem: Record<string, string> = {};
   const asyncAdapter = {
