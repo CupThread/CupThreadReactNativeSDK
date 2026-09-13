@@ -80,6 +80,7 @@ export const viStrings: CupThreadStrings = {
     loadingMore: 'Đang tải thêm...',
     loadMore: 'Tải thêm',
     showingCount: (shown: number, total: number) => `Hiển thị ${shown}/${total}`,
+    otherColumn: 'Khác',
   },
   featureRequestDetail: {
     title: 'Yêu cầu tính năng',

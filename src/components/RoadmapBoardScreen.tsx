@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,17 @@ import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
+import { ROADMAP_OTHER_COLUMN_ID, groupRoadmapRequests } from '../utils/roadmapColumns';
+
+/**
+ * Render model for a column tab: either a server column or the synthetic
+ * "Other" bucket for requests whose column is hidden/unknown/missing.
+ */
+interface RoadmapColumnTab {
+  id: string;
+  name: string;
+  color?: string | null;
+}
 
 /**
  * Props for configuring the {@link RoadmapBoardScreen} component.
@@ -75,10 +86,7 @@ export interface RoadmapBoardScreenProps {
  * }
  * ```
  */
-export function RoadmapBoardScreen({
-  onBack,
-  headerTitle,
-}: RoadmapBoardScreenProps) {
+export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
@@ -119,12 +127,18 @@ export function RoadmapBoardScreen({
     reload: reloadColumns,
   } = useAsyncData(fetchColumns, { enabled: isTokenReady });
 
-  const columns = (columnsData ?? []).filter((c) => c.isVisible);
+  const { columns: visibleColumns, orphanRequests } = useMemo(
+    () => groupRoadmapRequests(columnsData ?? [], requests),
+    [columnsData, requests]
+  );
 
   useEffect(() => {
-    if (columns.length === 0) return;
-    setSelectedColumnId((prev) => prev ?? columns[0].id);
-  }, [columns]);
+    if (visibleColumns.length === 0) return;
+    setSelectedColumnId((prev) => {
+      if (prev === ROADMAP_OTHER_COLUMN_ID) return prev;
+      return prev && visibleColumns.some((c) => c.id === prev) ? prev : visibleColumns[0].id;
+    });
+  }, [visibleColumns]);
 
   const handleRefresh = useCallback(async () => {
     if (!isTokenReady) return;
@@ -136,16 +150,41 @@ export function RoadmapBoardScreen({
     void reloadRequests();
   }, [reloadColumns, reloadRequests]);
 
-  const activeColumn = columns.find((c) => c.id === selectedColumnId) || columns[0];
-  const columnItems = requests.filter((r) => {
-    if (!activeColumn) return true;
-    return r.columnId === activeColumn.id || (!r.columnId && r.status === activeColumn.slug);
-  });
+  const isOtherSelected = selectedColumnId === ROADMAP_OTHER_COLUMN_ID;
+  const activeColumn = visibleColumns.find((c) => c.id === selectedColumnId) || visibleColumns[0];
+  const columnItems = useMemo(() => {
+    if (isOtherSelected) return orphanRequests;
+    if (!activeColumn) return requests;
+    return requests.filter((r) => {
+      return r.columnId === activeColumn.id || (!r.columnId && r.status === activeColumn.slug);
+    });
+  }, [isOtherSelected, orphanRequests, activeColumn, requests]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyItemChange);
+  // Visible columns first, then the "Other" fallback tab whenever any request
+  // would otherwise be dropped (hidden/unknown/missing column). With zero
+  // visible columns the legacy flat list shows everything already, so no
+  // fallback tab is needed there.
+  const columnTabs: RoadmapColumnTab[] = useMemo(() => {
+    const tabs: RoadmapColumnTab[] = visibleColumns.map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+    }));
+    if (visibleColumns.length > 0 && orphanRequests.length > 0) {
+      tabs.push({ id: ROADMAP_OTHER_COLUMN_ID, name: strings.roadmap.otherColumn });
+    }
+    return tabs;
+  }, [visibleColumns, orphanRequests, strings.roadmap.otherColumn]);
+
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+    client,
+    userToken,
+    applyItemChange
+  );
 
   const isLoading =
-    (isColumnsLoading && columns.length === 0) || (isRequestsLoading && requests.length === 0);
+    (isColumnsLoading && visibleColumns.length === 0) ||
+    (isRequestsLoading && requests.length === 0);
   const loadError = requestsError ?? columnsError;
 
   return (
@@ -159,19 +198,25 @@ export function RoadmapBoardScreen({
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
       </View>
 
-      {columns.length > 0 && (
+      {columnTabs.length > 0 && (
         <View style={[styles.columnTabsContainer, { borderBottomColor: colors.border }]}>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={columns}
+            data={columnTabs}
             keyExtractor={(c) => c.id}
             contentContainerStyle={styles.columnTabsList}
             renderItem={({ item: col }) => {
               const isSelected = col.id === selectedColumnId;
-              const count = requests.filter(
-                (r) => r.columnId === col.id || (!r.columnId && r.status === col.slug)
-              ).length;
+              const count =
+                col.id === ROADMAP_OTHER_COLUMN_ID
+                  ? orphanRequests.length
+                  : requests.filter(
+                      (r) =>
+                        r.columnId === col.id ||
+                        (!r.columnId &&
+                          r.status === visibleColumns.find((c) => c.id === col.id)?.slug)
+                    ).length;
 
               return (
                 <TouchableOpacity
@@ -179,7 +224,7 @@ export function RoadmapBoardScreen({
                   style={[
                     styles.columnTab,
                     {
-                      borderBottomColor: isSelected ? (col.color || colors.primary) : 'transparent',
+                      borderBottomColor: isSelected ? col.color || colors.primary : 'transparent',
                     },
                   ]}
                 >

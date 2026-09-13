@@ -80,6 +80,7 @@ export const zhHansStrings: CupThreadStrings = {
     loadingMore: '加载更多...',
     loadMore: '加载更多',
     showingCount: (shown: number, total: number) => `显示 ${shown} / ${total} 项`,
+    otherColumn: '其他',
   },
   featureRequestDetail: {
     title: '需求详情',

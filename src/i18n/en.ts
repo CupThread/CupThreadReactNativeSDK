@@ -81,6 +81,7 @@ export const enStrings: CupThreadStrings = {
     loadingMore: 'Loading more...',
     loadMore: 'Load more',
     showingCount: (shown: number, total: number) => `Showing ${shown} of ${total}`,
+    otherColumn: 'Other',
   },
   featureRequestDetail: {
     title: 'Feature Request',

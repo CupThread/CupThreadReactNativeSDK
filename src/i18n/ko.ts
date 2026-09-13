@@ -80,6 +80,7 @@ export const koStrings: CupThreadStrings = {
     loadingMore: '더 불러오는 중...',
     loadMore: '더 불러오기',
     showingCount: (shown: number, total: number) => `전체 ${total}개 중 ${shown}개 표시`,
+    otherColumn: '기타',
   },
   featureRequestDetail: {
     title: '기능 요청',

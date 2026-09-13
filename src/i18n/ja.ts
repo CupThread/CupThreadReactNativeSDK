@@ -80,6 +80,7 @@ export const jaStrings: CupThreadStrings = {
     loadingMore: 'さらに読み込み中...',
     loadMore: 'もっと読み込む',
     showingCount: (shown: number, total: number) => `${total}件中${shown}件を表示`,
+    otherColumn: 'その他',
   },
   featureRequestDetail: {
     title: '機能リクエスト',
