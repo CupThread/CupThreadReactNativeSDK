@@ -24,6 +24,7 @@ import {
   AuthenticationRequiredException,
   InvalidResponseException,
   RequestTimeoutException,
+  TurnstileRequiredException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
 } from './FeedbackException';
@@ -43,11 +44,12 @@ export const DEFAULT_TIMEOUT_MS = 15000;
  */
 export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
 
-function extractSignal(
-  optionsOrSignal?: RequestOptions | AbortSignal
-): AbortSignal | undefined {
+function extractSignal(optionsOrSignal?: RequestOptions | AbortSignal): AbortSignal | undefined {
   if (!optionsOrSignal) return undefined;
-  if ('aborted' in optionsOrSignal && typeof (optionsOrSignal as AbortSignal).aborted === 'boolean') {
+  if (
+    'aborted' in optionsOrSignal &&
+    typeof (optionsOrSignal as AbortSignal).aborted === 'boolean'
+  ) {
     return optionsOrSignal as AbortSignal;
   }
   if (typeof optionsOrSignal === 'object' && 'signal' in optionsOrSignal) {
@@ -56,9 +58,7 @@ function extractSignal(
   return undefined;
 }
 
-function extractTimeoutMs(
-  optionsOrSignal?: RequestOptions | AbortSignal
-): number | undefined {
+function extractTimeoutMs(optionsOrSignal?: RequestOptions | AbortSignal): number | undefined {
   if (!optionsOrSignal) return undefined;
   if (typeof optionsOrSignal === 'object' && 'timeoutMs' in optionsOrSignal) {
     return (optionsOrSignal as RequestOptions).timeoutMs;
@@ -193,8 +193,13 @@ async function executeWithTimeout<T>(
           cleanup();
           if (isTimeout()) {
             reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
-          } else if (callerSignal?.aborted || err?.name === 'AbortError' || controller.signal.aborted) {
-            const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
+          } else if (
+            callerSignal?.aborted ||
+            err?.name === 'AbortError' ||
+            controller.signal.aborted
+          ) {
+            const abortErr =
+              err?.name === 'AbortError' ? err : new Error('The operation was aborted');
             abortErr.name = 'AbortError';
             reject(abortErr);
           } else {
@@ -220,7 +225,6 @@ async function executeWithTimeout<T>(
     }
   }
 }
-
 
 /**
  * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
@@ -360,6 +364,7 @@ export class FeedbackClient {
       defaultPlatform: config.defaultPlatform || getRuntimePlatform(),
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       uploadTimeoutMs: config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
+      turnstileTokenProvider: config.turnstileTokenProvider,
     };
   }
 
@@ -374,12 +379,48 @@ export class FeedbackClient {
   }
 
   /**
+   * Detects the production API's Cloudflare Turnstile rejection on intake
+   * endpoints. The gate responds with HTTP 403 and either a machine-readable
+   * `code` (e.g. `turnstile_required` / `turnstile_verification_failed`) or a
+   * plain `error` string mentioning Turnstile, so both shapes are matched.
+   */
+  private static isTurnstileChallenge(status: number, responseBody: string): boolean {
+    if (status !== 403) return false;
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(responseBody);
+    } catch {
+      parsed = null;
+    }
+    if (parsed && typeof parsed === 'object') {
+      if (typeof parsed.code === 'string' && /turnstile/i.test(parsed.code)) return true;
+      if (typeof parsed.error === 'string') return /turnstile/i.test(parsed.error);
+    }
+    return /turnstile/i.test(responseBody);
+  }
+
+  /**
+   * Resolves the Turnstile token to attach to an intake submission: a
+   * draft-level `turnstileToken` wins over the configured provider so hosts can
+   * force a specific token per submission.
+   */
+  private async resolveTurnstileToken(explicit?: string): Promise<string | undefined> {
+    const trimmed = explicit?.trim();
+    if (trimmed) return trimmed;
+    const provider = this.config.turnstileTokenProvider;
+    if (!provider) return undefined;
+    const token = await provider();
+    return token?.trim() || undefined;
+  }
+
+  /**
    * Submits a user feedback draft, bug report, or feature inquiry.
    *
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
    * @throws {@link UnexpectedStatusException} If the server returns a non-2xx status code.
+   * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    * @throws {@link InvalidResponseException} If a network failure occurs or JSON parsing fails.
    *
    * @example
@@ -404,6 +445,7 @@ export class FeedbackClient {
     }
 
     const platform = draft.platform || this.config.defaultPlatform || getRuntimePlatform();
+    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
     const payload = {
       appKey: this.config.appKey,
       title: draft.title.trim(),
@@ -420,6 +462,7 @@ export class FeedbackClient {
         submittedAt: iso8601Now(),
       },
       attachments: draft.attachments || [],
+      ...(turnstileToken ? { turnstileToken } : {}),
     };
 
     return this.request<FeedbackSubmissionResult>({
@@ -460,8 +503,7 @@ export class FeedbackClient {
    * ```
    */
   public async uploadAttachment(options: UploadAttachmentOptions): Promise<FeedbackAttachment> {
-    const kind =
-      options.preferredKind || (options.mimeType.startsWith('image/') ? 'image' : 'r2');
+    const kind = options.preferredKind || (options.mimeType.startsWith('image/') ? 'image' : 'r2');
     const path = kind === 'image' ? '/api/v1/uploads/images' : '/api/v1/uploads/r2';
 
     const formData = new FormData();
@@ -479,8 +521,7 @@ export class FeedbackClient {
 
     // Uploads use the dedicated upload budget: an explicit global `timeoutMs`
     // tuned for fail-fast JSON calls must not clamp large attachment uploads.
-    const timeoutMs =
-      options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+    const timeoutMs = options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
 
     const json = await this.request<Record<string, any>>({
       method: 'POST',
@@ -636,6 +677,7 @@ export class FeedbackClient {
    * @param draft - Feature request proposal details (title, description, requesterName).
    * @param userToken - Current user identifier token.
    * @returns Submission confirmation and moderation pending status.
+   * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    *
    * @example
    * ```ts
@@ -650,6 +692,7 @@ export class FeedbackClient {
     userToken: string,
     options?: RequestOptions | AbortSignal
   ): Promise<FeatureRequestSubmissionResult> {
+    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
     return this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
       path: '/api/v1/feature-requests',
@@ -659,6 +702,7 @@ export class FeedbackClient {
         description: draft.description.trim(),
         requesterName: draft.requesterName?.trim() || undefined,
         requesterToken: userToken,
+        ...(turnstileToken ? { turnstileToken } : {}),
       },
       accepted: [200, 201],
       signal: extractSignal(options),
@@ -971,8 +1015,7 @@ export class FeedbackClient {
     uploadResponse?: boolean;
   }): Promise<T> {
     const url = `${this.config.baseUrl}${options.path}`;
-    const isFormData =
-      typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const headers: Record<string, string> = {};
 
     // FormData bodies must not carry an explicit Content-Type: the fetch
@@ -1023,6 +1066,9 @@ export class FeedbackClient {
         if (!accepted.includes(response.status)) {
           if (response.status === 401) {
             throw new AuthenticationRequiredException();
+          }
+          if (FeedbackClient.isTurnstileChallenge(response.status, text)) {
+            throw new TurnstileRequiredException(response.status, text);
           }
           throw new UnexpectedStatusException(response.status, text);
         }

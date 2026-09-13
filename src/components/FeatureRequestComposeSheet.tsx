@@ -19,6 +19,7 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
+import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
 
 /**
@@ -118,7 +119,13 @@ export function FeatureRequestComposeSheet({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
+      if (err instanceof TurnstileRequiredException) {
+        // The draft stays intact so the user can retry after the host's
+        // verification flow resolves a fresh token.
+        setErrorMessage(strings.common.verificationRequired);
+      } else {
+        setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
+      }
     }
   };
 
@@ -136,7 +143,12 @@ export function FeatureRequestComposeSheet({
       </View>
 
       {errorMessage && (
-        <View style={[styles.errorBox, { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder }]}>
+        <View
+          style={[
+            styles.errorBox,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
           <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
         </View>
       )}

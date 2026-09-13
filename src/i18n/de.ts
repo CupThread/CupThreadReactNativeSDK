@@ -19,6 +19,8 @@ export const deStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,
     daysAgo: (d: number) => (d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`),
+    verificationRequired:
+      'Zum Senden ist eine menschliche Verifizierung erforderlich. Bitte nach Abschluss der Verifizierung erneut versuchen.',
   },
   feedbackComposer: {
     title: 'Feedback senden',

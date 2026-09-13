@@ -21,6 +21,7 @@ Integrate the CupThread SDK (feedback, roadmap, and feature requests screens) in
 ---
 
 ## CupThread Ecosystem
+
 - 🌐 [CupThread.com](https://cupthread.com) — Feedback SaaS platform, developer console, and API.
 - 🍏 [CupThread/CupThreadSwiftSDK](https://github.com/CupThread/CupThreadSwiftSDK) — Apple platform SDK (SwiftUI / SPM / XCFramework).
 - 🤖 [CupThread/CupThreadAndroidSDK](https://github.com/CupThread/CupThreadAndroidSDK) — Android SDK (Jetpack Compose / Maven).
@@ -50,7 +51,7 @@ pnpm add github:CupThread/CupThreadReactNativeSDK#v0.1.0
 npx expo install github:CupThread/CupThreadReactNativeSDK#v0.1.0
 ```
 
-*Note: For package.json dependency specification, use `"@cupthread/react-native": "github:CupThread/CupThreadReactNativeSDK#v0.1.0"`.*
+_Note: For package.json dependency specification, use `"@cupthread/react-native": "github:CupThread/CupThreadReactNativeSDK#v0.1.0"`._
 
 ### Option B: Install from npm Registry
 
@@ -115,15 +116,15 @@ Wrap your app or screen in `<CupThreadProvider client={client}>` to automaticall
 
 ## Visual Showcase
 
-| Roadmap Board | Feature Requests | Submit Request |
-| :---: | :---: | :---: |
+|                                Roadmap Board                                 |                                     Feature Requests                                     |                                        Submit Request                                        |
+| :--------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
 | <img src="assets/screenshots/roadmap.png" width="260" alt="Roadmap Board" /> | <img src="assets/screenshots/feature-requests.png" width="260" alt="Feature Requests" /> | <img src="assets/screenshots/submit-request.png" width="260" alt="Submit Feature Request" /> |
-| Kanban columns, stage chips, and votes | Searchable requests with version filters | Focused request composition sheet |
+|                    Kanban columns, stage chips, and votes                    |                         Searchable requests with version filters                         |                              Focused request composition sheet                               |
 
-| What's New | Changelog Overlay | Feedback Composer |
-| :---: | :---: | :---: |
+|                                      What's New                                       |                                     Changelog Overlay                                      |                                     Feedback Composer                                      |
+| :-----------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------: |
 | <img src="assets/screenshots/whats-new.png" width="260" alt="What's New Changelog" /> | <img src="assets/screenshots/changelog-overlay.png" width="260" alt="Changelog Overlay" /> | <img src="assets/screenshots/feedback-composer.png" width="260" alt="Feedback Composer" /> |
-| Markdown release notes and subscriptions | In-app release announcement sheet | Structured, prefilled feedback form |
+|                       Markdown release notes and subscriptions                        |                             In-app release announcement sheet                              |                            Structured, prefilled feedback form                             |
 
 The images above are produced by a deterministic Expo showcase with fixture data. The same image paths are copied into the generated TypeDoc site, so GitHub Pages and this README always show the identical SDK surfaces.
 
@@ -218,7 +219,7 @@ import { FeedbackComposer } from '@cupthread/react-native';
     }
     return null;
   }}
-/>
+/>;
 ```
 
 ### 4. Persistent Anonymous User Token
@@ -256,36 +257,63 @@ Notes:
 
 ### Client Configuration (`FeedbackClientConfig`)
 
-| Option | Type | Default | Description |
-| ------ | ---- | ------- | ----------- |
-| `baseUrl` | `string` | _(required)_ | Root API URL of the CupThread backend instance |
-| `appKey` | `string` | _(required)_ | Unique application key from Developer Console |
-| `defaultPlatform` | `FeedbackPlatform` | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.) |
-| `timeoutMs` | `number` | `15000` | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout |
-| `uploadTimeoutMs` | `number` | `60000` | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })` |
+| Option                   | Type                                                        | Default       | Description                                                                                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `baseUrl`                | `string`                                                    | _(required)_  | Root API URL of the CupThread backend instance                                                                                                                                                   |
+| `appKey`                 | `string`                                                    | _(required)_  | Unique application key from Developer Console                                                                                                                                                    |
+| `defaultPlatform`        | `FeedbackPlatform`                                          | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.)                                                                                                                       |
+| `timeoutMs`              | `number`                                                    | `15000`       | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout                                                                                            |
+| `uploadTimeoutMs`        | `number`                                                    | `60000`       | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })`                     |
+| `turnstileTokenProvider` | `() => string \| undefined \| Promise<string \| undefined>` | `undefined`   | Optional async provider resolving a Cloudflare Turnstile token before intake submissions (`submit`, `submitFeatureRequest`); see [Human Verification (Turnstile)](#human-verification-turnstile) |
 
 All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
 
 ### Methods
 
-| Method | Endpoint | Description |
-| ------ | -------- | ----------- |
-| `submit(draft, userToken?, options?)` | `POST /api/v1/feedback` | Submit feedback draft with metadata and attachments |
-| `uploadAttachment(options)` | `POST /api/v1/uploads/{images,r2}` | Upload screenshot or log attachment (supports `signal`, `timeoutMs`) |
-| `fetchAppConfig(options?)` | `GET /api/v1/public/config/{appKey}` | Fetch app branding, appearance, and public settings |
-| `fetchColumns(options?)` | `GET /api/v1/public/columns/{appKey}` | Fetch Kanban board columns for roadmap |
-| `fetchVersions(options?)` | `GET /api/v1/public/versions/{appKey}` | Fetch release versions |
-| `fetchFeatureRequests(options)` | `GET /api/v1/feature-requests` | List, search, and paginate public feature requests (supports `limit`, `offset`, `signal`, `timeoutMs`) |
-| `submitFeatureRequest(draft, userToken, options?)` | `POST /api/v1/feature-requests` | Propose a new feature request proposal |
-| `toggleVote(featureRequestId, userToken, options?)` | `POST /api/v1/feature-requests/{id}/vote` | Upvote or remove upvote |
-| `fetchComments(featureRequestId, options?)` | `GET /api/v1/feature-requests/{id}/comments` | Fetch discussion comments |
-| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments` | Post a comment or reply |
-| `fetchChangelog(options?)` | `GET /api/v1/public/apps/{appKey}/changelog` | Fetch published release notes |
-| `prepareChangelogOverlay(options?)` | `GET /api/v1/public/config & changelog` | Prepares changelog overlay with `onlyIfUnseen` and `signal` support |
-| `subscribeToChangelog(email, userToken, options?)` | `POST /api/v1/public/apps/{appKey}/changelog/subscribe` | Subscribe email to changelog |
-| `unsubscribeFromChangelog(email, options?)` | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog |
-| `updateUserAttributes(options)` | `PUT /api/v1/public/apps/{appKey}/user` | Report user attributes (supports `signal`, `timeoutMs`) |
-| `fetchUserProfile(userId, options?)` | `GET /api/v1/users/{userId}/profile` | Fetch public user profile |
+| Method                                                      | Endpoint                                                  | Description                                                                                            |
+| ----------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments                                                    |
+| `uploadAttachment(options)`                                 | `POST /api/v1/uploads/{images,r2}`                        | Upload screenshot or log attachment (supports `signal`, `timeoutMs`)                                   |
+| `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings                                                    |
+| `fetchColumns(options?)`                                    | `GET /api/v1/public/columns/{appKey}`                     | Fetch Kanban board columns for roadmap                                                                 |
+| `fetchVersions(options?)`                                   | `GET /api/v1/public/versions/{appKey}`                    | Fetch release versions                                                                                 |
+| `fetchFeatureRequests(options)`                             | `GET /api/v1/feature-requests`                            | List, search, and paginate public feature requests (supports `limit`, `offset`, `signal`, `timeoutMs`) |
+| `submitFeatureRequest(draft, userToken, options?)`          | `POST /api/v1/feature-requests`                           | Propose a new feature request proposal                                                                 |
+| `toggleVote(featureRequestId, userToken, options?)`         | `POST /api/v1/feature-requests/{id}/vote`                 | Upvote or remove upvote                                                                                |
+| `fetchComments(featureRequestId, options?)`                 | `GET /api/v1/feature-requests/{id}/comments`              | Fetch discussion comments                                                                              |
+| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments`             | Post a comment or reply                                                                                |
+| `fetchChangelog(options?)`                                  | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch published release notes                                                                          |
+| `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                    |
+| `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                           |
+| `unsubscribeFromChangelog(email, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog                                                                       |
+| `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                |
+| `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                              |
+
+---
+
+### Human Verification (Turnstile)
+
+The production CupThread API (`https://api.cupthread.com`) enforces Cloudflare Turnstile on public intake endpoints (`POST /api/v1/feedback`, `POST /api/v1/feature-requests`). Submissions without a valid token fail with HTTP 403, which the SDK surfaces as a dedicated `TurnstileRequiredException` (stable `code: 'turnstile_required'`). The bundled composers show a localized verification notice and keep the draft intact for retry.
+
+Supply a token in one of two ways:
+
+1. **Client-level provider (recommended).** The provider runs before every intake submission, so each retry automatically gets a fresh single-use token:
+
+   ```ts
+   const client = new FeedbackClient({
+     baseUrl: 'https://api.cupthread.com',
+     appKey: 'app_live_abc123',
+     turnstileTokenProvider: async () => {
+       // Run your own Turnstile challenge (e.g. in a WebView) or fetch a
+       // token from your backend, then return it.
+       return await myTurnstileBridge.getToken();
+     },
+   });
+   ```
+
+2. **Per-draft token.** Set `turnstileToken` on `FeedbackDraft` / `FeatureRequestDraft` to force a specific token; it takes precedence over the provider.
+
+If neither is configured, submissions against Turnstile-gated backends cannot succeed until the host supplies a token (or the app key is exempted server-side).
 
 ---
 
@@ -313,4 +341,5 @@ node scripts/release.mjs --version 0.1.1 [--dry-run]
 ```
 
 ## License
+
 MIT

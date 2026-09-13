@@ -19,6 +19,8 @@ export const itStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} min fa`,
     hoursAgo: (h: number) => (h === 1 ? '1 ora fa' : `${h} ore fa`),
     daysAgo: (d: number) => (d === 1 ? '1 giorno fa' : `${d} giorni fa`),
+    verificationRequired:
+      'È richiesta la verifica umana per inviare. Riprova dopo aver completato la verifica.',
   },
   feedbackComposer: {
     title: 'Invia feedback',
