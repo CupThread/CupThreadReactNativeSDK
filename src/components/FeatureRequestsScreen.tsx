@@ -77,10 +77,7 @@ export interface FeatureRequestsScreenProps {
  * }
  * ```
  */
-export function FeatureRequestsScreen({
-  onBack,
-  headerTitle,
-}: FeatureRequestsScreenProps) {
+export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
@@ -102,6 +99,7 @@ export function FeatureRequestsScreen({
     isRefreshing,
     isLoadingMore,
     error: loadError,
+    isRateLimited,
     loadMore,
     refresh,
     reload,
@@ -132,7 +130,11 @@ export function FeatureRequestsScreen({
     };
   }, [client, isTokenReady]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyItemChange);
+  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+    client,
+    userToken,
+    applyItemChange
+  );
 
   const renderItem = ({ item }: { item: FeatureRequestItem }) => (
     <TouchableOpacity
@@ -163,10 +165,7 @@ export function FeatureRequestsScreen({
         />
       </View>
 
-      <Text
-        numberOfLines={2}
-        style={[styles.cardDescription, { color: colors.textSecondary }]}
-      >
+      <Text numberOfLines={2} style={[styles.cardDescription, { color: colors.textSecondary }]}>
         {item.description}
       </Text>
 
@@ -241,8 +240,7 @@ export function FeatureRequestsScreen({
             contentContainerStyle={styles.chipsList}
             renderItem={({ item: v }) => {
               const isSelected =
-                (v.id === 'all' && selectedVersionId === null) ||
-                selectedVersionId === v.id;
+                (v.id === 'all' && selectedVersionId === null) || selectedVersionId === v.id;
               return (
                 <TouchableOpacity
                   onPress={() => setSelectedVersionId(v.id === 'all' ? null : v.id)}
@@ -271,13 +269,26 @@ export function FeatureRequestsScreen({
         </View>
       )}
 
+      {isRateLimited && items.length > 0 && (
+        <View
+          style={[
+            styles.rateLimitBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {strings.featureRequests.rateLimited}
+          </Text>
+        </View>
+      )}
+
       {isLoading ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
       ) : items.length === 0 && loadError ? (
         <ErrorState
-          message={strings.common.error}
+          message={isRateLimited ? strings.featureRequests.rateLimited : strings.common.error}
           retryLabel={strings.common.retry}
           onRetry={() => {
             reload();
@@ -412,6 +423,13 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 12,
+  },
+  rateLimitBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   listContent: {
     padding: 16,

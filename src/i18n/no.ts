@@ -56,6 +56,7 @@ export const noStrings: CupThreadStrings = {
     upvoted: 'Stemt på',
     upvote: 'Stem',
     loadingMore: 'Laster inn mer...',
+    rateLimited: 'For mange søk. Vent litt og prøv igjen.',
   },
   featureRequestCompose: {
     modalTitle: 'Foreslå funksjon',

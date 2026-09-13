@@ -55,6 +55,7 @@ export const zhHantStrings: CupThreadStrings = {
     upvoted: '已投票',
     upvote: '投票',
     loadingMore: '載入更多...',
+    rateLimited: '搜尋過於頻繁，請稍等片刻後重試。',
   },
   featureRequestCompose: {
     modalTitle: '提出功能需求',

@@ -23,6 +23,7 @@ import type {
 import {
   AuthenticationRequiredException,
   InvalidResponseException,
+  RateLimitedException,
   RequestTimeoutException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
@@ -42,6 +43,26 @@ export const DEFAULT_TIMEOUT_MS = 15000;
  * budget on mobile uplinks, so they get their own, larger default.
  */
 export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
+
+/**
+ * Converts a `Retry-After` response header into milliseconds. Accepts both the
+ * delta-seconds form (`"30"`) and the HTTP-date form; returns `null` when the
+ * header is absent or unparseable.
+ */
+export function parseRetryAfterMs(headerValue: string | null | undefined): number | null {
+  if (!headerValue) return null;
+  const trimmed = headerValue.trim();
+  if (!trimmed) return null;
+  const seconds = Number(trimmed);
+  if (trimmed.length > 0 && Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, dateMs - Date.now());
+  }
+  return null;
+}
 
 function extractSignal(
   optionsOrSignal?: RequestOptions | AbortSignal
@@ -1023,6 +1044,12 @@ export class FeedbackClient {
         if (!accepted.includes(response.status)) {
           if (response.status === 401) {
             throw new AuthenticationRequiredException();
+          }
+          if (response.status === 429) {
+            throw new RateLimitedException(
+              parseRetryAfterMs(response.headers.get('retry-after')),
+              text
+            );
           }
           throw new UnexpectedStatusException(response.status, text);
         }
