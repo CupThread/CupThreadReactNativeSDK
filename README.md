@@ -103,7 +103,7 @@ export default function App() {
 
 Wrap your app or screen in `<CupThreadProvider client={client}>` to automatically inherit developer console appearance settings, color palette, anonymous user token, and localized strings.
 
-- **`<RoadmapBoardScreen />`**: Kanban roadmap board grouped by public columns with vote counts and stage badges.
+- **`<RoadmapBoardScreen />`**: Kanban roadmap board grouped by public columns with vote counts and stage badges. Requests whose column is hidden, deleted, or missing from the visible set are collected under an automatic **Other** tab instead of silently disappearing from the board.
 - **`<FeatureRequestsScreen />`**: Searchable feature requests list with optimistic upvoting, version filter chips, and propose feature modal.
 - **`<FeatureRequestComposeSheet visible={...} onClose={...} />`**: Dedicated modal sheet for proposing new feature requests (`POST /api/v1/feature-requests`).
 - **`<WhatsNewScreen />`**: Interactive release notes / changelog with Markdown formatting and email subscription.

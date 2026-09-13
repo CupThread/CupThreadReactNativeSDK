@@ -91,6 +91,7 @@ export const plStrings: CupThreadStrings = {
     loadingMore: 'Ładowanie kolejnych...',
     loadMore: 'Załaduj więcej',
     showingCount: (shown: number, total: number) => `Wyświetlono ${shown} z ${total}`,
+    otherColumn: 'Inne',
   },
   featureRequestDetail: {
     title: 'Prośba o funkcję',

@@ -84,6 +84,7 @@ export const deStrings: CupThreadStrings = {
     loadingMore: 'Weitere werden geladen...',
     loadMore: 'Mehr laden',
     showingCount: (shown: number, total: number) => `${shown} von ${total} angezeigt`,
+    otherColumn: 'Sonstige',
   },
   featureRequestDetail: {
     title: 'Feature-Anfrage',

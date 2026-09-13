@@ -96,6 +96,7 @@ export interface RoadmapStrings {
   loadingMore: string;
   loadMore: string;
   showingCount: (shown: number, total: number) => string;
+  otherColumn: string;
 }
 
 /**

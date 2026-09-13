@@ -81,6 +81,7 @@ export const ptStrings: CupThreadStrings = {
     loadingMore: 'Carregando mais...',
     loadMore: 'Carregar mais',
     showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
+    otherColumn: 'Outros',
   },
   featureRequestDetail: {
     title: 'Solicitação de recurso',
