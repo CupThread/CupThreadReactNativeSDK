@@ -19,6 +19,8 @@ export const viStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} phút trước`,
     hoursAgo: (h: number) => `${h} giờ trước`,
     daysAgo: (d: number) => `${d} ngày trước`,
+    verificationRequired:
+      'Cần xác minh con người để gửi. Vui lòng thử lại sau khi hoàn tất xác minh.',
   },
   feedbackComposer: {
     title: 'Gửi phản hồi',

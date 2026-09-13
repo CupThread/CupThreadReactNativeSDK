@@ -67,6 +67,24 @@ export interface FeedbackClientConfig {
    * @defaultValue 60000 (60 seconds)
    */
   uploadTimeoutMs?: number;
+
+  /**
+   * Optional async provider resolving a Cloudflare Turnstile token for
+   * protected intake endpoints (`POST /api/v1/feedback`,
+   * `POST /api/v1/feature-requests`).
+   *
+   * @remarks
+   * The production CupThread API enforces human verification on intake and
+   * responds with HTTP 403 / {@link TurnstileRequiredException} when the
+   * submission carries no (or an invalid) `turnstileToken`. When this provider
+   * is configured, {@link FeedbackClient.submit} and
+   * {@link FeedbackClient.submitFeatureRequest} call it before every intake
+   * submission and attach the resolved token to the JSON body. A
+   * `turnstileToken` set directly on the draft always takes precedence.
+   * Synchronous return values are also accepted. Return `undefined` to omit
+   * the field (e.g. when the host knows the endpoint is exempt).
+   */
+  turnstileTokenProvider?: () => string | undefined | Promise<string | undefined>;
 }
 
 /**
@@ -201,6 +219,13 @@ export interface FeedbackDraft {
    * Array of previously uploaded file attachments to associate with this submission.
    */
   attachments?: FeedbackAttachment[];
+
+  /**
+   * Optional Cloudflare Turnstile token satisfying the human-verification gate
+   * the production API enforces on intake endpoints. When omitted, the client
+   * falls back to `FeedbackClientConfig.turnstileTokenProvider` (if configured).
+   */
+  turnstileToken?: string;
 }
 
 /**
@@ -257,14 +282,7 @@ export interface FeedbackSubmissionResult {
  * - `'candy'`: Playful fuchsia and purple palette.
  */
 export type SdkTheme =
-  | 'system'
-  | 'light'
-  | 'dark'
-  | 'midnight'
-  | 'ocean'
-  | 'forest'
-  | 'sunset'
-  | 'candy';
+  'system' | 'light' | 'dark' | 'midnight' | 'ocean' | 'forest' | 'sunset' | 'candy';
 
 /**
  * Feature flag switches for user-facing SDK surfaces.
@@ -794,6 +812,13 @@ export interface FeatureRequestDraft {
    * Optional author display name.
    */
   requesterName?: string;
+
+  /**
+   * Optional Cloudflare Turnstile token satisfying the human-verification gate
+   * the production API enforces on intake endpoints. When omitted, the client
+   * falls back to `FeedbackClientConfig.turnstileTokenProvider` (if configured).
+   */
+  turnstileToken?: string;
 }
 
 /**

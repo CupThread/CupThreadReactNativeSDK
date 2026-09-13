@@ -19,6 +19,8 @@ export const plStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} min temu`,
     hoursAgo: (h: number) => `${h} godz. temu`,
     daysAgo: (d: number) => (d === 1 ? '1 dzień temu' : `${d} dni temu`),
+    verificationRequired:
+      'Wysłanie wymaga weryfikacji człowieka. Spróbuj ponownie po jej ukończeniu.',
   },
   feedbackComposer: {
     title: 'Wyślij opinię',
