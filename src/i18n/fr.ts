@@ -58,6 +58,7 @@ export const frStrings: CupThreadStrings = {
     upvoted: 'Voté',
     upvote: 'Voter',
     loadingMore: 'Chargement de la suite...',
+    rateLimited: 'Trop de recherches. Veuillez patienter un instant et réessayer.',
   },
   featureRequestCompose: {
     modalTitle: 'Proposer une fonctionnalité',

@@ -55,6 +55,7 @@ export const zhHansStrings: CupThreadStrings = {
     upvoted: '已投票',
     upvote: '投票',
     loadingMore: '加载更多...',
+    rateLimited: '搜索过于频繁，请稍等片刻后重试。',
   },
   featureRequestCompose: {
     modalTitle: '提出新需求',

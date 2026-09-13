@@ -69,3 +69,23 @@ export class RequestTimeoutException extends FeedbackException {
     this.timeoutMs = timeoutMs;
   }
 }
+
+/**
+ * Thrown when the API rate-limits a request (HTTP 429) — e.g. the production
+ * search endpoint allows 30 requests / 60s per client IP.
+ *
+ * Carries the server-provided `Retry-After` hint converted to milliseconds
+ * when present so callers can pace their retries.
+ */
+export class RateLimitedException extends FeedbackException {
+  readonly status = 429;
+  readonly retryAfterMs: number | null;
+  readonly responseBody: string;
+
+  constructor(retryAfterMs: number | null = null, responseBody: string = '') {
+    super('CupThread API rate limit exceeded. Please slow down and retry shortly.');
+    this.name = 'RateLimitedException';
+    this.retryAfterMs = retryAfterMs;
+    this.responseBody = responseBody;
+  }
+}

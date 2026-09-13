@@ -56,6 +56,7 @@ export const esStrings: CupThreadStrings = {
     upvoted: 'Votado',
     upvote: 'Votar',
     loadingMore: 'Cargando más...',
+    rateLimited: 'Demasiadas búsquedas. Espere un momento e inténtelo de nuevo.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponer una función',

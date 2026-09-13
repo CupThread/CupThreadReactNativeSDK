@@ -1,6 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FeedbackClient } from '../client/FeedbackClient';
+import { RateLimitedException } from '../client/FeedbackException';
 import type { FeatureRequestItem } from '../types';
+import { SearchRateLimiter } from '../utils/searchRateLimiter';
+
+/**
+ * Tuning knobs passed through to the hook's {@link SearchRateLimiter}.
+ * Production defaults keep query-bearing searches strictly under the backend's
+ * 30 searches / 60s per-IP budget; overriding is mainly useful for tests or
+ * for backends with different limits.
+ */
+export interface UseFeatureRequestsSearchLimiterOptions {
+  /**
+   * Minimum spacing in milliseconds between two query-bearing fetches.
+   *
+   * @defaultValue 2500
+   */
+  minSpacingMs?: number;
+
+  /**
+   * Cooldown in milliseconds applied after an HTTP 429 when the server does
+   * not provide a usable `Retry-After` value.
+   *
+   * @defaultValue 60000
+   */
+  cooldownMs?: number;
+}
+
+/**
+ * Builds the deduplication key for a query-bearing search: the same trimmed
+ * query + version filter must not refetch when the effect re-fires.
+ */
+function buildSearchKey(query: string, versionId: string | null | undefined): string {
+  return `${query}|${versionId || ''}`;
+}
 
 /**
  * Configuration options for {@link useFeatureRequests}.
@@ -46,6 +79,13 @@ export interface UseFeatureRequestsOptions {
    * @defaultValue 0
    */
   debounceMs?: number;
+
+  /**
+   * Optional tuning for the client-side search rate limiter (spacing between
+   * query-bearing fetches and the post-429 cooldown). The limiter is created
+   * once per hook mount from this value; later changes are ignored.
+   */
+  searchRateLimiterOptions?: UseFeatureRequestsSearchLimiterOptions;
 }
 
 /**
@@ -86,6 +126,13 @@ export interface UseFeatureRequestsResult {
    * Most recent fetch error, if any.
    */
   error: Error | null;
+
+  /**
+   * True while the client-side post-429 search cooldown is active. Query
+   * searches stay suppressed until it elapses; UI should show a localized
+   * rate-limit notice instead of treating this as a generic failure.
+   */
+  isRateLimited: boolean;
 
   /**
    * Fetches the next page of items and appends them to `items`.
@@ -138,9 +185,7 @@ export interface UseFeatureRequestsResult {
  * } = useFeatureRequests({ client, userToken, pageSize: 50 });
  * ```
  */
-export function useFeatureRequests(
-  options: UseFeatureRequestsOptions
-): UseFeatureRequestsResult {
+export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatureRequestsResult {
   const {
     client,
     userToken,
@@ -149,6 +194,7 @@ export function useFeatureRequests(
     query,
     pageSize = 50,
     debounceMs = 0,
+    searchRateLimiterOptions,
   } = options;
 
   const [items, setItems] = useState<FeatureRequestItem[]>([]);
@@ -157,6 +203,15 @@ export function useFeatureRequests(
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+
+  // Created lazily on first render; option changes after mount are ignored so
+  // the pacing state is never reset mid-session.
+  const searchLimiterRef = useRef<SearchRateLimiter | null>(null);
+  if (searchLimiterRef.current === null) {
+    searchLimiterRef.current = new SearchRateLimiter(searchRateLimiterOptions);
+  }
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const itemsRef = useRef<FeatureRequestItem[]>(items);
   itemsRef.current = items;
@@ -175,15 +230,39 @@ export function useFeatureRequests(
     []
   );
 
+  // Key of the last successfully loaded search (trimmed query + versionId).
+  // Duplicate suppression: re-firing the effect with the same key must not
+  // burn another search against the server's per-IP rate budget.
+  const lastSearchKeyRef = useRef<string | null>(null);
+
   // Initial load or query/filter change
   const loadPage0 = useCallback(
     async (signal?: AbortSignal) => {
       if (!isTokenReady) return;
+      const trimmedQuery = query?.trim() || '';
+      const isSearch = trimmedQuery.length > 0;
+      const limiter = searchLimiterRef.current!;
+
+      // Query-bearing searches are paced client-side to stay under the
+      // production 30/min per-IP search budget; plain listings are not
+      // rate-limited. A skipped load (cooldown / spacing) must still run the
+      // finally block so refresh()/reload() never leave a spinner stuck.
+      let skipped = false;
+      if (isSearch) {
+        if (limiter.canFetch()) {
+          limiter.markFetched();
+        } else {
+          skipped = true;
+        }
+      }
+
       try {
+        if (skipped) return;
+
         const res = await client.fetchFeatureRequests({
           userToken,
           versionId: versionId || undefined,
-          query: query?.trim() || undefined,
+          query: trimmedQuery || undefined,
           limit: pageSize,
           offset: 0,
           signal,
@@ -196,8 +275,20 @@ export function useFeatureRequests(
         setItems(fetchedItems);
         setTotal(reportedTotal);
         setError(null);
+        if (isSearch) {
+          lastSearchKeyRef.current = buildSearchKey(trimmedQuery, versionId);
+          setIsRateLimited(false);
+        }
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal?.aborted) return;
+        if (err instanceof RateLimitedException) {
+          // Enter the search cooldown (server Retry-After wins) and surface a
+          // rate-limit notice instead of an endless autofire loop.
+          const cooldownMs = limiter.enterCooldown(err.retryAfterMs);
+          setIsRateLimited(true);
+          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+          cooldownTimerRef.current = setTimeout(() => setIsRateLimited(false), cooldownMs);
+        }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
         if (!signal?.aborted) {
@@ -215,23 +306,42 @@ export function useFeatureRequests(
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
 
+    const trimmedQuery = query?.trim() || '';
+    const isSearch = trimmedQuery.length > 0;
+    const limiter = searchLimiterRef.current!;
+
+    // Same trimmed query + version filter already loaded successfully — keep
+    // the results on screen and do not refetch.
+    if (isSearch && lastSearchKeyRef.current === buildSearchKey(trimmedQuery, versionId)) {
+      return;
+    }
+
+    // After a 429, query-triggered fetches stay suppressed for the cooldown;
+    // the screen shows a localized notice until it elapses.
+    if (isSearch && limiter.cooldownRemaining() > 0) {
+      return;
+    }
+
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
     setIsLoading(true);
 
+    // Debounce first, then the search spacing window so a typing burst waits
+    // for its turn instead of silently dropping the final query.
+    const searchWaitMs = isSearch ? limiter.waitTime() : 0;
     const timer = setTimeout(
       () => {
         loadPage0(controller.signal);
       },
-      debounceMs > 0 ? debounceMs : 0
+      (debounceMs > 0 ? debounceMs : 0) + searchWaitMs
     );
 
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady]);
+  }, [loadPage0, debounceMs, isTokenReady, query, versionId]);
 
   // Load next page
   const loadMore = useCallback(async () => {
@@ -323,6 +433,7 @@ export function useFeatureRequests(
     return () => {
       loadControllerRef.current?.abort();
       loadMoreControllerRef.current?.abort();
+      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
     };
   }, []);
 
@@ -336,6 +447,7 @@ export function useFeatureRequests(
     isRefreshing,
     isLoadingMore,
     error,
+    isRateLimited,
     loadMore,
     refresh,
     reload,
