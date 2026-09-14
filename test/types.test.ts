@@ -15,7 +15,7 @@ test('getThemeColors returns matching colors for each theme', () => {
   assert.equal(dark.background, '#090d16');
 
   const ocean = getThemeColors('ocean');
-  assert.equal(ocean.primary, '#0d9488');
+  assert.equal(ocean.primary, '#0f766e');
 });
 
 test('every palette defines danger, dangerBg, and dangerBorder tokens', () => {

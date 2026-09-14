@@ -40,6 +40,7 @@ export const jaStrings: CupThreadStrings = {
     removeAttachment: '削除',
     attachmentsHeader: '添付ファイル',
     uploadFailed: '添付ファイルのアップロードに失敗しました。',
+    someUploadsFailed: (count: number) => `${count}件の添付ファイルのアップロードに失敗しました。`,
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
   },
   featureRequests: {

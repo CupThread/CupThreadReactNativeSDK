@@ -18,7 +18,7 @@ export const noStrings: CupThreadStrings = {
     justNow: 'Akkurat nå',
     minutesAgo: (m: number) => `${m} min siden`,
     hoursAgo: (h: number) => `${h} t siden`,
-    daysAgo: (d: number) => d === 1 ? '1 dag siden' : `${d} dager siden`,
+    daysAgo: (d: number) => (d === 1 ? '1 dag siden' : `${d} dager siden`),
   },
   feedbackComposer: {
     title: 'Send tilbakemelding',
@@ -40,6 +40,8 @@ export const noStrings: CupThreadStrings = {
     removeAttachment: 'Fjern',
     attachmentsHeader: 'Vedlegg',
     uploadFailed: 'Kunne ikke laste opp vedlegg.',
+    someUploadsFailed: (count: number) =>
+      count === 1 ? 'Kunne ikke laste opp 1 vedlegg.' : `Kunne ikke laste opp ${count} vedlegg.`,
     submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
   },
   featureRequests: {
@@ -75,7 +77,7 @@ export const noStrings: CupThreadStrings = {
     screenTitle: 'Veikart',
     searchPlaceholder: 'Søk i veikartet...',
     emptyColumn: 'Ingen elementer i denne fasen',
-    upvotesCount: (count: number) => count === 1 ? '1 stemme' : `${count} stemmer`,
+    upvotesCount: (count: number) => (count === 1 ? '1 stemme' : `${count} stemmer`),
     loadingMore: 'Laster inn mer...',
     loadMore: 'Last inn mer',
     showingCount: (shown: number, total: number) => `Viser ${shown} av ${total}`,

@@ -17,8 +17,8 @@ export const itStrings: CupThreadStrings = {
     invalidEmail: 'Inserisci un indirizzo e-mail valido.',
     justNow: 'Proprio ora',
     minutesAgo: (m: number) => `${m} min fa`,
-    hoursAgo: (h: number) => h === 1 ? '1 ora fa' : `${h} ore fa`,
-    daysAgo: (d: number) => d === 1 ? '1 giorno fa' : `${d} giorni fa`,
+    hoursAgo: (h: number) => (h === 1 ? '1 ora fa' : `${h} ore fa`),
+    daysAgo: (d: number) => (d === 1 ? '1 giorno fa' : `${d} giorni fa`),
   },
   feedbackComposer: {
     title: 'Invia feedback',
@@ -40,6 +40,8 @@ export const itStrings: CupThreadStrings = {
     removeAttachment: 'Rimuovi',
     attachmentsHeader: 'Allegati',
     uploadFailed: "Caricamento dell'allegato non riuscito.",
+    someUploadsFailed: (count: number) =>
+      count === 1 ? 'Impossibile caricare 1 allegato.' : `Impossibile caricare ${count} allegati.`,
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
   },
   featureRequests: {
@@ -75,7 +77,7 @@ export const itStrings: CupThreadStrings = {
     screenTitle: 'Roadmap',
     searchPlaceholder: 'Cerca nella roadmap...',
     emptyColumn: 'Nessun elemento in questa fase',
-    upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} voti`,
+    upvotesCount: (count: number) => (count === 1 ? '1 voto' : `${count} voti`),
     loadingMore: 'Caricamento altri...',
     loadMore: 'Carica altri',
     showingCount: (shown: number, total: number) => `Mostrati ${shown} di ${total}`,
@@ -105,7 +107,8 @@ export const itStrings: CupThreadStrings = {
     closeButton: 'Chiudi',
     emptyChangelog: 'Nessuna nota di rilascio pubblicata.',
     subscribeTitle: 'Resta aggiornato',
-    subscribeSubtitle: 'Ricevi una notifica via e-mail ogni volta che pubblichiamo un aggiornamento.',
+    subscribeSubtitle:
+      'Ricevi una notifica via e-mail ogni volta che pubblichiamo un aggiornamento.',
     subscribeButton: 'Iscriviti',
     subscribing: 'Iscrizione...',
     emailPlaceholder: 'Inserisci il tuo indirizzo e-mail',
@@ -122,7 +125,8 @@ export const itStrings: CupThreadStrings = {
     anonymous: 'Sviluppatore anonimo',
     recentComments: 'Commenti recenti',
     appsSection: (count: number) => `App (${count})`,
-    requestCount: (count: number) => `${count} richiest${count === 1 ? 'a' : 'e'} di funzionalità pubblic${count === 1 ? 'a' : 'he'}`,
+    requestCount: (count: number) =>
+      `${count} richiest${count === 1 ? 'a' : 'e'} di funzionalità pubblic${count === 1 ? 'a' : 'he'}`,
     commentOn: (title: string) => `su ${title}`,
   },
 };

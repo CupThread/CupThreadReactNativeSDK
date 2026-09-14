@@ -18,7 +18,7 @@ export const ptStrings: CupThreadStrings = {
     justNow: 'Agora mesmo',
     minutesAgo: (m: number) => `Há ${m} min`,
     hoursAgo: (h: number) => `Há ${h} h`,
-    daysAgo: (d: number) => d === 1 ? 'Há 1 dia' : `Há ${d} dias`,
+    daysAgo: (d: number) => (d === 1 ? 'Há 1 dia' : `Há ${d} dias`),
   },
   feedbackComposer: {
     title: 'Enviar feedback',
@@ -40,6 +40,8 @@ export const ptStrings: CupThreadStrings = {
     removeAttachment: 'Remover',
     attachmentsHeader: 'Anexos',
     uploadFailed: 'Falha ao carregar o anexo.',
+    someUploadsFailed: (count: number) =>
+      count === 1 ? 'Falha ao enviar 1 anexo.' : `Falha ao enviar ${count} anexos.`,
     submitFailed: 'Falha ao enviar o feedback. Por favor, tente novamente.',
   },
   featureRequests: {
@@ -75,7 +77,7 @@ export const ptStrings: CupThreadStrings = {
     screenTitle: 'Roadmap',
     searchPlaceholder: 'Pesquisar no roadmap...',
     emptyColumn: 'Nenhum item nesta etapa',
-    upvotesCount: (count: number) => count === 1 ? '1 voto' : `${count} votos`,
+    upvotesCount: (count: number) => (count === 1 ? '1 voto' : `${count} votos`),
     loadingMore: 'Carregando mais...',
     loadMore: 'Carregar mais',
     showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
@@ -122,7 +124,8 @@ export const ptStrings: CupThreadStrings = {
     anonymous: 'Desenvolvedor anônimo',
     recentComments: 'Comentários recentes',
     appsSection: (count: number) => `Aplicativos (${count})`,
-    requestCount: (count: number) => `${count} solicitaç${count === 1 ? 'ão' : 'ões'} de recurso pública${count === 1 ? '' : 's'}`,
+    requestCount: (count: number) =>
+      `${count} solicitaç${count === 1 ? 'ão' : 'ões'} de recurso pública${count === 1 ? '' : 's'}`,
     commentOn: (title: string) => `em ${title}`,
   },
 };

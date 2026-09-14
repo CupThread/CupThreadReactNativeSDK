@@ -232,6 +232,24 @@ import { UserTokenStore } from '@cupthread/react-native';
 UserTokenStore.configure(AsyncStorage);
 ```
 
+#### Login / Logout Identity Switching
+
+To attribute SDK activity to your own signed-in users, call `setToken()` after login and `resetToken()` on logout. `<CupThreadProvider>` (mounted without an explicit `userToken` prop) subscribes to these switches automatically — every mounted SDK screen re-resolves its token and subsequent votes, comments, and feedback are attributed to the new identity:
+
+```tsx
+// After your auth flow signs the user in:
+await UserTokenStore.shared.setToken(user.id);
+
+// On logout:
+await UserTokenStore.shared.resetToken();
+```
+
+Notes:
+
+- Call these after `UserTokenStore.configure(...)`; there is no need to remount the provider.
+- An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
+- Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
+
 ---
 
 ## API Client Surface
@@ -243,7 +261,8 @@ UserTokenStore.configure(AsyncStorage);
 | `baseUrl` | `string` | _(required)_ | Root API URL of the CupThread backend instance |
 | `appKey` | `string` | _(required)_ | Unique application key from Developer Console |
 | `defaultPlatform` | `FeedbackPlatform` | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.) |
-| `timeoutMs` | `number` | `15000` | Optional request timeout in milliseconds; throws `RequestTimeoutException` on timeout |
+| `timeoutMs` | `number` | `15000` | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout |
+| `uploadTimeoutMs` | `number` | `60000` | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })` |
 
 All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
 

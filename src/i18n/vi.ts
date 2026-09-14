@@ -40,6 +40,7 @@ export const viStrings: CupThreadStrings = {
     removeAttachment: 'Xóa',
     attachmentsHeader: 'Tệp đính kèm',
     uploadFailed: 'Tải lên tệp đính kèm thất bại.',
+    someUploadsFailed: (count: number) => `Không thể tải lên ${count} tệp đính kèm.`,
     submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
   },
   featureRequests: {

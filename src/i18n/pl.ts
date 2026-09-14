@@ -18,7 +18,7 @@ export const plStrings: CupThreadStrings = {
     justNow: 'Przed chwilą',
     minutesAgo: (m: number) => `${m} min temu`,
     hoursAgo: (h: number) => `${h} godz. temu`,
-    daysAgo: (d: number) => d === 1 ? '1 dzień temu' : `${d} dni temu`,
+    daysAgo: (d: number) => (d === 1 ? '1 dzień temu' : `${d} dni temu`),
   },
   feedbackComposer: {
     title: 'Wyślij opinię',
@@ -40,6 +40,10 @@ export const plStrings: CupThreadStrings = {
     removeAttachment: 'Usuń',
     attachmentsHeader: 'Załączniki',
     uploadFailed: 'Nie udało się przesłać załącznika.',
+    someUploadsFailed: (count: number) =>
+      count === 1
+        ? 'Nie udało się przesłać 1 załącznika.'
+        : `Nie udało się przesłać ${count} załączników.`,
     submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
   },
   featureRequests: {

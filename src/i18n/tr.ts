@@ -40,6 +40,7 @@ export const trStrings: CupThreadStrings = {
     removeAttachment: 'Kaldır',
     attachmentsHeader: 'Ekler',
     uploadFailed: 'Ek yüklenemedi.',
+    someUploadsFailed: (count: number) => `${count} ek yüklenemedi.`,
     submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
   },
   featureRequests: {

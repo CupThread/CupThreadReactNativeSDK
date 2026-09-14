@@ -18,7 +18,7 @@ export const deStrings: CupThreadStrings = {
     justNow: 'Gerade eben',
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,
-    daysAgo: (d: number) => d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`,
+    daysAgo: (d: number) => (d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`),
   },
   feedbackComposer: {
     title: 'Feedback senden',
@@ -40,6 +40,10 @@ export const deStrings: CupThreadStrings = {
     removeAttachment: 'Entfernen',
     attachmentsHeader: 'Anhänge',
     uploadFailed: 'Hochladen des Anhangs fehlgeschlagen.',
+    someUploadsFailed: (count: number) =>
+      count === 1
+        ? '1 Anhang konnte nicht hochgeladen werden.'
+        : `${count} Anhänge konnten nicht hochgeladen werden.`,
     submitFailed: 'Feedback konnte nicht gesendet werden. Bitte versuche es erneut.',
   },
   featureRequests: {
@@ -66,7 +70,8 @@ export const deStrings: CupThreadStrings = {
     submitButton: 'Vorschlag senden',
     successTitle: 'Vorschlag gesendet',
     successMessage: 'Vielen Dank! Dein Feature-Vorschlag wurde gesendet.',
-    moderationNotice: 'Deine Anfrage wurde gesendet und wird nach der Moderation öffentlich angezeigt.',
+    moderationNotice:
+      'Deine Anfrage wurde gesendet und wird nach der Moderation öffentlich angezeigt.',
     titleMinLengthError: 'Bitte gib einen Titel mit mindestens 3 Zeichen ein.',
     descriptionMinLengthError: 'Bitte gib eine Beschreibung mit mindestens 5 Zeichen ein.',
     submitFailed: 'Funktionsvorschlag konnte nicht gesendet werden. Bitte versuche es erneut.',
@@ -75,7 +80,7 @@ export const deStrings: CupThreadStrings = {
     screenTitle: 'Roadmap',
     searchPlaceholder: 'Roadmap durchsuchen...',
     emptyColumn: 'Keine Einträge in dieser Phase',
-    upvotesCount: (count: number) => count === 1 ? '1 Stimme' : `${count} Stimmen`,
+    upvotesCount: (count: number) => (count === 1 ? '1 Stimme' : `${count} Stimmen`),
     loadingMore: 'Weitere werden geladen...',
     loadMore: 'Mehr laden',
     showingCount: (shown: number, total: number) => `${shown} von ${total} angezeigt`,
@@ -122,7 +127,8 @@ export const deStrings: CupThreadStrings = {
     anonymous: 'Anonymer Entwickler',
     recentComments: 'Neueste Kommentare',
     appsSection: (count: number) => `Apps (${count})`,
-    requestCount: (count: number) => `${count} öffentliche${count === 1 ? 'r' : ''} Feature-Request${count === 1 ? '' : 's'}`,
+    requestCount: (count: number) =>
+      `${count} öffentliche${count === 1 ? 'r' : ''} Feature-Request${count === 1 ? '' : 's'}`,
     commentOn: (title: string) => `zu ${title}`,
   },
 };

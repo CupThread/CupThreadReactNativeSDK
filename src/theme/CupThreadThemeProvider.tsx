@@ -23,6 +23,9 @@ export interface CupThreadContextValue {
    * When no explicit `userToken` prop is provided and an async storage adapter
    * (AsyncStorage / SecureStore) is configured, this is an empty string until
    * the persisted token has been recovered — see {@link CupThreadContextValue.isTokenReady}.
+   * The provider also follows later identity switches made through
+   * {@link UserTokenStore.setToken} / {@link UserTokenStore.resetToken}
+   * (e.g. login/logout), so this value stays in sync with the store.
    */
   userToken: string;
 
@@ -94,7 +97,10 @@ export interface CupThreadProviderProps {
 
   /**
    * Optional custom user token string.
-   * If omitted, {@link UserTokenStore.shared} generates and manages a persistent device token.
+   * If omitted, {@link UserTokenStore.shared} generates and manages a persistent device token
+   * and the provider follows later identity switches made via
+   * {@link UserTokenStore.setToken} / {@link UserTokenStore.resetToken}
+   * (login/logout). When provided, this prop always wins and store switches are ignored.
    */
   userToken?: string;
 
@@ -176,14 +182,27 @@ export function CupThreadProvider({
     }
     let cancelled = false;
     setIsTokenReady(false);
-    UserTokenStore.shared.getToken().then((token) => {
+    const resolve = () => {
+      UserTokenStore.shared.getToken().then((token) => {
+        if (!cancelled) {
+          setResolvedUserToken(token);
+          setIsTokenReady(true);
+        }
+      });
+    };
+    resolve();
+    // Follow explicit identity switches made after mount (login/logout via
+    // UserTokenStore.setToken / resetToken) so SDK screens never keep sending
+    // a stale token. The explicit userToken prop always wins and disables
+    // this subscription.
+    const unsubscribe = UserTokenStore.shared.subscribe(() => {
       if (!cancelled) {
-        setResolvedUserToken(token);
-        setIsTokenReady(true);
+        resolve();
       }
     });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [explicitUserToken]);
 
