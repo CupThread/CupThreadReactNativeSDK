@@ -82,6 +82,7 @@ export const trStrings: CupThreadStrings = {
     loadingMore: 'Daha fazla yükleniyor...',
     loadMore: 'Daha fazla yükle',
     showingCount: (shown: number, total: number) => `${total} öğeden ${shown} tanesi gösteriliyor`,
+    otherColumn: 'Diğer',
   },
   featureRequestDetail: {
     title: 'Özellik isteği',

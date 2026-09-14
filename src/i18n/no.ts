@@ -83,6 +83,7 @@ export const noStrings: CupThreadStrings = {
     loadingMore: 'Laster inn mer...',
     loadMore: 'Last inn mer',
     showingCount: (shown: number, total: number) => `Viser ${shown} av ${total}`,
+    otherColumn: 'Annet',
   },
   featureRequestDetail: {
     title: 'Funksjonsforespørsel',
