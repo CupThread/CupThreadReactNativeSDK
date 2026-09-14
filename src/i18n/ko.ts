@@ -19,6 +19,8 @@ export const koStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m}분 전`,
     hoursAgo: (h: number) => `${h}시간 전`,
     daysAgo: (d: number) => `${d}일 전`,
+    verificationRequired:
+      '제출하려면 사용자 인증이 필요합니다. 인증을 완료한 후 다시 시도해 주세요.',
   },
   feedbackComposer: {
     title: '피드백 보내기',

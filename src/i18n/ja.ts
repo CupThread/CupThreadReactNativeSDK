@@ -19,6 +19,8 @@ export const jaStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m}分前`,
     hoursAgo: (h: number) => `${h}時間前`,
     daysAgo: (d: number) => `${d}日前`,
+    verificationRequired:
+      '送信には人間認証（Turnstile）が必要です。認証を完了してからもう一度お試しください。',
   },
   feedbackComposer: {
     title: 'フィードバックを送る',

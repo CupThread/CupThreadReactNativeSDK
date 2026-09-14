@@ -19,6 +19,8 @@ export const esStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `Hace ${m} min`,
     hoursAgo: (h: number) => `Hace ${h} h`,
     daysAgo: (d: number) => `Hace ${d} d`,
+    verificationRequired:
+      'Se requiere verificación humana para enviar. Inténtalo de nuevo después de completar la verificación.',
   },
   feedbackComposer: {
     title: 'Enviar comentarios',

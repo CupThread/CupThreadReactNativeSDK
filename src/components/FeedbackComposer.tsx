@@ -19,6 +19,7 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
+import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
@@ -212,7 +213,13 @@ export function FeedbackComposer({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
+      if (err instanceof TurnstileRequiredException) {
+        // The draft stays intact so the user can retry after the host's
+        // verification flow resolves a fresh token.
+        setErrorMessage(strings.common.verificationRequired);
+      } else {
+        setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
+      }
     }
   };
 

@@ -19,6 +19,7 @@ export interface CommonStrings {
   minutesAgo: (m: number) => string;
   hoursAgo: (h: number) => string;
   daysAgo: (d: number) => string;
+  verificationRequired: string;
 }
 
 /**

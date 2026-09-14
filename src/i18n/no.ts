@@ -19,6 +19,8 @@ export const noStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} min siden`,
     hoursAgo: (h: number) => `${h} t siden`,
     daysAgo: (d: number) => (d === 1 ? '1 dag siden' : `${d} dager siden`),
+    verificationRequired:
+      'Menneskelig verifisering kreves for å sende. Prøv igjen etter å ha fullført verifiseringen.',
   },
   feedbackComposer: {
     title: 'Send tilbakemelding',

@@ -19,6 +19,8 @@ export const ptStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `Há ${m} min`,
     hoursAgo: (h: number) => `Há ${h} h`,
     daysAgo: (d: number) => (d === 1 ? 'Há 1 dia' : `Há ${d} dias`),
+    verificationRequired:
+      'É necessária verificação humana para enviar. Tente novamente após concluir a verificação.',
   },
   feedbackComposer: {
     title: 'Enviar feedback',

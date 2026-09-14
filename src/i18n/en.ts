@@ -19,6 +19,8 @@ export const enStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m}m ago`,
     hoursAgo: (h: number) => `${h}h ago`,
     daysAgo: (d: number) => `${d}d ago`,
+    verificationRequired:
+      'Human verification is required to submit. Please try again after completing verification.',
   },
   feedbackComposer: {
     title: 'Send Feedback',

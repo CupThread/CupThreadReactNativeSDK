@@ -19,6 +19,7 @@ export const zhHansStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} 分钟前`,
     hoursAgo: (h: number) => `${h} 小时前`,
     daysAgo: (d: number) => `${d} 天前`,
+    verificationRequired: '提交前需要完成人机验证，请在完成验证后重试。',
   },
   feedbackComposer: {
     title: '提供反馈',
