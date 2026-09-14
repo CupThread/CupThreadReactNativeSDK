@@ -55,6 +55,16 @@ export interface FeatureRequestComposeSheetProps {
    * @defaultValue `true`
    */
   isModal?: boolean;
+
+  /**
+   * Whether the sheet itself surfaces the localized success / moderation
+   * notice after a successful submission (the notice reflects
+   * `result.pending`). Defaults to `true` so submissions are never silent;
+   * set to `false` when the host fully owns post-submit feedback.
+   *
+   * @defaultValue `true`
+   */
+  showSuccessFeedback?: boolean;
 }
 
 /**
@@ -70,6 +80,7 @@ export function FeatureRequestComposeSheet({
   onSubmitSuccess,
   initialDraft,
   isModal = true,
+  showSuccessFeedback = true,
 }: FeatureRequestComposeSheetProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
@@ -108,14 +119,21 @@ export function FeatureRequestComposeSheet({
       const result = await client.submitFeatureRequest(draft, effectiveToken);
       setIsSubmitting(false);
 
-      if (onSubmitSuccess) {
-        onSubmitSuccess(result);
-      } else {
+      // Surface the outcome even when a host provides `onSubmitSuccess`:
+      // pending-moderation submissions are absent from the reloaded list, so
+      // a silent close reads as a failed submission. Hosts opt out via
+      // `showSuccessFeedback={false}`.
+      if (showSuccessFeedback) {
         const msg = result.pending
           ? strings.featureRequestCompose.moderationNotice
           : strings.featureRequestCompose.successMessage;
         Alert.alert(strings.featureRequestCompose.successTitle, msg);
-        if (onClose) onClose();
+      }
+
+      if (onSubmitSuccess) {
+        onSubmitSuccess(result);
+      } else if (onClose) {
+        onClose();
       }
     } catch (err: any) {
       setIsSubmitting(false);
