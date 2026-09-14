@@ -19,6 +19,8 @@ export const deStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `vor ${m} Min.`,
     hoursAgo: (h: number) => `vor ${h} Std.`,
     daysAgo: (d: number) => (d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`),
+    verificationRequired:
+      'Zum Senden ist eine menschliche Verifizierung erforderlich. Bitte nach Abschluss der Verifizierung erneut versuchen.',
   },
   feedbackComposer: {
     title: 'Feedback senden',
@@ -86,6 +88,7 @@ export const deStrings: CupThreadStrings = {
     loadingMore: 'Weitere werden geladen...',
     loadMore: 'Mehr laden',
     showingCount: (shown: number, total: number) => `${shown} von ${total} angezeigt`,
+    otherColumn: 'Sonstige',
   },
   featureRequestDetail: {
     title: 'Feature-Anfrage',

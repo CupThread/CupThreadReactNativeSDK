@@ -19,6 +19,8 @@ export const enStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m}m ago`,
     hoursAgo: (h: number) => `${h}h ago`,
     daysAgo: (d: number) => `${d}d ago`,
+    verificationRequired:
+      'Human verification is required to submit. Please try again after completing verification.',
   },
   feedbackComposer: {
     title: 'Send Feedback',
@@ -82,6 +84,7 @@ export const enStrings: CupThreadStrings = {
     loadingMore: 'Loading more...',
     loadMore: 'Load more',
     showingCount: (shown: number, total: number) => `Showing ${shown} of ${total}`,
+    otherColumn: 'Other',
   },
   featureRequestDetail: {
     title: 'Feature Request',

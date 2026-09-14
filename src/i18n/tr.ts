@@ -19,6 +19,8 @@ export const trStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} dk önce`,
     hoursAgo: (h: number) => `${h} saat önce`,
     daysAgo: (d: number) => `${d} gün önce`,
+    verificationRequired:
+      'Gönderim için insan doğrulaması gerekli. Doğrulamayı tamamladıktan sonra tekrar deneyin.',
   },
   feedbackComposer: {
     title: 'Geri bildirim gönder',
@@ -81,6 +83,7 @@ export const trStrings: CupThreadStrings = {
     loadingMore: 'Daha fazla yükleniyor...',
     loadMore: 'Daha fazla yükle',
     showingCount: (shown: number, total: number) => `${total} öğeden ${shown} tanesi gösteriliyor`,
+    otherColumn: 'Diğer',
   },
   featureRequestDetail: {
     title: 'Özellik isteği',

@@ -19,6 +19,7 @@ export const zhHantStrings: CupThreadStrings = {
     minutesAgo: (m: number) => `${m} 分鐘前`,
     hoursAgo: (h: number) => `${h} 小時前`,
     daysAgo: (d: number) => `${d} 天前`,
+    verificationRequired: '提交前需要完成人機驗證，請在完成驗證後重試。',
   },
   feedbackComposer: {
     title: '提供意見回饋',
@@ -81,6 +82,7 @@ export const zhHantStrings: CupThreadStrings = {
     loadingMore: '載入更多...',
     loadMore: '載入更多',
     showingCount: (shown: number, total: number) => `顯示 ${shown} / ${total} 項`,
+    otherColumn: '其他',
   },
   featureRequestDetail: {
     title: '功能需求',
