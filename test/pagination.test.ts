@@ -154,7 +154,11 @@ function renderTestHook<T>(hookFn: () => T) {
   };
 }
 
-function makeMockItem(id: string, index: number, overrides?: Partial<FeatureRequestItem>): FeatureRequestItem {
+function makeMockItem(
+  id: string,
+  index: number,
+  overrides?: Partial<FeatureRequestItem>
+): FeatureRequestItem {
   return {
     id,
     appId: 'app_test',
@@ -180,9 +184,11 @@ function makeMockItem(id: string, index: number, overrides?: Partial<FeatureRequ
 
 test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionId', async () => {
   let interceptedUrl = '';
+  let interceptedHeaders: Record<string, string> = {};
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     interceptedUrl = url.toString();
+    interceptedHeaders = (init?.headers || {}) as Record<string, string>;
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -206,7 +212,8 @@ test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionI
     const parsed = new URL(interceptedUrl);
     assert.equal(parsed.pathname, '/api/v1/feature-requests');
     assert.equal(parsed.searchParams.get('appKey'), 'app_pagination_test');
-    assert.equal(parsed.searchParams.get('userToken'), 'usr_tok_page');
+    assert.equal(parsed.searchParams.get('userToken'), null);
+    assert.equal(interceptedHeaders['X-User-Token'], 'usr_tok_page');
     assert.equal(parsed.searchParams.get('limit'), '25');
     assert.equal(parsed.searchParams.get('offset'), '50');
     assert.equal(parsed.searchParams.get('versionId'), 'v2.0');
@@ -342,19 +349,13 @@ test('useFeatureRequests deduplicates items if server returns overlapping IDs', 
     fetchFeatureRequests: async (opts: any) => {
       if (opts.offset === 0) {
         return {
-          requests: [
-            makeMockItem('fr_1', 1),
-            makeMockItem('fr_2', 2),
-          ],
+          requests: [makeMockItem('fr_1', 1), makeMockItem('fr_2', 2)],
           total: 3,
         };
       } else {
         // Overlap: server returns fr_2 again plus fr_3
         return {
-          requests: [
-            makeMockItem('fr_2', 2),
-            makeMockItem('fr_3', 3),
-          ],
+          requests: [makeMockItem('fr_2', 2), makeMockItem('fr_3', 3)],
           total: 3,
         };
       }
@@ -376,7 +377,10 @@ test('useFeatureRequests deduplicates items if server returns overlapping IDs', 
   await new Promise((r) => setTimeout(r, 20));
   // Must deduplicate fr_2, so items has [fr_1, fr_2, fr_3]
   assert.equal(harness.result.items.length, 3);
-  assert.deepEqual(harness.result.items.map((i) => i.id), ['fr_1', 'fr_2', 'fr_3']);
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    ['fr_1', 'fr_2', 'fr_3']
+  );
   assert.equal(harness.result.hasMore, false);
 });
 
@@ -418,8 +422,8 @@ test('useFeatureRequests pull-to-refresh restarts from page 0', async () => {
 });
 
 test('useFeatureRequests loadMore recovers after refresh aborts an in-flight load-more', async () => {
-  let releaseHangingPage: ((value: { requests: FeatureRequestItem[]; total: number }) => void) | null =
-    null;
+  let releaseHangingPage:
+    ((value: { requests: FeatureRequestItem[]; total: number }) => void) | null = null;
   let hangArmed = true;
   const mockClient = {
     fetchFeatureRequests: (opts: any) => {
@@ -570,7 +574,8 @@ test('all 14 locales define non-empty loadingMore in common, featureRequests, an
       `locale ${code} must define common.loadingMore`
     );
     assert.ok(
-      typeof strings.featureRequests.loadingMore === 'string' && strings.featureRequests.loadingMore.length > 0,
+      typeof strings.featureRequests.loadingMore === 'string' &&
+        strings.featureRequests.loadingMore.length > 0,
       `locale ${code} must define featureRequests.loadingMore`
     );
     assert.ok(

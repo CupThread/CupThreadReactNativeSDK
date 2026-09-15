@@ -85,6 +85,19 @@ export interface FeedbackClientConfig {
    * the field (e.g. when the host knows the endpoint is exempt).
    */
   turnstileTokenProvider?: () => string | undefined | Promise<string | undefined>;
+
+  /**
+   * Strategy for transmitting the user identity token on `GET /api/v1/feature-requests`.
+   *
+   * - `'header'` (default): Sends the token via the `X-User-Token` HTTP header only.
+   *   Prevents token leakage into access logs, reverse proxies, and browser history (CWE-598).
+   * - `'both'`: Sends the token in both the `X-User-Token` header and the `userToken` query parameter.
+   *   Provided for transition compatibility during backend deployments.
+   * - `'query'`: Sends the token via the `userToken` query parameter only (legacy behavior, deprecated).
+   *
+   * @defaultValue 'header'
+   */
+  tokenTransport?: 'query' | 'header' | 'both';
 }
 
 /**
