@@ -130,7 +130,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     };
   }, [client, isTokenReady]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
     userToken,
     applyItemChange
@@ -162,6 +162,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           hasVoted={item.hasVoted}
           onPress={() => handleToggleVote(item)}
           disabled={item.isOwnRequest || isVoting(item.id)}
+          error={getVoteError(item.id)}
         />
       </View>
 
@@ -278,6 +279,19 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         >
           <Text style={{ color: colors.danger, fontSize: 13 }}>
             {strings.featureRequests.rateLimited}
+          </Text>
+        </View>
+      )}
+
+      {voteError && (
+        <View
+          style={[
+            styles.rateLimitBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {strings.featureRequests.voteFailed}
           </Text>
         </View>
       )}

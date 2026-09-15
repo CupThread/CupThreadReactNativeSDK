@@ -61,6 +61,7 @@ export const frStrings: CupThreadStrings = {
     upvote: 'Voter',
     loadingMore: 'Chargement de la suite...',
     rateLimited: 'Trop de recherches. Veuillez patienter un instant et réessayer.',
+    voteFailed: 'Échec de la mise à jour du vote. Veuillez réessayer.',
   },
   featureRequestCompose: {
     modalTitle: 'Proposer une fonctionnalité',

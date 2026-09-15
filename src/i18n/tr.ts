@@ -58,6 +58,7 @@ export const trStrings: CupThreadStrings = {
     upvote: 'Oy ver',
     loadingMore: 'Daha fazla yükleniyor...',
     rateLimited: 'Çok fazla arama. Lütfen bir süre bekleyip tekrar deneyin.',
+    voteFailed: 'Oy güncellenemedi. Lütfen tekrar deneyin.',
   },
   featureRequestCompose: {
     modalTitle: 'Özellik öner',
