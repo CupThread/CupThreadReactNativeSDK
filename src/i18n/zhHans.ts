@@ -11,6 +11,8 @@ export const zhHansStrings: CupThreadStrings = {
     submitting: '提交中...',
     error: '错误',
     retry: '重试',
+    timeoutError: '请求超时，请重试。',
+    networkError: '网络错误，请检查网络连接后重试。',
     optional: '选填',
     required: '必填',
     anonymous: '匿名用户',

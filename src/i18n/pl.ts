@@ -11,6 +11,8 @@ export const plStrings: CupThreadStrings = {
     submitting: 'Wysyłanie...',
     error: 'Błąd',
     retry: 'Spróbuj ponownie',
+    timeoutError: 'Żądanie trwało zbyt długo. Spróbuj ponownie.',
+    networkError: 'Błąd sieci. Sprawdź połączenie internetowe i spróbuj ponownie.',
     optional: 'opcjonalne',
     required: 'wymagane',
     anonymous: 'Anonimowy użytkownik',

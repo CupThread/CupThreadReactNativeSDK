@@ -11,6 +11,8 @@ export const noStrings: CupThreadStrings = {
     submitting: 'Sender inn...',
     error: 'Feil',
     retry: 'Prøv igjen',
+    timeoutError: 'Forespørselen tok for lang tid. Vennligst prøv igjen.',
+    networkError: 'Nettverksfeil. Vennligst sjekk internettforbindelsen din og prøv igjen.',
     optional: 'valgfritt',
     required: 'påkrevd',
     anonymous: 'Anonym bruker',
