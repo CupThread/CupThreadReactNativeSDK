@@ -17,6 +17,7 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadContext,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { TurnstileRequiredException } from '../client/FeedbackException';
@@ -24,6 +25,7 @@ import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -132,6 +134,7 @@ export function FeedbackComposer({
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig } = useCupThreadContext();
 
   const [title, setTitle] = useState(initialDraft?.title || '');
   const [description, setDescription] = useState(initialDraft?.description || '');
@@ -192,11 +195,22 @@ export function FeedbackComposer({
     setIsSubmitting(true);
 
     try {
+      const candidatePlatform = initialDraft?.platform || client.config.defaultPlatform;
+      const resolvedPlatform = resolveAllowedPlatform(
+        candidatePlatform,
+        appConfig?.allowedPlatforms,
+        getRuntimePlatform()
+      );
+
       const draft: FeedbackDraft = {
         title: title.trim(),
         description: description.trim(),
         reporterName: reporterName.trim() || undefined,
         reporterEmail: reporterEmail.trim() || undefined,
+        platform: resolvedPlatform,
+        appVersion: initialDraft?.appVersion,
+        buildNumber: initialDraft?.buildNumber,
+        turnstileToken: initialDraft?.turnstileToken,
         attachments,
         metadata: initialDraft?.metadata,
       };
