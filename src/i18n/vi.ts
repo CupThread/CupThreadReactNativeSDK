@@ -58,6 +58,7 @@ export const viStrings: CupThreadStrings = {
     upvote: 'Bình chọn',
     loadingMore: 'Đang tải thêm...',
     rateLimited: 'Quá nhiều lần tìm kiếm. Vui lòng đợi một lúc rồi thử lại.',
+    voteFailed: 'Không thể cập nhật bình chọn. Vui lòng thử lại.',
   },
   featureRequestCompose: {
     modalTitle: 'Đề xuất tính năng',

@@ -58,6 +58,7 @@ export const koStrings: CupThreadStrings = {
     upvote: '투표',
     loadingMore: '더 불러오는 중...',
     rateLimited: '검색 횟수가 너무 많습니다. 잠시 기다린 후 다시 시도해 주세요.',
+    voteFailed: '투표에 실패했습니다. 다시 시도해 주세요.',
   },
   featureRequestCompose: {
     modalTitle: '기능 제안',

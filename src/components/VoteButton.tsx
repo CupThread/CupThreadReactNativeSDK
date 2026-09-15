@@ -35,11 +35,18 @@ export interface VoteButtonProps {
    * Whether the button is disabled from user interactions (e.g. while submitting or for own requests).
    */
   disabled?: boolean;
+
+  /**
+   * Optional error from the most recent vote attempt on this item.
+   */
+  error?: Error | null;
 }
 
-export function VoteButton({ voteCount, hasVoted, onPress, disabled }: VoteButtonProps) {
+export function VoteButton({ voteCount, hasVoted, onPress, disabled, error }: VoteButtonProps) {
   const { colors } = useCupThreadTheme();
   const strings = useCupThreadStrings();
+
+  const hasError = Boolean(error);
 
   return (
     <TouchableOpacity
@@ -47,19 +54,31 @@ export function VoteButton({ voteCount, hasVoted, onPress, disabled }: VoteButto
       disabled={disabled}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={hasVoted ? strings.featureRequests.upvoted : strings.featureRequests.upvote}
+      accessibilityLabel={
+        hasError
+          ? `${strings.featureRequests.voteFailed} ${hasVoted ? strings.featureRequests.upvoted : strings.featureRequests.upvote}`
+          : hasVoted
+            ? strings.featureRequests.upvoted
+            : strings.featureRequests.upvote
+      }
       style={[
         styles.button,
         {
           backgroundColor: hasVoted ? colors.voteActiveBg : colors.voteInactiveBg,
-          borderColor: hasVoted ? colors.primary : colors.border,
+          borderColor: hasError ? colors.danger : hasVoted ? colors.primary : colors.border,
         },
       ]}
     >
       <Text
         style={[
           styles.arrow,
-          { color: hasVoted ? colors.voteActiveText : colors.voteInactiveText },
+          {
+            color: hasError
+              ? colors.danger
+              : hasVoted
+                ? colors.voteActiveText
+                : colors.voteInactiveText,
+          },
         ]}
       >
         ▲
@@ -67,7 +86,13 @@ export function VoteButton({ voteCount, hasVoted, onPress, disabled }: VoteButto
       <Text
         style={[
           styles.count,
-          { color: hasVoted ? colors.voteActiveText : colors.voteInactiveText },
+          {
+            color: hasError
+              ? colors.danger
+              : hasVoted
+                ? colors.voteActiveText
+                : colors.voteInactiveText,
+          },
         ]}
       >
         {voteCount}
