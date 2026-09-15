@@ -282,7 +282,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         </View>
       )}
 
-      {isLoading ? (
+      {isLoading && items.length === 0 ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
