@@ -11,6 +11,9 @@ export const deStrings: CupThreadStrings = {
     submitting: 'Wird gesendet...',
     error: 'Fehler',
     retry: 'Erneut versuchen',
+    timeoutError: 'Die Anfrage hat zu lange gedauert. Bitte versuchen Sie es erneut.',
+    networkError:
+      'Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.',
     optional: 'optional',
     required: 'erforderlich',
     anonymous: 'Anonymer Benutzer',

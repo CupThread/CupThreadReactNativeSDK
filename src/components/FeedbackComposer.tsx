@@ -19,11 +19,11 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
-import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { userFacingErrorMessage } from '../utils/errors';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -168,7 +168,9 @@ export function FeedbackComposer({
         setErrorMessage(strings.feedbackComposer.someUploadsFailed(failed.length));
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
+      setErrorMessage(
+        userFacingErrorMessage(err, strings.feedbackComposer.uploadFailed, strings.common)
+      );
     } finally {
       setIsUploadingAttachment(false);
     }
@@ -213,13 +215,9 @@ export function FeedbackComposer({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      if (err instanceof TurnstileRequiredException) {
-        // The draft stays intact so the user can retry after the host's
-        // verification flow resolves a fresh token.
-        setErrorMessage(strings.common.verificationRequired);
-      } else {
-        setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
-      }
+      setErrorMessage(
+        userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
+      );
     }
   };
 

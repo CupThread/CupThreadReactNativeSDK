@@ -11,6 +11,8 @@ export const frStrings: CupThreadStrings = {
     submitting: 'Envoi...',
     error: 'Erreur',
     retry: 'Réessayer',
+    timeoutError: 'La demande a mis trop de temps à aboutir. Veuillez réessayer.',
+    networkError: 'Erreur réseau. Vérifiez votre connexion et réessayez.',
     optional: 'facultatif',
     required: 'obligatoire',
     anonymous: 'Utilisateur anonyme',
