@@ -233,6 +233,25 @@ import { UserTokenStore } from '@cupthread/react-native';
 UserTokenStore.configure(AsyncStorage);
 ```
 
+#### Storage Security & Encrypted Adapters
+
+The token is a bearer credential identifying the user to the CupThread API for all actions (votes, comments, feedback, and user attributes). While plaintext `AsyncStorage` is fine for local-only development or anonymous-only usage, production apps—especially when using `setToken()` with real user IDs—should persist it with an encrypted adapter such as [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/) (Expo) or `react-native-keychain` / encrypted MMKV (bare React Native).
+
+`SecureStore`'s `(get|set|delete)ItemAsync` map ~1:1 onto `TokenStorageAdapter`. The asynchronous adapter path is fully supported (`getToken()` and `isTokenReady` handle pending reads seamlessly):
+
+```tsx
+import * as SecureStore from 'expo-secure-store';
+import { UserTokenStore } from '@cupthread/react-native';
+
+// SecureStore's (get|set|delete)ItemAsync map ~1:1 onto TokenStorageAdapter.
+// Values are limited to ~2 KB — fine for UUIDs and user IDs.
+UserTokenStore.configure({
+  getItem: (key) => SecureStore.getItemAsync(key),
+  setItem: (key, value) => SecureStore.setItemAsync(key, value),
+  removeItem: (key) => SecureStore.deleteItemAsync(key),
+});
+```
+
 #### Login / Logout Identity Switching
 
 To attribute SDK activity to your own signed-in users, call `setToken()` after login and `resetToken()` on logout. `<CupThreadProvider>` (mounted without an explicit `userToken` prop) subscribes to these switches automatically — every mounted SDK screen re-resolves its token and subsequent votes, comments, and feedback are attributed to the new identity:
@@ -244,6 +263,9 @@ await UserTokenStore.shared.setToken(user.id);
 // On logout:
 await UserTokenStore.shared.resetToken();
 ```
+
+> [!WARNING]
+> Calling `setToken(user.id)` persists the identifier through the configured adapter, so the adapter choice is a credential-storage decision. Use an encrypted adapter (such as `expo-secure-store` or Keychain) in production to ensure user identifiers are never stored in plaintext.
 
 Notes:
 

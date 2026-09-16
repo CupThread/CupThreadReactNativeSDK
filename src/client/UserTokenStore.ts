@@ -6,7 +6,15 @@ import { generateUUID } from '../utils/formatters';
  * @remarks
  * Compatible with `AsyncStorage`, `expo-secure-store`, MMKV, `localStorage`, or in-memory dictionaries.
  *
+ * **Storage security**: The configured adapter persists the bearer identity token used to attribute
+ * all SDK actions (votes, comments, feedback, user attributes). Plaintext adapters like `AsyncStorage`
+ * are suitable for local development or anonymous-only identifiers, but production applications—particularly
+ * those calling {@link UserTokenStore.setToken} with real user IDs—should configure an encrypted-at-rest
+ * adapter (such as `expo-secure-store` in Expo or `react-native-keychain` / encrypted MMKV in bare React Native)
+ * to prevent token exposure via device backups or rooted device storage.
+ *
  * @example
+ * Plaintext adapter (development / anonymous-only):
  * ```ts
  * import AsyncStorage from '@react-native-async-storage/async-storage';
  * import { TokenStorageAdapter, UserTokenStore } from '@cupthread/react-native';
@@ -18,6 +26,21 @@ import { generateUUID } from '../utils/formatters';
  * };
  *
  * UserTokenStore.configure(adapter);
+ * ```
+ *
+ * @example
+ * Encrypted adapter using `expo-secure-store` (recommended for production & authenticated users):
+ * ```ts
+ * import * as SecureStore from 'expo-secure-store';
+ * import { TokenStorageAdapter, UserTokenStore } from '@cupthread/react-native';
+ *
+ * const secureAdapter: TokenStorageAdapter = {
+ *   getItem: (key) => SecureStore.getItemAsync(key),
+ *   setItem: (key, value) => SecureStore.setItemAsync(key, value),
+ *   removeItem: (key) => SecureStore.deleteItemAsync(key),
+ * };
+ *
+ * UserTokenStore.configure(secureAdapter);
  * ```
  */
 export interface TokenStorageAdapter {
