@@ -223,9 +223,36 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
 
+  const localRevisionRef = useRef<number>(0);
+  const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
+
   const applyItemChange = useCallback(
     (itemId: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
-      setItems((prev) => prev.map((item) => (item.id === itemId ? transform(item) : item)));
+      localRevisionRef.current += 1;
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id === itemId) {
+            const updated = transform(item);
+            pendingItemMutationsRef.current.set(itemId, updated);
+            return updated;
+          }
+          return item;
+        })
+      );
+    },
+    []
+  );
+
+  const wrappedSetItems: React.Dispatch<React.SetStateAction<FeatureRequestItem[]>> = useCallback(
+    (action) => {
+      localRevisionRef.current += 1;
+      setItems((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        for (const item of next) {
+          pendingItemMutationsRef.current.set(item.id, item);
+        }
+        return next;
+      });
     },
     []
   );
@@ -256,6 +283,8 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
       }
 
+      const rev = localRevisionRef.current;
+
       try {
         if (skipped) return;
 
@@ -272,7 +301,34 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         const fetchedItems = res.requests || [];
         const reportedTotal = typeof res.total === 'number' ? res.total : fetchedItems.length;
 
-        setItems(fetchedItems);
+        // Monotonic local revision guard: if local mutations occurred (e.g. optimistic
+        // votes applied while fetch was in flight), merge the pending state on top of
+        // the server snapshot rather than blind-overwriting.
+        const reconcileWithPending = (
+          itemsToReconcile: FeatureRequestItem[]
+        ): FeatureRequestItem[] => {
+          if (pendingItemMutationsRef.current.size === 0) return itemsToReconcile;
+          return itemsToReconcile.map((item) => {
+            const pending = pendingItemMutationsRef.current.get(item.id);
+            if (!pending) return item;
+            if (item.hasVoted === pending.hasVoted) {
+              // Server response already reflects the new vote state, clear pending mutation.
+              pendingItemMutationsRef.current.delete(item.id);
+              return item;
+            }
+            return {
+              ...item,
+              ...pending,
+            };
+          });
+        };
+
+        const hadInterimMutation = localRevisionRef.current !== rev;
+        const mergedItems =
+          hadInterimMutation || pendingItemMutationsRef.current.size > 0
+            ? reconcileWithPending(fetchedItems)
+            : fetchedItems;
+        setItems(mergedItems);
         setTotal(reportedTotal);
         setError(null);
         if (isSearch) {
@@ -451,7 +507,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     loadMore,
     refresh,
     reload,
-    setItems,
+    setItems: wrappedSetItems,
     applyItemChange,
   };
 }

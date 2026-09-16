@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * Configuration options for {@link useAsyncData}.
  */
-export interface UseAsyncDataOptions {
+export interface UseAsyncDataOptions<T = any> {
   /**
    * Whether the initial load should run. When `false`, no request is made
    * until the value flips to `true` or `reload`/`refresh` is called.
@@ -11,6 +11,16 @@ export interface UseAsyncDataOptions {
    * @defaultValue true
    */
   enabled?: boolean;
+
+  /**
+   * Optional reconciliation strategy invoked when a background fetch resolves
+   * after local mutations have been applied via `setData`.
+   *
+   * When provided, receives `(localData, incomingData)` and returns the merged result.
+   * When omitted and local mutations occurred while the fetch was in flight,
+   * the stale incoming data write is skipped to preserve the local mutations.
+   */
+  mergeStale?: (local: T | null, incoming: T) => T;
 }
 
 /**
@@ -79,9 +89,9 @@ export interface UseAsyncDataResult<T> {
  */
 export function useAsyncData<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
-  options: UseAsyncDataOptions = {}
+  options: UseAsyncDataOptions<T> = {}
 ): UseAsyncDataResult<T> {
-  const { enabled = true } = options;
+  const { enabled = true, mergeStale } = options;
 
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
@@ -92,25 +102,41 @@ export function useAsyncData<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
-  const runLoad = useCallback(
-    async (signal: AbortSignal) => {
-      try {
-        const result = await fetcherRef.current(signal);
-        if (signal?.aborted) return;
-        setData(result);
-        setError(null);
-      } catch (err: any) {
-        if (err?.name === 'AbortError' || signal?.aborted) return;
-        setError(err instanceof Error ? err : new Error(String(err)));
-      } finally {
-        if (!signal?.aborted) {
-          setIsLoading(false);
-          setIsRefreshing(false);
+  const mergeStaleRef = useRef(mergeStale);
+  mergeStaleRef.current = mergeStale;
+
+  const localRevisionRef = useRef<number>(0);
+
+  const wrappedSetData: React.Dispatch<React.SetStateAction<T | null>> = useCallback((action) => {
+    localRevisionRef.current += 1;
+    setData(action);
+  }, []);
+
+  const runLoad = useCallback(async (signal: AbortSignal) => {
+    const rev = localRevisionRef.current;
+    try {
+      const result = await fetcherRef.current(signal);
+      if (signal?.aborted) return;
+
+      if (localRevisionRef.current !== rev) {
+        if (mergeStaleRef.current) {
+          setData((prev) => mergeStaleRef.current!(prev, result));
         }
+        // Stale write skipped when mergeStale is omitted
+      } else {
+        setData(result);
       }
-    },
-    []
-  );
+      setError(null);
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
 
   const runWithController = useCallback(
     async (mode: 'initial' | 'refresh') => {
@@ -152,5 +178,5 @@ export function useAsyncData<T>(
     };
   }, []);
 
-  return { data, isLoading, isRefreshing, error, reload, refresh, setData };
+  return { data, isLoading, isRefreshing, error, reload, refresh, setData: wrappedSetData };
 }
