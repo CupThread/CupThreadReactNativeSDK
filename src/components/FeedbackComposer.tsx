@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -142,6 +142,7 @@ export function FeedbackComposer({
   );
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handlePickAttachment = async () => {
@@ -179,6 +180,7 @@ export function FeedbackComposer({
   };
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     if (title.trim().length < 3) {
       setErrorMessage(strings.feedbackComposer.titleMinLengthError);
       return;
@@ -188,6 +190,7 @@ export function FeedbackComposer({
       return;
     }
 
+    isSubmittingRef.current = true;
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -203,7 +206,6 @@ export function FeedbackComposer({
 
       const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
       const result = await client.submit(draft, effectiveToken);
-      setIsSubmitting(false);
 
       if (onSubmitSuccess) {
         onSubmitSuccess(result);
@@ -212,7 +214,6 @@ export function FeedbackComposer({
         if (onClose) onClose();
       }
     } catch (err: any) {
-      setIsSubmitting(false);
       if (err instanceof TurnstileRequiredException) {
         // The draft stays intact so the user can retry after the host's
         // verification flow resolves a fresh token.
@@ -220,6 +221,9 @@ export function FeedbackComposer({
       } else {
         setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
       }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
