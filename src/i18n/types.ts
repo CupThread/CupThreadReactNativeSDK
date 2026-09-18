@@ -67,6 +67,7 @@ export interface FeatureRequestsStrings {
   upvote: string;
   loadingMore: string;
   rateLimited: string;
+  voteFailed: string;
 }
 
 /**

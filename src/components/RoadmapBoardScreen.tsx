@@ -180,7 +180,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     return tabs;
   }, [visibleColumns, orphanRequests, strings.roadmap.otherColumn]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
     userToken,
     applyItemChange
@@ -247,6 +247,19 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               );
             }}
           />
+        </View>
+      )}
+
+      {voteError && (
+        <View
+          style={[
+            styles.voteErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {strings.featureRequests.voteFailed}
+          </Text>
         </View>
       )}
 
@@ -358,6 +371,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   hasVoted={item.hasVoted}
                   onPress={() => handleToggleVote(item)}
                   disabled={item.isOwnRequest || isVoting(item.id)}
+                  error={getVoteError(item.id)}
                 />
               </View>
 
@@ -508,5 +522,13 @@ const styles = StyleSheet.create({
   loadMoreBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  voteErrorBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });

@@ -62,6 +62,7 @@ export const ptStrings: CupThreadStrings = {
     upvote: 'Votar',
     loadingMore: 'Carregando mais...',
     rateLimited: 'Pesquisas em excesso. Aguarde um momento e tente novamente.',
+    voteFailed: 'Falha ao atualizar o voto. Tente novamente.',
   },
   featureRequestCompose: {
     modalTitle: 'Propor um recurso',

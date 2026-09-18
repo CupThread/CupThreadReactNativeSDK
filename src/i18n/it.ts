@@ -62,6 +62,7 @@ export const itStrings: CupThreadStrings = {
     upvote: 'Vota',
     loadingMore: 'Caricamento altri...',
     rateLimited: 'Troppe ricerche. Attendere un momento e riprovare.',
+    voteFailed: 'Aggiornamento del voto non riuscito. Riprova.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponi una funzionalità',

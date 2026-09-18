@@ -62,6 +62,7 @@ export const enStrings: CupThreadStrings = {
     upvote: 'Upvote',
     loadingMore: 'Loading more...',
     rateLimited: 'Too many searches. Please wait a moment and try again.',
+    voteFailed: 'Failed to update vote. Please try again.',
   },
   featureRequestCompose: {
     modalTitle: 'Propose Feature',

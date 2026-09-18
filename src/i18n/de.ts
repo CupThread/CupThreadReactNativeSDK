@@ -66,6 +66,7 @@ export const deStrings: CupThreadStrings = {
     loadingMore: 'Weitere werden geladen...',
     rateLimited:
       'Zu viele Suchanfragen. Bitte warten Sie einen Moment und versuchen Sie es erneut.',
+    voteFailed: 'Abstimmung fehlgeschlagen. Bitte versuchen Sie es erneut.',
   },
   featureRequestCompose: {
     modalTitle: 'Feature vorschlagen',

@@ -118,7 +118,11 @@ export function FeatureRequestDetail({
       onVoteChange?.(pending);
     }
   }, [item, onVoteChange]);
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
+    client,
+    userToken,
+    applyVoteChange
+  );
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -147,8 +151,22 @@ export function FeatureRequestDetail({
               hasVoted={item.hasVoted}
               onPress={() => handleToggleVote(item)}
               disabled={item.isOwnRequest || isVoting(item.id)}
+              error={getVoteError(item.id)}
             />
           </View>
+
+          {voteError && (
+            <View
+              style={[
+                styles.voteErrorBanner,
+                { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+              ]}
+            >
+              <Text style={{ color: colors.danger, fontSize: 13 }}>
+                {strings.featureRequests.voteFailed}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.authorRow}>
             <Avatar url={item.requesterAvatarUrl} name={item.requesterName} size={24} />
@@ -233,5 +251,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 12,
+  },
+  voteErrorBanner: {
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });

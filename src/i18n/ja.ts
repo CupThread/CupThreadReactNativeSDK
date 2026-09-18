@@ -60,6 +60,7 @@ export const jaStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: 'さらに読み込み中...',
     rateLimited: '検索が多すぎます。しばらく待ってからもう一度お試しください。',
+    voteFailed: '投票に失敗しました。もう一度お試しください。',
   },
   featureRequestCompose: {
     modalTitle: '機能を提案',
