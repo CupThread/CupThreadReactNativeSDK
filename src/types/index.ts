@@ -446,6 +446,13 @@ export interface PublicAppConfig {
 
   /**
    * Whether public board access is enabled.
+   *
+   * As of the September 2026 API sync, public config endpoints (`GET /api/v1/public/config/:appKey`
+   * and `GET /api/v1/public/workspaces/:workspaceSlug/apps/:appSlug/config`) answer private
+   * applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}` rather than
+   * returning an HTTP 200 payload with `allowPublic: false`. A successfully fetched
+   * {@link PublicAppConfig} will therefore always carry `allowPublic: true`. This property is
+   * retained for API schema parity with the server's PublicAppConfig model.
    */
   allowPublic: boolean;
 

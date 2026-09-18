@@ -581,8 +581,13 @@ export class FeedbackClient {
   /**
    * Retrieves public application settings, features, and styling configuration.
    *
+   * As of the September 2026 API sync, the public config endpoints answer private
+   * applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}` identically
+   * to unknown app keys, rather than returning a 200 body with `allowPublic: false`.
+   *
+   * @param options - Optional request options or an AbortSignal.
    * @returns Application metadata and visual theme configuration.
-   * @throws {@link UnexpectedStatusException} If the app key is invalid or unpublished.
+   * @throws {@link UnexpectedStatusException} If the app key is invalid, private/unpublished (HTTP 404), or the server returns an unexpected status code.
    *
    * @example
    * ```ts
