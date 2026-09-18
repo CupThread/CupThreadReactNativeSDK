@@ -123,9 +123,18 @@ export interface UseFeatureRequestsResult {
   isLoadingMore: boolean;
 
   /**
-   * Most recent fetch error, if any.
+   * Most recent page-0 fetch error (initial load, search/filter change, or
+   * pull-to-refresh), if any.
    */
   error: Error | null;
+
+  /**
+   * Most recent next-page (`loadMore`) fetch error, if any. Kept separate
+   * from `error` so UI can attribute an inline refresh banner and a
+   * load-more footer retry independently; cleared by the next successful
+   * page-0 or load-more fetch.
+   */
+  loadMoreError: Error | null;
 
   /**
    * True while the client-side post-429 search cooldown is active. Query
@@ -203,6 +212,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
 
   // Created lazily on first render; option changes after mount are ignored so
@@ -275,6 +285,9 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         setItems(fetchedItems);
         setTotal(reportedTotal);
         setError(null);
+        // A fresh page-0 result replaces the whole list, so a load-more
+        // failure against the previous list no longer applies.
+        setLoadMoreError(null);
         if (isSearch) {
           lastSearchKeyRef.current = buildSearchKey(trimmedQuery, versionId);
           setIsRateLimited(false);
@@ -390,10 +403,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       });
 
       setTotal(nextTotal);
-      setError(null);
+      setLoadMoreError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
-      setError(err instanceof Error ? err : new Error(String(err)));
+      setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       // Reset even when aborted: refresh()/reload()/filter changes abort an
       // in-flight loadMore, and leaving the guard set would permanently
@@ -447,6 +460,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     isRefreshing,
     isLoadingMore,
     error,
+    loadMoreError,
     isRateLimited,
     loadMore,
     refresh,
