@@ -367,6 +367,7 @@ export function FeedbackComposer({
                 style={[
                   styles.attachmentItem,
                   { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                  idx === attachments.length - 1 && styles.attachmentItemLast,
                 ]}
               >
                 <View style={styles.attachmentInfo}>
@@ -504,7 +505,6 @@ const styles = StyleSheet.create({
   },
   attachmentsList: {
     marginTop: 4,
-    gap: 8,
   },
   attachmentItem: {
     flexDirection: 'row',
@@ -513,6 +513,10 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+    marginBottom: 8,
+  },
+  attachmentItemLast: {
+    marginBottom: 0,
   },
   attachmentInfo: {
     flexDirection: 'row',

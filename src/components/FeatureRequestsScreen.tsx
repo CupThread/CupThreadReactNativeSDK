@@ -513,9 +513,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 8,
   },
   footerText: {
     fontSize: 13,
+    marginLeft: 8,
   },
 });

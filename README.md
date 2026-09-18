@@ -31,6 +31,14 @@ Integrate the CupThread SDK (feedback, roadmap, and feature requests screens) in
 
 ---
 
+## Requirements
+
+- **React Native**: `>= 0.70.0`
+- **React**: `>= 18.0.0`
+- **Expo**: Compatible with Expo SDK 47+ (bare or managed workflow, zero native binary dependencies)
+
+---
+
 ## Installation
 
 ### Option A: Install from GitHub Release / Tag (Recommended for latest updates)
