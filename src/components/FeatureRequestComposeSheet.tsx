@@ -17,10 +17,12 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
@@ -87,6 +89,9 @@ export function FeatureRequestComposeSheet({
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'featureRequests');
+  const isFeatureRequestsDisabled = !isLoadingConfig && !isEnabled;
 
   const [title, setTitle] = useState(initialDraft?.title || '');
   const [description, setDescription] = useState(initialDraft?.description || '');
@@ -95,6 +100,10 @@ export function FeatureRequestComposeSheet({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    if (isFeatureRequestsDisabled) {
+      setErrorMessage(strings.featureRequestCompose.sectionUnavailable);
+      return;
+    }
     if (!isTokenReady) return;
     if (title.trim().length < 3) {
       setErrorMessage(strings.featureRequestCompose.titleMinLengthError);
@@ -160,14 +169,16 @@ export function FeatureRequestComposeSheet({
         )}
       </View>
 
-      {errorMessage && (
+      {(errorMessage || isFeatureRequestsDisabled) && (
         <View
           style={[
             styles.errorBox,
             { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
           ]}
         >
-          <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {errorMessage || strings.featureRequestCompose.sectionUnavailable}
+          </Text>
         </View>
       )}
 
@@ -232,13 +243,13 @@ export function FeatureRequestComposeSheet({
 
       <TouchableOpacity
         activeOpacity={0.8}
-        disabled={isSubmitting || !isTokenReady}
+        disabled={isSubmitting || !isTokenReady || isFeatureRequestsDisabled}
         onPress={handleSubmit}
         style={[
           styles.submitBtn,
           {
             backgroundColor: colors.primary,
-            opacity: isSubmitting || !isTokenReady ? 0.6 : 1,
+            opacity: isSubmitting || !isTokenReady || isFeatureRequestsDisabled ? 0.6 : 1,
           },
         ]}
       >

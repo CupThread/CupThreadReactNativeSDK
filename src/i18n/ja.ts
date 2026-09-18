@@ -44,6 +44,7 @@ export const jaStrings: CupThreadStrings = {
     uploadFailed: '添付ファイルのアップロードに失敗しました。',
     someUploadsFailed: (count: number) => `${count}件の添付ファイルのアップロードに失敗しました。`,
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
+    sectionUnavailable: 'フィードバックは現在ご利用いただけません。',
   },
   featureRequests: {
     screenTitle: '機能リクエスト',
@@ -58,6 +59,7 @@ export const jaStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: 'さらに読み込み中...',
     rateLimited: '検索が多すぎます。しばらく待ってからもう一度お試しください。',
+    sectionUnavailable: '機能リクエストは現在ご利用いただけません。',
   },
   featureRequestCompose: {
     modalTitle: '機能を提案',
@@ -74,6 +76,7 @@ export const jaStrings: CupThreadStrings = {
     titleMinLengthError: 'タイトルは3文字以上で入力してください。',
     descriptionMinLengthError: '説明は5文字以上で入力してください。',
     submitFailed: '機能提案の送信に失敗しました。もう一度お試しください。',
+    sectionUnavailable: '機能リクエストは現在ご利用いただけません。',
   },
   roadmap: {
     screenTitle: 'ロードマップ',
@@ -84,6 +87,7 @@ export const jaStrings: CupThreadStrings = {
     loadMore: 'もっと読み込む',
     showingCount: (shown: number, total: number) => `${total}件中${shown}件を表示`,
     otherColumn: 'その他',
+    sectionUnavailable: 'ロードマップは現在ご利用いただけません。',
   },
   featureRequestDetail: {
     title: '機能リクエスト',
@@ -117,6 +121,7 @@ export const jaStrings: CupThreadStrings = {
     subscribedSuccess: '購読しました！',
     unsubscribeButton: '購読を解除',
     subscribeFailed: '更新情報の購読に失敗しました。',
+    sectionUnavailable: '更新履歴は現在ご利用いただけません。',
   },
   userProfile: {
     screenTitle: 'ユーザープロフィール',

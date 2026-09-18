@@ -47,6 +47,7 @@ export const deStrings: CupThreadStrings = {
         ? '1 Anhang konnte nicht hochgeladen werden.'
         : `${count} Anhänge konnten nicht hochgeladen werden.`,
     submitFailed: 'Feedback konnte nicht gesendet werden. Bitte versuche es erneut.',
+    sectionUnavailable: 'Feedback ist derzeit nicht verfügbar.',
   },
   featureRequests: {
     screenTitle: 'Feature-Anfragen',
@@ -62,6 +63,7 @@ export const deStrings: CupThreadStrings = {
     loadingMore: 'Weitere werden geladen...',
     rateLimited:
       'Zu viele Suchanfragen. Bitte warten Sie einen Moment und versuchen Sie es erneut.',
+    sectionUnavailable: 'Funktionsanfragen sind derzeit nicht verfügbar.',
   },
   featureRequestCompose: {
     modalTitle: 'Feature vorschlagen',
@@ -79,6 +81,7 @@ export const deStrings: CupThreadStrings = {
     titleMinLengthError: 'Bitte gib einen Titel mit mindestens 3 Zeichen ein.',
     descriptionMinLengthError: 'Bitte gib eine Beschreibung mit mindestens 5 Zeichen ein.',
     submitFailed: 'Funktionsvorschlag konnte nicht gesendet werden. Bitte versuche es erneut.',
+    sectionUnavailable: 'Funktionsanfragen sind derzeit nicht verfügbar.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -89,6 +92,7 @@ export const deStrings: CupThreadStrings = {
     loadMore: 'Mehr laden',
     showingCount: (shown: number, total: number) => `${shown} von ${total} angezeigt`,
     otherColumn: 'Sonstige',
+    sectionUnavailable: 'Roadmap ist derzeit nicht verfügbar.',
   },
   featureRequestDetail: {
     title: 'Feature-Anfrage',
@@ -122,6 +126,7 @@ export const deStrings: CupThreadStrings = {
     subscribedSuccess: 'Erfolgreich abonniert!',
     unsubscribeButton: 'Abbestellen',
     subscribeFailed: 'Abonnieren des Changelogs fehlgeschlagen.',
+    sectionUnavailable: 'Das Änderungsprotokoll ist derzeit nicht verfügbar.',
   },
   userProfile: {
     screenTitle: 'Benutzerprofil',

@@ -17,6 +17,7 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { TurnstileRequiredException } from '../client/FeedbackException';
@@ -24,6 +25,7 @@ import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -132,6 +134,9 @@ export function FeedbackComposer({
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'feedback');
+  const isFeedbackDisabled = !isLoadingConfig && !isEnabled;
 
   const [title, setTitle] = useState(initialDraft?.title || '');
   const [description, setDescription] = useState(initialDraft?.description || '');
@@ -145,7 +150,7 @@ export function FeedbackComposer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handlePickAttachment = async () => {
-    if (!onPickAttachment) return;
+    if (!onPickAttachment || isFeedbackDisabled) return;
     try {
       setIsUploadingAttachment(true);
       const picked = await onPickAttachment();
@@ -179,6 +184,10 @@ export function FeedbackComposer({
   };
 
   const handleSubmit = async () => {
+    if (isFeedbackDisabled) {
+      setErrorMessage(strings.feedbackComposer.sectionUnavailable);
+      return;
+    }
     if (title.trim().length < 3) {
       setErrorMessage(strings.feedbackComposer.titleMinLengthError);
       return;
@@ -236,14 +245,16 @@ export function FeedbackComposer({
         )}
       </View>
 
-      {errorMessage && (
+      {(errorMessage || isFeedbackDisabled) && (
         <View
           style={[
             styles.errorBox,
             { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
           ]}
         >
-          <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {errorMessage || strings.feedbackComposer.sectionUnavailable}
+          </Text>
         </View>
       )}
 
@@ -400,13 +411,16 @@ export function FeedbackComposer({
 
       <TouchableOpacity
         activeOpacity={0.8}
-        disabled={isSubmitting || isUploadingAttachment || !isTokenReady}
+        disabled={isSubmitting || isUploadingAttachment || !isTokenReady || isFeedbackDisabled}
         onPress={handleSubmit}
         style={[
           styles.submitBtn,
           {
             backgroundColor: colors.primary,
-            opacity: isSubmitting || isUploadingAttachment || !isTokenReady ? 0.6 : 1,
+            opacity:
+              isSubmitting || isUploadingAttachment || !isTokenReady || isFeedbackDisabled
+                ? 0.6
+                : 1,
           },
         ]}
       >

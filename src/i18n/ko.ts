@@ -44,6 +44,7 @@ export const koStrings: CupThreadStrings = {
     uploadFailed: '첨부 파일 업로드에 실패했습니다.',
     someUploadsFailed: (count: number) => `${count}개의 첨부 파일 업로드에 실패했습니다.`,
     submitFailed: '피드백 제출에 실패했습니다. 다시 시도해 주세요.',
+    sectionUnavailable: '피드백 기능을 현재 사용할 수 없습니다.',
   },
   featureRequests: {
     screenTitle: '기능 요청',
@@ -58,6 +59,7 @@ export const koStrings: CupThreadStrings = {
     upvote: '투표',
     loadingMore: '더 불러오는 중...',
     rateLimited: '검색 횟수가 너무 많습니다. 잠시 기다린 후 다시 시도해 주세요.',
+    sectionUnavailable: '기능 제안을 현재 사용할 수 없습니다.',
   },
   featureRequestCompose: {
     modalTitle: '기능 제안',
@@ -74,6 +76,7 @@ export const koStrings: CupThreadStrings = {
     titleMinLengthError: '제목은 3자 이상 입력해 주세요.',
     descriptionMinLengthError: '설명은 5자 이상 입력해 주세요.',
     submitFailed: '기능 제안 제출에 실패했습니다. 다시 시도해 주세요.',
+    sectionUnavailable: '기능 제안을 현재 사용할 수 없습니다.',
   },
   roadmap: {
     screenTitle: '로드맵',
@@ -84,6 +87,7 @@ export const koStrings: CupThreadStrings = {
     loadMore: '더 불러오기',
     showingCount: (shown: number, total: number) => `전체 ${total}개 중 ${shown}개 표시`,
     otherColumn: '기타',
+    sectionUnavailable: '로드맵을 현재 사용할 수 없습니다.',
   },
   featureRequestDetail: {
     title: '기능 요청',
@@ -117,6 +121,7 @@ export const koStrings: CupThreadStrings = {
     subscribedSuccess: '성공적으로 구독했습니다!',
     unsubscribeButton: '구독 취소',
     subscribeFailed: '변경 로그 구독에 실패했습니다.',
+    sectionUnavailable: '변경 로그를 현재 사용할 수 없습니다.',
   },
   userProfile: {
     screenTitle: '사용자 프로필',

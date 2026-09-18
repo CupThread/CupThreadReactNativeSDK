@@ -44,6 +44,7 @@ export const trStrings: CupThreadStrings = {
     uploadFailed: 'Ek yüklenemedi.',
     someUploadsFailed: (count: number) => `${count} ek yüklenemedi.`,
     submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
+    sectionUnavailable: 'Geri bildirim şu anda kullanılamıyor.',
   },
   featureRequests: {
     screenTitle: 'Özellik istekleri',
@@ -58,6 +59,7 @@ export const trStrings: CupThreadStrings = {
     upvote: 'Oy ver',
     loadingMore: 'Daha fazla yükleniyor...',
     rateLimited: 'Çok fazla arama. Lütfen bir süre bekleyip tekrar deneyin.',
+    sectionUnavailable: 'Özellik istekleri şu anda kullanılamıyor.',
   },
   featureRequestCompose: {
     modalTitle: 'Özellik öner',
@@ -74,6 +76,7 @@ export const trStrings: CupThreadStrings = {
     titleMinLengthError: 'Lütfen en az 3 karakterlik bir başlık girin.',
     descriptionMinLengthError: 'Lütfen en az 5 karakterlik bir açıklama girin.',
     submitFailed: 'Özellik önerisi gönderilemedi. Lütfen tekrar deneyin.',
+    sectionUnavailable: 'Özellik istekleri şu anda kullanılamıyor.',
   },
   roadmap: {
     screenTitle: 'Yol haritası',
@@ -84,6 +87,7 @@ export const trStrings: CupThreadStrings = {
     loadMore: 'Daha fazla yükle',
     showingCount: (shown: number, total: number) => `${total} öğeden ${shown} tanesi gösteriliyor`,
     otherColumn: 'Diğer',
+    sectionUnavailable: 'Yol haritası şu anda kullanılamıyor.',
   },
   featureRequestDetail: {
     title: 'Özellik isteği',
@@ -117,6 +121,7 @@ export const trStrings: CupThreadStrings = {
     subscribedSuccess: 'Başarıyla abone oldunuz!',
     unsubscribeButton: 'Abonelikten çık',
     subscribeFailed: 'Değişiklik günlüğüne abone olunamadı.',
+    sectionUnavailable: 'Değişiklik günlüğü şu anda kullanılamıyor.',
   },
   userProfile: {
     screenTitle: 'Kullanıcı profili',

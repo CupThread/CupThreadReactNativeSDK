@@ -291,6 +291,24 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 
 ---
 
+### Remote Feature Flags (`sdk.features.*`)
+
+The Developer Console provides feature flag toggles under **App Settings → SDK Features** to enable or disable specific SDK surfaces remotely per app:
+
+| Flag | Governed Surfaces | Behavior When Disabled (`false`) |
+| ---- | ----------------- | -------------------------------- |
+| `sdk.features.feedback` | `<FeedbackComposer />` | Form submission is disabled, attachment picking is ignored, and a localized unavailable message is shown. |
+| `sdk.features.featureRequests` | `<FeatureRequestsScreen />`, `<FeatureRequestComposeSheet />` | Screen renders a localized unavailable state and proposal submissions are blocked. |
+| `sdk.features.roadmap` | `<RoadmapBoardScreen />` | Screen renders a localized unavailable state and roadmap requests are not fetched. |
+| `sdk.features.changelog` | `<WhatsNewScreen />`, `prepareChangelogOverlay()` | Screen renders a localized unavailable state, and `prepareChangelogOverlay()` returns `null`. |
+
+#### Precedence & Informational Fields
+- **Safe by default**: If `appConfig` is not loaded yet (or retrieval fails), or if the backend omits `sdk.features` (older server versions), all surfaces remain enabled (`isSurfaceEnabled()` returns `true`). While `isLoadingConfig` is true, screens render normally to prevent a flash of disabled state.
+- **Explicit kill-switch**: Gating activates strictly when a flag is explicitly set to `false`.
+- **Informational vs. Enforced Policy Fields**: Other `PublicAppConfig` fields like `allowAnonymousRoadmap`, `allowAnonymousVote`, `allowAnonymousFeedback`, and `allowAnonymousChangelog` are informational in the SDK and enforced server-side (unauthorized submissions fail with HTTP 401/403). `maxAttachmentBytes` indicates the server-side file upload limit.
+
+---
+
 ### Human Verification (Turnstile)
 
 The production CupThread API (`https://api.cupthread.com`) enforces Cloudflare Turnstile on public intake endpoints (`POST /api/v1/feedback`, `POST /api/v1/feature-requests`). Submissions without a valid token fail with HTTP 403, which the SDK surfaces as a dedicated `TurnstileRequiredException` (stable `code: 'turnstile_required'`). The bundled composers show a localized verification notice and keep the draft intact for retry.

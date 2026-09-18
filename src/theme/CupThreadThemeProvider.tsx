@@ -413,3 +413,30 @@ export function useCupThreadContext(): CupThreadContextValue {
   }
   return ctx;
 }
+
+/**
+ * Hook retrieving the remote application configuration and loading state.
+ *
+ * @returns An object containing `appConfig` (or `null` if not yet loaded) and `isLoadingConfig`.
+ *
+ * @example
+ * ```tsx
+ * function SurfaceWrapper() {
+ *   const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+ *   const isEnabled = isSurfaceEnabled(appConfig, 'roadmap');
+ *   if (!isLoadingConfig && !isEnabled) return <Text>Unavailable</Text>;
+ *   return <RoadmapView />;
+ * }
+ * ```
+ */
+export function useCupThreadAppConfig(): {
+  appConfig: PublicAppConfig | null;
+  isLoadingConfig: boolean;
+} {
+  const ctx = useContext(CupThreadContext);
+  return {
+    appConfig: ctx?.appConfig ?? null,
+    isLoadingConfig: ctx?.isLoadingConfig ?? false,
+  };
+}
+

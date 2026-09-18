@@ -45,6 +45,7 @@ export const itStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Impossibile caricare 1 allegato.' : `Impossibile caricare ${count} allegati.`,
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
+    sectionUnavailable: 'Il feedback non è al momento disponibile.',
   },
   featureRequests: {
     screenTitle: 'Richieste di funzionalità',
@@ -59,6 +60,7 @@ export const itStrings: CupThreadStrings = {
     upvote: 'Vota',
     loadingMore: 'Caricamento altri...',
     rateLimited: 'Troppe ricerche. Attendere un momento e riprovare.',
+    sectionUnavailable: 'Le richieste di funzionalità non sono al momento disponibili.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponi una funzionalità',
@@ -75,6 +77,7 @@ export const itStrings: CupThreadStrings = {
     titleMinLengthError: 'Inserisci un titolo di almeno 3 caratteri.',
     descriptionMinLengthError: 'Inserisci una descrizione di almeno 5 caratteri.',
     submitFailed: 'Impossibile inviare la proposta. Riprova.',
+    sectionUnavailable: 'Le richieste di funzionalità non sono al momento disponibili.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -85,6 +88,7 @@ export const itStrings: CupThreadStrings = {
     loadMore: 'Carica altri',
     showingCount: (shown: number, total: number) => `Mostrati ${shown} di ${total}`,
     otherColumn: 'Altro',
+    sectionUnavailable: 'La tabella di marcia non è al momento disponibile.',
   },
   featureRequestDetail: {
     title: 'Richiesta di funzionalità',
@@ -119,6 +123,7 @@ export const itStrings: CupThreadStrings = {
     subscribedSuccess: 'Iscrizione completata!',
     unsubscribeButton: 'Annulla iscrizione',
     subscribeFailed: 'Impossibile iscriversi al registro delle modifiche.',
+    sectionUnavailable: 'Il registro delle modifiche non è al momento disponibile.',
   },
   userProfile: {
     screenTitle: 'Profilo utente',
