@@ -43,6 +43,12 @@ export interface FeedbackClientConfig {
    * Default platform reported on feedback submissions and requests when
    * not explicitly overridden by the caller.
    *
+   * Note: Platform validation against the application's configured allowlist
+   * (`PublicAppConfig.allowedPlatforms`) is enforced at the composer layer
+   * (such as {@link FeedbackComposer}) via {@link resolveAllowedPlatform}.
+   * Direct calls to `client.submit` forward the draft or client default platform
+   * directly to the intake endpoint.
+   *
    * @defaultValue Auto-detected at runtime via React Native `Platform.OS`
    */
   defaultPlatform?: FeedbackPlatform;

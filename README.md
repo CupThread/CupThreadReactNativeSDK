@@ -222,6 +222,10 @@ import { FeedbackComposer } from '@cupthread/react-native';
 />;
 ```
 
+#### Platform Allowlist Validation
+
+When `<CupThreadProvider>` loads your application configuration (`PublicAppConfig`), `FeedbackComposer` automatically validates the outgoing feedback platform against `allowedPlatforms` via `resolveAllowedPlatform()`. If the candidate platform (from `initialDraft.platform`, `client.config.defaultPlatform`, or the runtime OS) is excluded from the app's configured allowlist, it falls back to the first allowed platform and emits a diagnostic warning in development mode (`__DEV__`).
+
 ### 4. Persistent Anonymous User Token
 
 The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts. Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:

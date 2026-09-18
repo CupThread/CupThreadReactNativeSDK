@@ -441,6 +441,11 @@ export class FeedbackClient {
   /**
    * Submits a user feedback draft, bug report, or feature inquiry.
    *
+   * Note: Platform allowlist enforcement against `PublicAppConfig.allowedPlatforms`
+   * happens at the composer layer (such as {@link FeedbackComposer}) via
+   * {@link resolveAllowedPlatform}. Direct client calls forward the draft's
+   * platform or client `defaultPlatform` directly to the intake endpoint.
+   *
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
