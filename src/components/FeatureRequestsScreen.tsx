@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
 import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
+import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
 
 /**
@@ -88,9 +89,21 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [versions, setVersions] = useState<AppVersion[]>([]);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
   const [showCompose, setShowCompose] = useState<boolean>(false);
+
+  const fetchVersions = useCallback(
+    (signal: AbortSignal) => client.fetchVersions({ signal }),
+    [client]
+  );
+  const {
+    data: versionsData,
+    isLoading: isVersionsLoading,
+    error: versionsError,
+    reload: reloadVersions,
+  } = useAsyncData(fetchVersions, { enabled: isTokenReady });
+
+  const versions: AppVersion[] = versionsData ?? [];
 
   const {
     items,
@@ -114,21 +127,13 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     debounceMs: 250,
   });
 
-  useEffect(() => {
-    if (!isTokenReady) return;
-    const controller = new AbortController();
-    client
-      .fetchVersions({ signal: controller.signal })
-      .then((v) => {
-        if (!controller.signal.aborted) setVersions(v || []);
-      })
-      .catch((err) => {
-        if (err?.name === 'AbortError' || controller.signal.aborted) return;
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [client, isTokenReady]);
+  const handleRefresh = useCallback(async () => {
+    const tasks: Promise<any>[] = [refresh()];
+    if (versionsError) {
+      tasks.push(reloadVersions());
+    }
+    await Promise.allSettled(tasks);
+  }, [refresh, versionsError, reloadVersions]);
 
   const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
@@ -231,7 +236,17 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         />
       </View>
 
-      {versions.length > 0 && (
+      {versionsError ? (
+        <View style={styles.versionsErrorContainer}>
+          <ErrorState
+            compact
+            message={strings.common.error}
+            retryLabel={strings.common.retry}
+            isRetrying={isVersionsLoading}
+            onRetry={reloadVersions}
+          />
+        </View>
+      ) : versions.length > 0 ? (
         <View style={styles.chipsContainer}>
           <FlatList
             horizontal
@@ -268,7 +283,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             }}
           />
         </View>
-      )}
+      ) : null}
 
       {isRateLimited && items.length > 0 && (
         <View
@@ -306,6 +321,9 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           retryLabel={strings.common.retry}
           onRetry={() => {
             reload();
+            if (versionsError) {
+              void reloadVersions();
+            }
           }}
         />
       ) : items.length === 0 ? (
@@ -334,7 +352,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={refresh}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
             />
           }
@@ -423,6 +441,10 @@ const styles = StyleSheet.create({
   },
   chipsContainer: {
     height: 44,
+    marginBottom: 6,
+  },
+  versionsErrorContainer: {
+    paddingHorizontal: 16,
     marginBottom: 6,
   },
   chipsList: {
