@@ -18,9 +18,9 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
 import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
@@ -115,7 +115,7 @@ export function FeatureRequestComposeSheet({
         requesterName: requesterName.trim() || undefined,
       };
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submitFeatureRequest(draft, effectiveToken);
       setIsSubmitting(false);
 
