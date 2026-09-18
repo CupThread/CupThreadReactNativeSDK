@@ -13,8 +13,10 @@ import { viStrings } from './vi';
 import { zhHantStrings } from './zhHant';
 import { zhHansStrings } from './zhHans';
 import type { CupThreadStrings, DeepPartial } from './types';
+import { getDeviceLocale } from './deviceLocale';
 
 export * from './types';
+export * from './deviceLocale';
 export { enStrings } from './en';
 export { deStrings } from './de';
 export { esStrings } from './es';
@@ -55,6 +57,27 @@ function mergeDeep<T extends Record<string, any>>(target: T, source?: Record<str
     }
   }
   return result;
+}
+
+/**
+ * Resolves the effective locale for a {@link CupThreadProvider}-level `locale` input.
+ *
+ * Resolution order:
+ * 1. An explicit locale tag other than `'auto'` — used verbatim (e.g. `'ja'`,
+ *    `'zh-Hans'`), so an in-app language picker keeps working.
+ * 2. `'auto'` or omitted — the detected device locale from
+ *    {@link getDeviceLocale}.
+ * 3. `'en'` when nothing is detectable.
+ *
+ * The returned tag is a raw locale identifier (not normalized to a dictionary
+ * key); feed it to {@link getLocaleStrings}, whose BCP 47 prefix matching
+ * already handles regional variants like `pt-BR`, `zh-Hans-CN`, or `nb-NO`.
+ */
+export function resolveLocale(locale?: string | 'auto'): string {
+  if (locale && locale !== 'auto') {
+    return locale;
+  }
+  return getDeviceLocale() ?? 'en';
 }
 
 /**

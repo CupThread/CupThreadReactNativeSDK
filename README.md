@@ -134,7 +134,11 @@ The images above are produced by a deterministic Expo showcase with fixture data
 
 ### 1. Internationalization (i18n)
 
-The SDK includes built-in localization for **English (`en`)**, **French (`fr`)**, **Spanish (`es`)**, **German (`de`)**, **Italian (`it`)**, **Portuguese (`pt` / `pt-BR`)**, **Japanese (`ja` / `ja-JP`)**, **Traditional Chinese (`zh-Hant` / `zh-TW`)**, **Korean (`ko` / `ko-KR`)**, **Polish (`pl`)**, **Norwegian (`no` / `nb-NO`)**, **Turkish (`tr`)**, **Vietnamese (`vi` / `vi-VN`)**, and **Simplified Chinese (`zh-Hans` / `zh-CN`)**. You can configure the locale and provide custom string overrides directly via `<CupThreadProvider>`:
+The SDK includes built-in localization for **English (`en`)**, **French (`fr`)**, **Spanish (`es`)**, **German (`de`)**, **Italian (`it`)**, **Portuguese (`pt` / `pt-BR`)**, **Japanese (`ja` / `ja-JP`)**, **Traditional Chinese (`zh-Hant` / `zh-TW`)**, **Korean (`ko` / `ko-KR`)**, **Polish (`pl`)**, **Norwegian (`no` / `nb-NO`)**, **Turkish (`tr`)**, **Vietnamese (`vi` / `vi-VN`)**, and **Simplified Chinese (`zh-Hans` / `zh-CN`)**.
+
+By default the provider follows the **device language** (`locale="auto"` is the default): the locale is detected through `expo-localization` or `react-native-localize` when your app already ships either, then React Native core (iOS `SettingsManager`, Android `I18nManager`, or `navigator.language` on web), and falls back to English when nothing is detectable. Neither detection package is required — both are declared as *optional* peer dependencies. Regional variants are matched automatically (`pt-BR` → `pt`, `zh-Hans-CN` → `zh-Hans`, `nb-NO` → `no`), and the resolved locale is exposed as `useCupThreadContext().locale`.
+
+To force a specific language (e.g. for an in-app language picker), pass an explicit `locale` — it always wins over the detected device language. You can also provide custom string overrides directly via `<CupThreadProvider>`:
 
 ```tsx
 <CupThreadProvider

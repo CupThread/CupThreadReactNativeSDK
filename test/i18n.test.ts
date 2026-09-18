@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getLocaleStrings,
+  getDeviceLocale,
+  resolveLocale,
+  resetDeviceLocaleCache,
+  setDeviceLocaleProvider,
   deStrings,
   enStrings,
   esStrings,
@@ -321,4 +325,40 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     assert.ok(typeof loc.userProfile.requestCount(3) === 'string' && loc.userProfile.requestCount(3).length > 0);
     assert.ok(typeof loc.userProfile.commentOn('Feature') === 'string' && loc.userProfile.commentOn('Feature').length > 0);
   }
+});
+
+test('getDeviceLocale returns null in plain Node without any locale package', () => {
+  // Neither expo-localization nor react-native-localize is installed here and
+  // react-native cannot load under plain Node, so built-in detection has no
+  // source available.
+  resetDeviceLocaleCache();
+  assert.equal(getDeviceLocale(), null);
+});
+
+test('resolveLocale passes explicit locale tags through verbatim', () => {
+  assert.equal(resolveLocale('pt-BR'), 'pt-BR');
+  assert.equal(resolveLocale('ja'), 'ja');
+  assert.equal(resolveLocale('zh-Hant-TW'), 'zh-Hant-TW');
+});
+
+test('resolveLocale falls back to en for auto when nothing is detectable', () => {
+  resetDeviceLocaleCache();
+  assert.equal(resolveLocale('auto'), 'en');
+  assert.equal(resolveLocale(undefined), 'en');
+  assert.equal(resolveLocale(''), 'en');
+});
+
+test('setDeviceLocaleProvider overrides built-in detection until cleared', () => {
+  setDeviceLocaleProvider(() => 'pt-BR');
+  assert.equal(getDeviceLocale(), 'pt-BR');
+  assert.equal(resolveLocale('auto'), 'pt-BR');
+  assert.equal(resolveLocale('ja'), 'ja', 'an explicit locale still wins over detection');
+
+  // A custom detector is consulted fresh, so host-side dynamic sources work.
+  setDeviceLocaleProvider(() => 'zh-Hans-CN');
+  assert.equal(getDeviceLocale(), 'zh-Hans-CN');
+
+  setDeviceLocaleProvider(null);
+  resetDeviceLocaleCache();
+  assert.equal(getDeviceLocale(), null, 'clearing the provider restores built-in detection');
 });
