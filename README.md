@@ -251,6 +251,35 @@ Notes:
 - An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
 - Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
 
+### 5. Remote Configuration & Error Recovery
+
+`<CupThreadProvider>` fetches remote application settings and theme branding at mount. If the initial fetch fails (e.g. offline launch or flaky connection), the provider automatically retries once after a short 2-second delay. If the retry also fails, the error is surfaced via `useCupThreadContext().configError` while falling back safely to the `'system'` theme:
+
+```tsx
+import { useCupThreadContext } from '@cupthread/react-native';
+
+function AppHeader() {
+  const { appConfig, isLoadingConfig, configError, refreshConfig } = useCupThreadContext();
+
+  if (configError) {
+    return (
+      <View style={styles.errorBanner}>
+        <Text>Failed to load configuration: {configError.message}</Text>
+        <TouchableOpacity onPress={() => refreshConfig()}>
+          <Text>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return <Text>{isLoadingConfig ? 'Loading...' : appConfig?.name}</Text>;
+}
+```
+
+- **Distinguishable states**: Hosts can inspect `configError`, `isLoadingConfig`, and `appConfig` to distinguish loading, error, and loaded states instead of silently falling back without explanation.
+- **Manual escape hatch**: Call `refreshConfig()` at any time to re-fetch configuration from the server; on success, `configError` is cleared and remote branding is applied.
+- **Development visibility**: In development (`__DEV__`), persistent config fetch failures log a warning to the console (`[CupThread] Failed to load app config:`).
+
 ---
 
 ## API Client Surface
