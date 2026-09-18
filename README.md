@@ -287,7 +287,7 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 | ----------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments                                                                                                                       |
 | `uploadAttachment(options)`                                 | `POST /api/v1/uploads/{images,r2}`                        | Upload screenshot or log attachment (supports `signal`, `timeoutMs`)                                                                                                      |
-| `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings                                                                                                                       |
+| `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings (returns 404 for private or unknown apps)                                                                            |
 | `fetchColumns(options?)`                                    | `GET /api/v1/public/columns/{appKey}`                     | Fetch Kanban board columns for roadmap                                                                                                                                    |
 | `fetchVersions(options?)`                                   | `GET /api/v1/public/versions/{appKey}`                    | Fetch release versions                                                                                                                                                    |
 | `fetchFeatureRequests(options)`                             | `GET /api/v1/feature-requests`                            | List, search, and paginate public feature requests (transmits `userToken` via `X-User-Token` header; supports `limit`, `offset`, `signal`, `timeoutMs`, `tokenTransport`) |
@@ -339,6 +339,16 @@ Public intake endpoints (`POST /api/v1/feedback`, `POST /api/v1/feature-requests
 - `PaymentRequiredException`: Base class for HTTP 402 errors.
 
 The bundled composers (`<FeedbackComposer />` and `<FeatureRequestComposeSheet />`) catch these exceptions, display localized error messages, and preserve draft title, details, and attachments so users do not lose their input.
+
+---
+
+### Private Applications & Config Resolution (HTTP 404)
+
+As of the September 2026 API sync, public config endpoints (`GET /api/v1/public/config/{appKey}`) answer private applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}`, matching the response for unknown app keys.
+
+- `fetchAppConfig()` rejects with `UnexpectedStatusException` (status: `404`, responseBody: `'{"error": "App not found"}'`).
+- Successfully returned `PublicAppConfig` payloads always carry `allowPublic: true`.
+- Components such as `<CupThreadProvider />` fail closed on non-200 config responses, ensuring private application metadata is never leaked or rendered as public.
 
 ---
 
