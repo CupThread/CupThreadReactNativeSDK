@@ -498,20 +498,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 8,
   },
   footerText: {
     fontSize: 13,
+    marginLeft: 8,
   },
   footerAffordance: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 12,
   },
   footerAffordanceText: {
     fontSize: 13,
+    marginRight: 12,
   },
   loadMoreBtn: {
     paddingHorizontal: 12,
