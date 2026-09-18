@@ -63,13 +63,27 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
     (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
     [client, featureRequestId]
   );
+  const mergeComments = useCallback(
+    (
+      local: FeatureRequestComment[] | null,
+      incoming: FeatureRequestComment[]
+    ): FeatureRequestComment[] => {
+      if (!local || local.length === 0) return incoming;
+      const incomingIds = new Set(incoming.map((c) => c.id));
+      const localOnly = local.filter((c) => !incomingIds.has(c.id));
+      if (localOnly.length === 0) return incoming;
+      return [...incoming, ...localOnly];
+    },
+    []
+  );
+
   const {
     data: commentsData,
     isLoading: isLoadingComments,
     error: loadError,
     reload: reloadComments,
     setData: setCommentsData,
-  } = useAsyncData(fetchComments);
+  } = useAsyncData(fetchComments, { mergeStale: mergeComments });
   const comments: FeatureRequestComment[] = commentsData ?? [];
 
   const [commentText, setCommentText] = useState<string>('');
