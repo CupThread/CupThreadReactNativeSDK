@@ -44,6 +44,10 @@ export const ptStrings: CupThreadStrings = {
     uploadFailed: 'Falha ao carregar o anexo.',
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Falha ao enviar 1 anexo.' : `Falha ao enviar ${count} anexos.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 arquivo foi ignorado: formato de anexo não suportado.'
+        : `${count} arquivos foram ignorados: formato de anexo não suportado.`,
     submitFailed: 'Falha ao enviar o feedback. Por favor, tente novamente.',
   },
   featureRequests: {

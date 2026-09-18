@@ -43,6 +43,8 @@ export const jaStrings: CupThreadStrings = {
     attachmentsHeader: '添付ファイル',
     uploadFailed: '添付ファイルのアップロードに失敗しました。',
     someUploadsFailed: (count: number) => `${count}件の添付ファイルのアップロードに失敗しました。`,
+    unsupportedAttachment: (count: number) =>
+      `${count}件のファイルはサポートされていない添付形式のため、スキップされました。`,
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
   },
   featureRequests: {

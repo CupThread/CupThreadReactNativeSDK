@@ -42,6 +42,7 @@ export const zhHansStrings: CupThreadStrings = {
     attachmentsHeader: '已附加文件',
     uploadFailed: '上传附件失败。',
     someUploadsFailed: (count: number) => `${count} 个附件上传失败。`,
+    unsupportedAttachment: (count: number) => `${count} 个所选文件格式不受支持，已跳过。`,
     submitFailed: '提交反馈失败，请重试。',
   },
   featureRequests: {

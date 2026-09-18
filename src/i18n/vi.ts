@@ -43,6 +43,8 @@ export const viStrings: CupThreadStrings = {
     attachmentsHeader: 'Tệp đính kèm',
     uploadFailed: 'Tải lên tệp đính kèm thất bại.',
     someUploadsFailed: (count: number) => `Không thể tải lên ${count} tệp đính kèm.`,
+    unsupportedAttachment: (count: number) =>
+      `${count} tệp đã chọn bị bỏ qua vì định dạng tệp đính kèm không được hỗ trợ.`,
     submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
   },
   featureRequests: {

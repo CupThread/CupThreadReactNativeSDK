@@ -44,6 +44,10 @@ export const esStrings: CupThreadStrings = {
     uploadFailed: 'Error al subir el archivo adjunto.',
     someUploadsFailed: (count: number) =>
       count === 1 ? 'No se pudo subir 1 adjunto.' : `No se pudieron subir ${count} adjuntos.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Se omitió 1 archivo: formato de adjunto no compatible.'
+        : `Se omitieron ${count} archivos: formato de adjunto no compatible.`,
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
   },
   featureRequests: {
