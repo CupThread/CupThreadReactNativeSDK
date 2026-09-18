@@ -165,9 +165,20 @@ The SDK includes built-in localization for **English (`en`)**, **French (`fr`)**
 
 `ChangelogOverlay` and `client.prepareChangelogOverlay()` automatically remember which release notes the user has already seen, avoiding annoying duplicate popups:
 
+> **Storage Requirement:** To persist seen status across app restarts, configure a storage adapter (such as `@react-native-async-storage/async-storage`) via `UserTokenStore.configure(AsyncStorage)` at application startup, or pass an adapter-backed `tokenStore` prop (`<ChangelogOverlay tokenStore={customStore} />`). Without a configured adapter, seen tracking degrades to in-memory only (`store.isPersistent === false`) and the sheet will re-appear on every app launch.
+
 ```tsx
 import React, { useEffect, useState } from 'react';
-import { CupThreadProvider, ChangelogOverlay, FeedbackClient } from '@cupthread/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  CupThreadProvider,
+  ChangelogOverlay,
+  FeedbackClient,
+  UserTokenStore,
+} from '@cupthread/react-native';
+
+// Enable persistence for changelog seen status and anonymous user tokens
+UserTokenStore.configure(AsyncStorage);
 
 const client = new FeedbackClient({
   baseUrl: 'https://api.cupthread.com',
@@ -236,13 +247,14 @@ When `<CupThreadProvider>` loads your application configuration (`PublicAppConfi
 
 ### 4. Persistent Anonymous User Token
 
-The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts. Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
+The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts, as well as persisting changelog seen status (`cupthread_seen_changelogs_v1`). Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
 
 ```tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserTokenStore } from '@cupthread/react-native';
 
 UserTokenStore.configure(AsyncStorage);
+console.log('Storage is persistent:', UserTokenStore.shared.isPersistent); // true
 ```
 
 #### Login / Logout Identity Switching

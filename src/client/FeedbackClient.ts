@@ -918,6 +918,9 @@ export class FeedbackClient {
 
     if (options?.onlyIfUnseen) {
       const store = options.tokenStore || UserTokenStore.shared;
+      if (!store.isPersistent) {
+        store.warnUnpersistedChangelogSeen();
+      }
       const seen = await store.hasSeenChangelog(latestKey);
       if (seen) {
         return null;
