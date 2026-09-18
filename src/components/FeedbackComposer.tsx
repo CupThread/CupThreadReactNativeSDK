@@ -18,12 +18,12 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
 import { TurnstileRequiredException } from '../client/FeedbackException';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -156,7 +156,7 @@ export function FeedbackComposer({
       const items = Array.isArray(picked) ? picked : [picked];
       const { succeeded, failed } = await processPickedAttachments(items, {
         upload: async (options) => {
-          const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+          const effectiveToken = await resolveEffectiveUserToken(userToken);
           return client.uploadAttachment({ ...options, userToken: effectiveToken });
         },
       });
@@ -201,7 +201,7 @@ export function FeedbackComposer({
         metadata: initialDraft?.metadata,
       };
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submit(draft, effectiveToken);
       setIsSubmitting(false);
 

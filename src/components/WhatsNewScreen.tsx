@@ -16,6 +16,7 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
 import type { ChangelogEntry } from '../types';
 import { Badge } from './Badge';
@@ -23,6 +24,7 @@ import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
@@ -36,6 +38,7 @@ export function WhatsNewScreen({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
@@ -62,10 +65,12 @@ export function WhatsNewScreen({
       Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
+    if (!isTokenReady) return;
 
     try {
       setIsSubscribing(true);
-      await client.subscribeToChangelog(email.trim(), userToken);
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
+      await client.subscribeToChangelog(email.trim(), effectiveToken);
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
@@ -118,8 +123,14 @@ export function WhatsNewScreen({
           />
           <TouchableOpacity
             onPress={handleSubscribe}
-            disabled={isSubscribing}
-            style={[styles.subscribeButton, { backgroundColor: colors.primary }]}
+            disabled={isSubscribing || !isTokenReady}
+            style={[
+              styles.subscribeButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: isSubscribing || !isTokenReady ? 0.6 : 1,
+              },
+            ]}
           >
             {isSubscribing ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
