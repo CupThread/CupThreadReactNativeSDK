@@ -148,10 +148,20 @@ export function FeatureRequestDetail({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      accessibilityViewIsModal={true}
+    >
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={[styles.backText, { color: colors.primary }]}>← {strings.common.back}</Text>
           </TouchableOpacity>
         </View>

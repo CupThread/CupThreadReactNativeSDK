@@ -195,7 +195,12 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -231,6 +236,8 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                       borderBottomColor: isSelected ? col.color || colors.primary : 'transparent',
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text
                     style={[
@@ -288,6 +295,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 activeOpacity={0.8}
                 disabled={isLoadingMore}
+                accessibilityRole="button"
               >
                 {isLoadingMore ? (
                   <ActivityIndicator size="small" color={colors.primaryText} />
@@ -335,6 +343,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   onPress={() => loadMore()}
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
                     {strings.roadmap.loadMore}

@@ -76,6 +76,8 @@ export function ErrorState({
           styles.retryButton,
           { backgroundColor: colors.primary, opacity: isRetrying ? 0.5 : 1 },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: isRetrying }}
       >
         <Text style={[styles.retryButtonText, { color: colors.primaryText }]}>
           {retryLabel}

@@ -165,7 +165,12 @@ export function FeatureRequestComposeSheet({
           {strings.featureRequestCompose.modalTitle}
         </Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.close}
+          >
             <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -252,6 +257,8 @@ export function FeatureRequestComposeSheet({
             opacity: isSubmitting || !isTokenReady ? 0.6 : 1,
           },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: isSubmitting || !isTokenReady }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
@@ -266,7 +273,12 @@ export function FeatureRequestComposeSheet({
 
   if (isModal) {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={onClose}
+        accessibilityViewIsModal={true}
+      >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {content}
         </SafeAreaView>
