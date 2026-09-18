@@ -46,6 +46,7 @@ export interface FeedbackComposerStrings {
   attachmentsHeader: string;
   uploadFailed: string;
   someUploadsFailed: (count: number) => string;
+  unsupportedAttachment: (count: number) => string;
   submitFailed: string;
 }
 

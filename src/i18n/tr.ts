@@ -43,6 +43,8 @@ export const trStrings: CupThreadStrings = {
     attachmentsHeader: 'Ekler',
     uploadFailed: 'Ek yüklenemedi.',
     someUploadsFailed: (count: number) => `${count} ek yüklenemedi.`,
+    unsupportedAttachment: (count: number) =>
+      `${count} dosya desteklenmeyen ek formatı nedeniyle atlandı.`,
     submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
   },
   featureRequests: {

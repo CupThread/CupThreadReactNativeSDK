@@ -44,6 +44,8 @@ export const enStrings: CupThreadStrings = {
     uploadFailed: 'Failed to upload attachment.',
     someUploadsFailed: (count: number) =>
       `${count} attachment${count === 1 ? '' : 's'} failed to upload.`,
+    unsupportedAttachment: (count: number) =>
+      `${count} selected file${count === 1 ? '' : 's'} skipped: unsupported attachment format.`,
     submitFailed: 'Failed to submit feedback. Please try again.',
   },
   featureRequests: {

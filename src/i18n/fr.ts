@@ -46,6 +46,10 @@ export const frStrings: CupThreadStrings = {
       count === 1
         ? 'Impossible de téléverser 1 pièce jointe.'
         : `Impossible de téléverser ${count} pièces jointes.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 fichier a été ignoré : format de pièce jointe non pris en charge.'
+        : `${count} fichiers ont été ignorés : format de pièce jointe non pris en charge.`,
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
   },
   featureRequests: {

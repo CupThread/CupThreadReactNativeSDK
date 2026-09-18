@@ -46,6 +46,10 @@ export const deStrings: CupThreadStrings = {
       count === 1
         ? '1 Anhang konnte nicht hochgeladen werden.'
         : `${count} Anhänge konnten nicht hochgeladen werden.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 Datei wurde übersprungen: Anhangsformat wird nicht unterstützt.'
+        : `${count} Dateien wurden übersprungen: Anhangsformat wird nicht unterstützt.`,
     submitFailed: 'Feedback konnte nicht gesendet werden. Bitte versuche es erneut.',
   },
   featureRequests: {
