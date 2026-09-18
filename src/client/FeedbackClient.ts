@@ -389,6 +389,7 @@ export class FeedbackClient {
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       uploadTimeoutMs: config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
       turnstileTokenProvider: config.turnstileTokenProvider,
+      tokenTransport: config.tokenTransport ?? 'header',
     };
   }
 
@@ -638,6 +639,10 @@ export class FeedbackClient {
   /**
    * Fetches paginated feature requests with optional milestone filtering and keyword search.
    *
+   * By default, the caller's identity token is sent via the `X-User-Token` HTTP header
+   * rather than as a URL query parameter to prevent credential leakage into server access logs,
+   * reverse proxies, CDNs, and browser history (CWE-598).
+   *
    * @param options - Query parameters including `userToken`, `limit`, `offset`, `versionId`, and `query`.
    * @returns Paginated list of feature request items.
    *
@@ -680,19 +685,34 @@ export class FeedbackClient {
      * Optional timeout in milliseconds for this request.
      */
     timeoutMs?: number;
+    /**
+     * Optional token transport override for this call (`'header' | 'both' | 'query'`).
+     * Defaults to the client configuration's `tokenTransport` (or `'header'`).
+     */
+    tokenTransport?: 'query' | 'header' | 'both';
   }): Promise<ListFeatureRequestsResult> {
+    const transport = options.tokenTransport ?? this.config.tokenTransport ?? 'header';
     const params = new URLSearchParams({
       appKey: this.config.appKey,
-      userToken: options.userToken,
       limit: String(options.limit ?? 50),
       offset: String(options.offset ?? 0),
     });
+
+    if (transport === 'query' || transport === 'both') {
+      if (options.userToken) {
+        params.append('userToken', options.userToken);
+      }
+    }
+
     if (options.versionId) params.append('versionId', options.versionId);
     if (options.query) params.append('q', options.query);
+
+    const sendHeader = (transport === 'header' || transport === 'both') && !!options.userToken;
 
     return this.request<ListFeatureRequestsResult>({
       method: 'GET',
       path: `/api/v1/feature-requests?${params.toString()}`,
+      userToken: sendHeader ? options.userToken : undefined,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
     });
