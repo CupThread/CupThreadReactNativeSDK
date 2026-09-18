@@ -24,7 +24,11 @@ import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
-import { ROADMAP_OTHER_COLUMN_ID, groupRoadmapRequests } from '../utils/roadmapColumns';
+import {
+  ROADMAP_OTHER_COLUMN_ID,
+  formatColumnTabCount,
+  groupRoadmapRequests,
+} from '../utils/roadmapColumns';
 
 /**
  * Render model for a column tab: either a server column or the synthetic
@@ -237,7 +241,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                       },
                     ]}
                   >
-                    {col.name} ({count})
+                    {col.name} ({formatColumnTabCount(count, hasMore)})
                   </Text>
                 </TouchableOpacity>
               );

@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupRoadmapRequests, ROADMAP_OTHER_COLUMN_ID } from '../src/utils/roadmapColumns';
+import {
+  formatColumnTabCount,
+  groupRoadmapRequests,
+  ROADMAP_OTHER_COLUMN_ID,
+} from '../src/utils/roadmapColumns';
 import type { BoardColumn, FeatureRequestItem } from '../src/types';
 import { enStrings, zhHansStrings } from '../src/i18n';
 
@@ -95,6 +99,38 @@ test('groupRoadmapRequests preserves legacy flat-list behavior with zero visible
 
 test('ROADMAP_OTHER_COLUMN_ID never collides with server column ids', () => {
   assert.ok(ROADMAP_OTHER_COLUMN_ID.startsWith('__cupthread_'));
+});
+
+test('formatColumnTabCount renders the exact count once all pages are loaded', () => {
+  assert.equal(formatColumnTabCount(12, false), '12');
+  assert.equal(formatColumnTabCount(0, false), '0');
+  assert.equal(formatColumnTabCount(250, false), '250');
+});
+
+test('formatColumnTabCount appends + while more pages remain', () => {
+  assert.equal(formatColumnTabCount(12, true), '12+');
+  assert.equal(formatColumnTabCount(100, true), '100+');
+  assert.equal(formatColumnTabCount(250, true), '250+');
+});
+
+test('formatColumnTabCount never presents a bare 0 while unloaded pages may exist', () => {
+  // Regression for #46: a column whose items all live beyond the first page
+  // used to render "(0)" — an authoritative-looking wrong count.
+  assert.equal(formatColumnTabCount(0, true), '0+');
+  assert.notEqual(formatColumnTabCount(0, true), '0');
+});
+
+test('formatColumnTabCount output is a plain locale-neutral label', () => {
+  // The + suffix must not depend on any i18n dictionary, so the badge works
+  // identically across all shipped locales.
+  for (const [count, hasMore] of [
+    [0, true],
+    [7, true],
+    [7, false],
+  ] as const) {
+    const label = formatColumnTabCount(count, hasMore);
+    assert.match(label, /^\d+\+?$/);
+  }
 });
 
 test('otherColumn fallback copy exists in shipped locales', () => {
