@@ -20,6 +20,8 @@ export interface CommonStrings {
   hoursAgo: (h: number) => string;
   daysAgo: (d: number) => string;
   verificationRequired: string;
+  quotaExceeded?: string;
+  subscriptionInactive?: string;
 }
 
 /**

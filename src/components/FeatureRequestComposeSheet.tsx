@@ -19,7 +19,12 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
-import { TurnstileRequiredException } from '../client/FeedbackException';
+import {
+  InactiveSubscriptionException,
+  PaymentRequiredException,
+  QuotaExceededException,
+  TurnstileRequiredException,
+} from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
 
 /**
@@ -141,6 +146,12 @@ export function FeatureRequestComposeSheet({
         // The draft stays intact so the user can retry after the host's
         // verification flow resolves a fresh token.
         setErrorMessage(strings.common.verificationRequired);
+      } else if (err instanceof QuotaExceededException) {
+        setErrorMessage(strings.common.quotaExceeded || err.message);
+      } else if (err instanceof InactiveSubscriptionException) {
+        setErrorMessage(strings.common.subscriptionInactive || err.message);
+      } else if (err instanceof PaymentRequiredException) {
+        setErrorMessage(err.message || strings.featureRequestCompose.submitFailed);
       } else {
         setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
       }

@@ -21,6 +21,10 @@ export const esStrings: CupThreadStrings = {
     daysAgo: (d: number) => `Hace ${d} d`,
     verificationRequired:
       'Se requiere verificación humana para enviar. Inténtalo de nuevo después de completar la verificación.',
+    quotaExceeded:
+      'Se ha alcanzado la cuota mensual de envíos. Los envíos están temporalmente en pausa.',
+    subscriptionInactive:
+      'Los envíos están en pausa porque la suscripción de la aplicación está inactiva.',
   },
   feedbackComposer: {
     title: 'Enviar comentarios',

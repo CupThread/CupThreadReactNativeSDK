@@ -21,6 +21,9 @@ export const ptStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? 'Há 1 dia' : `Há ${d} dias`),
     verificationRequired:
       'É necessária verificação humana para enviar. Tente novamente após concluir a verificação.',
+    quotaExceeded: 'Limite mensal de envios atingido. Os envios estão temporariamente pausados.',
+    subscriptionInactive:
+      'Os envios estão pausados porque a assinatura do aplicativo está inativa.',
   },
   feedbackComposer: {
     title: 'Enviar feedback',
