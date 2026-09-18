@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -76,11 +76,14 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const [authorName, setAuthorName] = useState<string>('');
   const [replyTo, setReplyTo] = useState<FeatureRequestComment | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const isSubmittingRef = useRef<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const handlePostComment = async () => {
+    if (isSubmittingRef.current) return;
     if (commentText.trim().length === 0 || !isTokenReady) return;
 
+    isSubmittingRef.current = true;
     try {
       setIsSubmitting(true);
       setError(null);
@@ -101,6 +104,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
     } catch (err: any) {
       setError(err?.message || strings.comments.postFailed);
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -97,9 +97,11 @@ export function FeatureRequestComposeSheet({
   const [description, setDescription] = useState(initialDraft?.description || '');
   const [requesterName, setRequesterName] = useState(initialDraft?.requesterName || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     if (!isTokenReady) return;
     if (title.trim().length < 3) {
       setErrorMessage(strings.featureRequestCompose.titleMinLengthError);
@@ -110,6 +112,7 @@ export function FeatureRequestComposeSheet({
       return;
     }
 
+    isSubmittingRef.current = true;
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -122,7 +125,6 @@ export function FeatureRequestComposeSheet({
 
       const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
       const result = await client.submitFeatureRequest(draft, effectiveToken);
-      setIsSubmitting(false);
 
       // Surface the outcome even when a host provides `onSubmitSuccess`:
       // pending-moderation submissions are absent from the reloaded list, so
@@ -141,7 +143,6 @@ export function FeatureRequestComposeSheet({
         onClose();
       }
     } catch (err: any) {
-      setIsSubmitting(false);
       if (err instanceof TurnstileRequiredException) {
         // The draft stays intact so the user can retry after the host's
         // verification flow resolves a fresh token.
@@ -155,6 +156,9 @@ export function FeatureRequestComposeSheet({
       } else {
         setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
       }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
