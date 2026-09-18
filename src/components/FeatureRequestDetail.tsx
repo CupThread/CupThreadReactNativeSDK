@@ -66,18 +66,25 @@ export interface FeatureRequestDetailProps {
  * @example
  * ```tsx
  * import React from 'react';
- * import { FeatureRequestDetail } from '@cupthread/react-native';
+ * import { FeatureRequestDetail, type FeatureRequestItem } from '@cupthread/react-native';
  *
- * export function RequestViewer({ activeRequest, onClose }) {
- *   return (
- *     <FeatureRequestDetail
- *       item={activeRequest}
- *       visible={!!activeRequest}
- *       onClose={onClose}
- *     />
- *   );
+ * export function RequestViewer({
+ *   activeRequest,
+ *   onClose,
+ * }: {
+ *   activeRequest: FeatureRequestItem | null;
+ *   onClose: () => void;
+ * }) {
+ *   if (!activeRequest) return null;
+ *   return <FeatureRequestDetail item={activeRequest} visible onClose={onClose} />;
  * }
  * ```
+ *
+ * @remarks
+ * Keeping the detail mounted while a different request is passed as `item` is
+ * supported: internal vote and comment state resets and the new request's
+ * content renders immediately, so votes and comments always target the
+ * request currently displayed.
  */
 export function FeatureRequestDetail({
   item: initialItem,
@@ -92,17 +99,33 @@ export function FeatureRequestDetail({
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
 
+  // The documented host pattern keeps this component mounted and swaps the
+  // `item` prop (<Modal> hides children without unmounting them), so internal
+  // state must follow the prop's identity. Render-phase derived-state
+  // adjustment, same semantics as key={item.id}: a different id resets the
+  // whole screen, while a same-id prop refresh (fresh object from host data)
+  // keeps the current state, including optimistic vote changes.
+  const lastInitialIdRef = useRef(initialItem.id);
+  if (lastInitialIdRef.current !== initialItem.id) {
+    lastInitialIdRef.current = initialItem.id;
+    setItem(initialItem);
+  }
+
   // State updaters must stay pure (React may run them during render and twice
   // under StrictMode), so vote changes are staged here and the host
   // `onVoteChange` notification is flushed in an effect after commit.
   const pendingVoteNotifyRef = useRef<FeatureRequestItem | null>(null);
 
   const applyVoteChange = useCallback<VoteChangeApplier>(
-    (_itemId, transform) => {
+    (itemId, transform) => {
       // Use functional state updater like list/board so transforms always land
       // on the freshest state and rollback reconciles against current item
       // instead of closing over a stale snapshot or the initialItem prop.
       setItem((prev) => {
+        // Only apply transforms issued for the request on screen; a late
+        // success or rollback for a previously displayed item must not
+        // mutate the newly shown one.
+        if (prev.id !== itemId) return prev;
         const next = transform(prev);
         pendingVoteNotifyRef.current = next;
         return next;
