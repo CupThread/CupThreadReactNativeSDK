@@ -273,6 +273,7 @@ test('SearchRateLimiter uses production defaults', () => {
 interface SearchCall {
   q: string | null;
   offset: string | null;
+  userToken?: string | null;
 }
 
 function makeSearchClient(responder: (call: SearchCall, index: number) => Response) {
@@ -283,6 +284,7 @@ function makeSearchClient(responder: (call: SearchCall, index: number) => Respon
     const call: SearchCall = {
       q: parsed.searchParams.get('q'),
       offset: parsed.searchParams.get('offset'),
+      userToken: parsed.searchParams.get('userToken'),
     };
     const index = calls.length;
     calls.push(call);
@@ -376,6 +378,112 @@ test('useFeatureRequests does not refetch for the same trimmed query', async () 
     await flush();
     assert.equal(stub.calls.length, 2);
     assert.equal(stub.calls[1].q, 'gadget');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests invalidates dedupe key after plain listing load so re-pasting query refetches', async () => {
+  const stub = makeSearchClient((call) => {
+    if (call.q === 'widget') {
+      return page([{ id: 'fr_search_1', title: 'Search Result' }]);
+    }
+    return page([
+      { id: 'fr_all_1', title: 'All 1' },
+      { id: 'fr_all_2', title: 'All 2' },
+    ]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    // 1. Initial search for 'widget'
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].q, 'widget');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_search_1');
+
+    // 2. Clear query ('') -> loads plain listing and resets search dedupe key
+    options = { ...options, query: '' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, null);
+    assert.equal(latest.current!.items.length, 2);
+    assert.equal(latest.current!.items[0].id, 'fr_all_1');
+
+    // 3. Paste 'widget' again -> must refetch search results instead of suppressing
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, 'widget');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_search_1');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests invalidates search dedupe key when userToken changes', async () => {
+  const stub = makeSearchClient((call) => {
+    const hasVoted = call.userToken === 'user_a';
+    return page([{ id: 'fr_1', title: 'Widget Feature', hasVoted } as any]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'user_a',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].q, 'widget');
+    assert.equal(stub.calls[0].userToken, 'user_a');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].hasVoted, true);
+
+    // Switch user token while query remains 'widget' -> must refetch for user_b
+    options = { ...options, userToken: 'user_b' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, 'widget');
+    assert.equal(stub.calls[1].userToken, 'user_b');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].hasVoted, false);
     renderer.unmount();
   } finally {
     stub.restore();
