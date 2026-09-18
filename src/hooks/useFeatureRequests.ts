@@ -235,6 +235,15 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // burn another search against the server's per-IP rate budget.
   const lastSearchKeyRef = useRef<string | null>(null);
 
+  const enterSearchCooldown = useCallback((retryAfterMs?: number | null) => {
+    const limiter = searchLimiterRef.current!;
+    const cooldownMs = limiter.enterCooldown(retryAfterMs);
+    setIsRateLimited(true);
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    cooldownTimerRef.current = setTimeout(() => setIsRateLimited(false), cooldownMs);
+    return cooldownMs;
+  }, []);
+
   // Initial load or query/filter change
   const loadPage0 = useCallback(
     async (signal?: AbortSignal) => {
@@ -284,10 +293,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         if (err instanceof RateLimitedException) {
           // Enter the search cooldown (server Retry-After wins) and surface a
           // rate-limit notice instead of an endless autofire loop.
-          const cooldownMs = limiter.enterCooldown(err.retryAfterMs);
-          setIsRateLimited(true);
-          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-          cooldownTimerRef.current = setTimeout(() => setIsRateLimited(false), cooldownMs);
+          enterSearchCooldown(err.retryAfterMs);
         }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
@@ -297,7 +303,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
       }
     },
-    [client, userToken, isTokenReady, versionId, query, pageSize]
+    [client, userToken, isTokenReady, versionId, query, pageSize, enterSearchCooldown]
   );
 
   useEffect(() => {
@@ -348,6 +354,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     if (!isTokenReady || isLoading || isRefreshing || isLoadingMoreRef.current) return;
     if (itemsRef.current.length >= totalRef.current) return;
 
+    const trimmedQuery = query?.trim() || '';
+    const isSearch = trimmedQuery.length > 0;
+    const limiter = searchLimiterRef.current!;
+
     loadMoreControllerRef.current?.abort();
     const controller = new AbortController();
     loadMoreControllerRef.current = controller;
@@ -356,11 +366,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     setIsLoadingMore(true);
 
     try {
+      // While cooldown is active, query-bearing pagination is suppressed.
+      if (isSearch && limiter.cooldownRemaining() > 0) return;
+
+      if (isSearch) {
+        limiter.markFetched();
+      }
+
       const currentOffset = itemsRef.current.length;
       const res = await client.fetchFeatureRequests({
         userToken,
         versionId: versionId || undefined,
-        query: query?.trim() || undefined,
+        query: trimmedQuery || undefined,
         limit: pageSize,
         offset: currentOffset,
         signal: controller.signal,
@@ -391,8 +408,14 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
       setTotal(nextTotal);
       setError(null);
+      if (isSearch) {
+        setIsRateLimited(false);
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      if (isSearch && err instanceof RateLimitedException) {
+        enterSearchCooldown(err.retryAfterMs);
+      }
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       // Reset even when aborted: refresh()/reload()/filter changes abort an
@@ -401,7 +424,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [client, userToken, isTokenReady, isLoading, isRefreshing, versionId, query, pageSize]);
+  }, [
+    client,
+    userToken,
+    isTokenReady,
+    isLoading,
+    isRefreshing,
+    versionId,
+    query,
+    pageSize,
+    enterSearchCooldown,
+  ]);
 
   // Pull-to-refresh
   const refresh = useCallback(async () => {
