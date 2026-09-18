@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -150,24 +150,34 @@ export function FeedbackComposer({
   );
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handlePickAttachment = async () => {
-    if (!onPickAttachment) return;
+    if (!onPickAttachment || isSubmittingRef.current || isSubmitting || isUploadingAttachment) {
+      return;
+    }
     try {
       setIsUploadingAttachment(true);
       const picked = await onPickAttachment();
-      if (!picked) {
+      if (!picked || isSubmittingRef.current || isSubmitting) {
         return;
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
       const { succeeded, failed } = await processPickedAttachments(items, {
         upload: async (options) => {
+          if (isSubmittingRef.current || isSubmitting) {
+            throw new Error('Upload cancelled: submission in progress');
+          }
           const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
           return client.uploadAttachment({ ...options, userToken: effectiveToken });
         },
       });
+
+      if (isSubmittingRef.current || isSubmitting) {
+        return;
+      }
 
       if (succeeded.length > 0) {
         setAttachments((prev) => [...prev, ...succeeded]);
@@ -176,17 +186,23 @@ export function FeedbackComposer({
         setErrorMessage(strings.feedbackComposer.someUploadsFailed(failed.length));
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
+      if (!isSubmittingRef.current && !isSubmitting) {
+        setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
+      }
     } finally {
       setIsUploadingAttachment(false);
     }
   };
 
   const handleRemoveAttachment = (indexToRemove: number) => {
+    if (isSubmittingRef.current || isSubmitting) return;
     setAttachments((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current || isSubmitting || isUploadingAttachment || !isTokenReady) {
+      return;
+    }
     if (title.trim().length < 3) {
       setErrorMessage(strings.feedbackComposer.titleMinLengthError);
       return;
@@ -197,6 +213,7 @@ export function FeedbackComposer({
     }
 
     setErrorMessage(null);
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -222,6 +239,7 @@ export function FeedbackComposer({
 
       const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
       const result = await client.submit(draft, effectiveToken);
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
 
       if (onSubmitSuccess) {
@@ -231,6 +249,7 @@ export function FeedbackComposer({
         if (onClose) onClose();
       }
     } catch (err: any) {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
       if (err instanceof TurnstileRequiredException) {
         // The draft stays intact so the user can retry after the host's
@@ -360,10 +379,13 @@ export function FeedbackComposer({
           {onPickAttachment && (
             <TouchableOpacity
               onPress={handlePickAttachment}
-              disabled={isUploadingAttachment}
+              disabled={isUploadingAttachment || isSubmitting}
               style={[
                 styles.addAttachmentBtn,
-                { borderColor: colors.primary, opacity: isUploadingAttachment ? 0.6 : 1 },
+                {
+                  borderColor: colors.primary,
+                  opacity: isUploadingAttachment || isSubmitting ? 0.6 : 1,
+                },
               ]}
             >
               {isUploadingAttachment ? (
@@ -413,7 +435,8 @@ export function FeedbackComposer({
                 </View>
                 <TouchableOpacity
                   onPress={() => handleRemoveAttachment(idx)}
-                  style={styles.removeAttachmentBtn}
+                  disabled={isSubmitting}
+                  style={[styles.removeAttachmentBtn, isSubmitting && { opacity: 0.5 }]}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text style={{ color: colors.textMuted, fontSize: 16 }}>✕</Text>
