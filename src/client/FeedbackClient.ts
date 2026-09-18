@@ -22,7 +22,10 @@ import type {
 } from '../types';
 import {
   AuthenticationRequiredException,
+  InactiveSubscriptionException,
   InvalidResponseException,
+  PaymentRequiredException,
+  QuotaExceededException,
   RateLimitedException,
   RequestTimeoutException,
   TurnstileRequiredException,
@@ -440,6 +443,9 @@ export class FeedbackClient {
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
+   * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
+   * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
+   * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link UnexpectedStatusException} If the server returns a non-2xx status code.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    * @throws {@link InvalidResponseException} If a network failure occurs or JSON parsing fails.
@@ -698,6 +704,9 @@ export class FeedbackClient {
    * @param draft - Feature request proposal details (title, description, requesterName).
    * @param userToken - Current user identifier token.
    * @returns Submission confirmation and moderation pending status.
+   * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
+   * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
+   * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    *
    * @example
@@ -1087,6 +1096,40 @@ export class FeedbackClient {
         if (!accepted.includes(response.status)) {
           if (response.status === 401) {
             throw new AuthenticationRequiredException();
+          }
+          if (response.status === 402) {
+            let parsed: any = null;
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = null;
+            }
+            const code =
+              parsed && typeof parsed === 'object' && typeof parsed.code === 'string'
+                ? parsed.code
+                : undefined;
+            const errorMsg =
+              parsed && typeof parsed === 'object' && typeof parsed.error === 'string'
+                ? parsed.error
+                : undefined;
+
+            if (code === 'tier_limit_submissions') {
+              throw new QuotaExceededException(
+                errorMsg || 'Monthly submission quota reached for this workspace.',
+                text
+              );
+            }
+            if (code === 'subscription_inactive') {
+              throw new InactiveSubscriptionException(
+                errorMsg || 'Workspace subscription is inactive or canceled.',
+                text
+              );
+            }
+            throw new PaymentRequiredException(
+              errorMsg || 'CupThread API responded with HTTP 402: Payment Required',
+              code,
+              text
+            );
           }
           if (response.status === 429) {
             throw new RateLimitedException(

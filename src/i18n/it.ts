@@ -21,6 +21,9 @@ export const itStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 giorno fa' : `${d} giorni fa`),
     verificationRequired:
       'È richiesta la verifica umana per inviare. Riprova dopo aver completato la verifica.',
+    quotaExceeded: 'Quota mensile di invii raggiunta. Gli invii sono temporaneamente sospesi.',
+    subscriptionInactive:
+      'Gli invii sono sospesi perché l’abbonamento dell’applicazione non è attivo.',
   },
   feedbackComposer: {
     title: 'Invia feedback',

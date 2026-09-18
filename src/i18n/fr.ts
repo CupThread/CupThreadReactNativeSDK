@@ -21,6 +21,10 @@ export const frStrings: CupThreadStrings = {
     daysAgo: (d: number) => `Il y a ${d} j`,
     verificationRequired:
       'Une vérification humaine est requise pour envoyer. Merci de réessayer après avoir terminé la vérification.',
+    quotaExceeded:
+      'Quota mensuel de soumissions atteint. Les soumissions sont temporairement suspendues.',
+    subscriptionInactive:
+      'Les soumissions sont suspendues car l’abonnement de l’application est inactif.',
   },
   feedbackComposer: {
     title: 'Envoyer un commentaire',

@@ -20,6 +20,8 @@ export const zhHansStrings: CupThreadStrings = {
     hoursAgo: (h: number) => `${h} 小时前`,
     daysAgo: (d: number) => `${d} 天前`,
     verificationRequired: '提交前需要完成人机验证，请在完成验证后重试。',
+    quotaExceeded: '本月提交配额已达上限，暂时暂停提交。',
+    subscriptionInactive: '应用订阅已停用，暂时暂停提交。',
   },
   feedbackComposer: {
     title: '提供反馈',

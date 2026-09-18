@@ -21,6 +21,8 @@ export const jaStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}日前`,
     verificationRequired:
       '送信には人間認証（Turnstile）が必要です。認証を完了してからもう一度お試しください。',
+    quotaExceeded: '今月の送信上限に達しました。送信は一時的に停止されています。',
+    subscriptionInactive: 'アプリのサブスクリプションが無効なため、送信は現在停止されています。',
   },
   feedbackComposer: {
     title: 'フィードバックを送る',

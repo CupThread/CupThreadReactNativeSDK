@@ -21,6 +21,8 @@ export const trStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d} gün önce`,
     verificationRequired:
       'Gönderim için insan doğrulaması gerekli. Doğrulamayı tamamladıktan sonra tekrar deneyin.',
+    quotaExceeded: 'Aylık gönderim kotasına ulaşıldı. Gönderimler geçici olarak durduruldu.',
+    subscriptionInactive: 'Uygulama aboneliği etkin olmadığı için gönderimler durduruldu.',
   },
   feedbackComposer: {
     title: 'Geri bildirim gönder',

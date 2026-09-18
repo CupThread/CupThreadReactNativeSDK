@@ -21,6 +21,10 @@ export const deStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`),
     verificationRequired:
       'Zum Senden ist eine menschliche Verifizierung erforderlich. Bitte nach Abschluss der Verifizierung erneut versuchen.',
+    quotaExceeded:
+      'Monatliches Einreichungskontingent erreicht. Einreichungen sind vorübergehend pausiert.',
+    subscriptionInactive:
+      'Einreichungen sind vorübergehend pausiert, da das App-Abonnement inaktiv ist.',
   },
   feedbackComposer: {
     title: 'Feedback senden',

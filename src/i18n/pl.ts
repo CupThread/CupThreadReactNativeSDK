@@ -21,6 +21,9 @@ export const plStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 dzień temu' : `${d} dni temu`),
     verificationRequired:
       'Wysłanie wymaga weryfikacji człowieka. Spróbuj ponownie po jej ukończeniu.',
+    quotaExceeded: 'Osiągnięto miesięczny limit zgłoszeń. Zgłoszenia są tymczasowo wstrzymane.',
+    subscriptionInactive:
+      'Zgłoszenia są wstrzymane, ponieważ subskrypcja aplikacji jest nieaktywna.',
   },
   feedbackComposer: {
     title: 'Wyślij opinię',

@@ -317,6 +317,18 @@ If neither is configured, submissions against Turnstile-gated backends cannot su
 
 ---
 
+### Submission Quotas & Plan Limits
+
+Public intake endpoints (`POST /api/v1/feedback`, `POST /api/v1/feature-requests`) enforce monthly submission limits and active subscription checks. When a workspace reaches its monthly submission quota or its subscription is inactive, the server responds with HTTP 402, which the SDK surfaces as typed exceptions:
+
+- `QuotaExceededException` (`code: 'tier_limit_submissions'`): The workspace has reached its monthly submission quota.
+- `InactiveSubscriptionException` (`code: 'subscription_inactive'`): The workspace subscription is inactive or canceled.
+- `PaymentRequiredException`: Base class for HTTP 402 errors.
+
+The bundled composers (`<FeedbackComposer />` and `<FeatureRequestComposeSheet />`) catch these exceptions, display localized error messages, and preserve draft title, details, and attachments so users do not lose their input.
+
+---
+
 ### Search Rate Limiting
 
 The production API rate-limits feature-request searches to **30 requests / 60s per client IP**, and personalized searches bypass the backend's shared cache. `FeatureRequestsScreen` (and `useFeatureRequests`) therefore paces itself client-side:
