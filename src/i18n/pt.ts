@@ -11,6 +11,8 @@ export const ptStrings: CupThreadStrings = {
     submitting: 'Enviando...',
     error: 'Erro',
     retry: 'Tentar novamente',
+    timeoutError: 'A solicitação demorou demasiado. Tente novamente.',
+    networkError: 'Erro de rede. Verifique sua conexão e tente novamente.',
     optional: 'opcional',
     required: 'obrigatório',
     anonymous: 'Usuário anônimo',

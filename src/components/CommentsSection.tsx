@@ -21,6 +21,7 @@ import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 import { MarkdownText } from './MarkdownText';
+import { userFacingErrorMessage } from '../utils/errors';
 
 /**
  * Props for configuring the {@link CommentsSection} thread component.
@@ -99,7 +100,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
-      setError(err?.message || strings.comments.postFailed);
+      setError(userFacingErrorMessage(err, strings.comments.postFailed, strings.common));
     } finally {
       setIsSubmitting(false);
     }

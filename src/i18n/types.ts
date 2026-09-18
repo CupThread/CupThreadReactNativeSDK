@@ -11,6 +11,8 @@ export interface CommonStrings {
   submitting: string;
   error: string;
   retry: string;
+  timeoutError: string;
+  networkError: string;
   optional: string;
   required: string;
   anonymous: string;

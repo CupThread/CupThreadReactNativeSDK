@@ -11,6 +11,8 @@ export const viStrings: CupThreadStrings = {
     submitting: 'Đang gửi...',
     error: 'Lỗi',
     retry: 'Thử lại',
+    timeoutError: 'Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.',
+    networkError: 'Lỗi mạng. Vui lòng kiểm tra kết nối và thử lại.',
     optional: 'không bắt buộc',
     required: 'bắt buộc',
     anonymous: 'Người dùng ẩn danh',
