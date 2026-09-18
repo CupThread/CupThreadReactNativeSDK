@@ -47,6 +47,7 @@ export const plStrings: CupThreadStrings = {
         ? 'Nie udało się przesłać 1 załącznika.'
         : `Nie udało się przesłać ${count} załączników.`,
     submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
+    sectionUnavailable: 'Opinie są obecnie niedostępne.',
   },
   featureRequests: {
     screenTitle: 'Prośby o funkcje',
@@ -61,6 +62,7 @@ export const plStrings: CupThreadStrings = {
     upvote: 'Głosuj',
     loadingMore: 'Ładowanie kolejnych...',
     rateLimited: 'Zbyt wiele wyszukiwań. Odczekaj chwilę i spróbuj ponownie.',
+    sectionUnavailable: 'Sugestie funkcji są obecnie niedostępne.',
   },
   featureRequestCompose: {
     modalTitle: 'Zaproponuj funkcję',
@@ -77,6 +79,7 @@ export const plStrings: CupThreadStrings = {
     titleMinLengthError: 'Podaj tytuł zawierający co najmniej 3 znaki.',
     descriptionMinLengthError: 'Podaj opis zawierający co najmniej 5 znaków.',
     submitFailed: 'Nie udało się przesłać propozycji. Spróbuj ponownie.',
+    sectionUnavailable: 'Sugestie funkcji są obecnie niedostępne.',
   },
   roadmap: {
     screenTitle: 'Mapa drogowa',
@@ -95,6 +98,7 @@ export const plStrings: CupThreadStrings = {
     loadMore: 'Załaduj więcej',
     showingCount: (shown: number, total: number) => `Wyświetlono ${shown} z ${total}`,
     otherColumn: 'Inne',
+    sectionUnavailable: 'Plan rozwoju jest obecnie niedostępny.',
   },
   featureRequestDetail: {
     title: 'Prośba o funkcję',
@@ -128,6 +132,7 @@ export const plStrings: CupThreadStrings = {
     subscribedSuccess: 'Subskrypcja zakończona powodzeniem!',
     unsubscribeButton: 'Anuluj subskrypcję',
     subscribeFailed: 'Nie udało się zasubskrybować dziennika zmian.',
+    sectionUnavailable: 'Dziennik zmian jest obecnie niedostępny.',
   },
   userProfile: {
     screenTitle: 'Profil użytkownika',

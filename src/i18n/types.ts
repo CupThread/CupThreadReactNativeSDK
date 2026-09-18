@@ -47,6 +47,7 @@ export interface FeedbackComposerStrings {
   uploadFailed: string;
   someUploadsFailed: (count: number) => string;
   submitFailed: string;
+  sectionUnavailable: string;
 }
 
 /**
@@ -65,6 +66,7 @@ export interface FeatureRequestsStrings {
   upvote: string;
   loadingMore: string;
   rateLimited: string;
+  sectionUnavailable: string;
 }
 
 /**
@@ -85,6 +87,7 @@ export interface FeatureRequestComposeStrings {
   titleMinLengthError: string;
   descriptionMinLengthError: string;
   submitFailed: string;
+  sectionUnavailable: string;
 }
 
 /**
@@ -99,6 +102,7 @@ export interface RoadmapStrings {
   loadMore: string;
   showingCount: (shown: number, total: number) => string;
   otherColumn: string;
+  sectionUnavailable: string;
 }
 
 /**
@@ -144,6 +148,7 @@ export interface ChangelogStrings {
   subscribedSuccess: string;
   unsubscribeButton: string;
   subscribeFailed: string;
+  sectionUnavailable: string;
 }
 
 /**

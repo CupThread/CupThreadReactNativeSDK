@@ -58,3 +58,30 @@ test('formatDate formats relative time correctly', () => {
   const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
   assert.equal(formatDate(twoHoursAgo), '2h ago');
 });
+
+test('SdkFeatures and SdkAppearance remain in sync with public API schema', () => {
+  const features: import('../src/types').SdkFeatures = {
+    feedback: true,
+    featureRequests: false,
+    roadmap: true,
+    changelog: false,
+  };
+  assert.equal(typeof features.feedback, 'boolean');
+  assert.equal(typeof features.featureRequests, 'boolean');
+  assert.equal(typeof features.roadmap, 'boolean');
+  assert.equal(typeof features.changelog, 'boolean');
+
+  const appearance: import('../src/types').SdkAppearance = {
+    theme: 'system',
+    features,
+    changelogOverlay: {
+      title: "What's New",
+      entryCount: 3,
+      primaryButton: 'Got it',
+      closeButton: 'Dismiss',
+    },
+  };
+  assert.equal(appearance.theme, 'system');
+  assert.equal(appearance.features.featureRequests, false);
+  assert.equal(appearance.changelogOverlay.entryCount, 3);
+});

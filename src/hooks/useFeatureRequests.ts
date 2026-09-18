@@ -86,6 +86,13 @@ export interface UseFeatureRequestsOptions {
    * once per hook mount from this value; later changes are ignored.
    */
   searchRateLimiterOptions?: UseFeatureRequestsSearchLimiterOptions;
+
+  /**
+   * Whether the fetch should be enabled. When false, no requests are made.
+   *
+   * @defaultValue true
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -195,11 +202,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     pageSize = 50,
     debounceMs = 0,
     searchRateLimiterOptions,
+    enabled = true,
   } = options;
 
   const [items, setItems] = useState<FeatureRequestItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
@@ -238,7 +246,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // Initial load or query/filter change
   const loadPage0 = useCallback(
     async (signal?: AbortSignal) => {
-      if (!isTokenReady) return;
+      if (!isTokenReady || !enabled) return;
       const trimmedQuery = query?.trim() || '';
       const isSearch = trimmedQuery.length > 0;
       const limiter = searchLimiterRef.current!;
@@ -297,11 +305,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
       }
     },
-    [client, userToken, isTokenReady, versionId, query, pageSize]
+    [client, userToken, isTokenReady, versionId, query, pageSize, enabled]
   );
 
   useEffect(() => {
-    if (!isTokenReady) return;
+    if (!isTokenReady || !enabled) return;
 
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
@@ -341,11 +349,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady, query, versionId]);
+  }, [loadPage0, debounceMs, isTokenReady, query, versionId, enabled]);
 
   // Load next page
   const loadMore = useCallback(async () => {
-    if (!isTokenReady || isLoading || isRefreshing || isLoadingMoreRef.current) return;
+    if (!isTokenReady || !enabled || isLoading || isRefreshing || isLoadingMoreRef.current) return;
     if (itemsRef.current.length >= totalRef.current) return;
 
     loadMoreControllerRef.current?.abort();
@@ -401,11 +409,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [client, userToken, isTokenReady, isLoading, isRefreshing, versionId, query, pageSize]);
+  }, [client, userToken, isTokenReady, enabled, isLoading, isRefreshing, versionId, query, pageSize]);
 
   // Pull-to-refresh
   const refresh = useCallback(async () => {
-    if (!isTokenReady) return;
+    if (!isTokenReady || !enabled) return;
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
 
@@ -414,11 +422,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
     setIsRefreshing(true);
     await loadPage0(controller.signal);
-  }, [isTokenReady, loadPage0]);
+  }, [isTokenReady, enabled, loadPage0]);
 
   // Reload
   const reload = useCallback(async () => {
-    if (!isTokenReady) return;
+    if (!isTokenReady || !enabled) return;
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
 
@@ -427,7 +435,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
     setIsLoading(true);
     await loadPage0(controller.signal);
-  }, [isTokenReady, loadPage0]);
+  }, [isTokenReady, enabled, loadPage0]);
 
   useEffect(() => {
     return () => {

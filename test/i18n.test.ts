@@ -312,6 +312,13 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     // changelog
     assert.ok(typeof loc.changelog.subscribeFailed === 'string' && loc.changelog.subscribeFailed.length > 0);
 
+    // feature flags (sectionUnavailable)
+    assert.ok(typeof loc.feedbackComposer.sectionUnavailable === 'string' && loc.feedbackComposer.sectionUnavailable.length > 0);
+    assert.ok(typeof loc.featureRequests.sectionUnavailable === 'string' && loc.featureRequests.sectionUnavailable.length > 0);
+    assert.ok(typeof loc.featureRequestCompose.sectionUnavailable === 'string' && loc.featureRequestCompose.sectionUnavailable.length > 0);
+    assert.ok(typeof loc.roadmap.sectionUnavailable === 'string' && loc.roadmap.sectionUnavailable.length > 0);
+    assert.ok(typeof loc.changelog.sectionUnavailable === 'string' && loc.changelog.sectionUnavailable.length > 0);
+
     // userProfile
     assert.ok(typeof loc.userProfile.loadFailed === 'string' && loc.userProfile.loadFailed.length > 0);
     assert.ok(typeof loc.userProfile.notFound === 'string' && loc.userProfile.notFound.length > 0);

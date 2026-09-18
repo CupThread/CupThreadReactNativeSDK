@@ -45,6 +45,7 @@ export const ptStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Falha ao enviar 1 anexo.' : `Falha ao enviar ${count} anexos.`,
     submitFailed: 'Falha ao enviar o feedback. Por favor, tente novamente.',
+    sectionUnavailable: 'O feedback não está disponível no momento.',
   },
   featureRequests: {
     screenTitle: 'Solicitações de recursos',
@@ -59,6 +60,7 @@ export const ptStrings: CupThreadStrings = {
     upvote: 'Votar',
     loadingMore: 'Carregando mais...',
     rateLimited: 'Pesquisas em excesso. Aguarde um momento e tente novamente.',
+    sectionUnavailable: 'As sugestões de recursos não estão disponíveis no momento.',
   },
   featureRequestCompose: {
     modalTitle: 'Propor um recurso',
@@ -75,6 +77,7 @@ export const ptStrings: CupThreadStrings = {
     titleMinLengthError: 'Informe um título com pelo menos 3 caracteres.',
     descriptionMinLengthError: 'Informe uma descrição com pelo menos 5 caracteres.',
     submitFailed: 'Falha ao enviar a proposta de recurso. Por favor, tente novamente.',
+    sectionUnavailable: 'As sugestões de recursos não estão disponíveis no momento.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -85,6 +88,7 @@ export const ptStrings: CupThreadStrings = {
     loadMore: 'Carregar mais',
     showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
     otherColumn: 'Outros',
+    sectionUnavailable: 'O roadmap não está disponível no momento.',
   },
   featureRequestDetail: {
     title: 'Solicitação de recurso',
@@ -118,6 +122,7 @@ export const ptStrings: CupThreadStrings = {
     subscribedSuccess: 'Inscrição realizada com sucesso!',
     unsubscribeButton: 'Cancelar inscrição',
     subscribeFailed: 'Falha ao se inscrever no changelog.',
+    sectionUnavailable: 'O registro de alterações não está disponível no momento.',
   },
   userProfile: {
     screenTitle: 'Perfil do usuário',
