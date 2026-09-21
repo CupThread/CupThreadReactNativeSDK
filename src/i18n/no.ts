@@ -53,6 +53,7 @@ export const noStrings: CupThreadStrings = {
         ? 'Hoppet over 1 fil: ustøttet vedleggsformat.'
         : `Hoppet over ${count} filer: ustøttet vedleggsformat.`,
     submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
+    sectionUnavailable: 'Tilbakemelding er for øyeblikket ikke tilgjengelig.',
   },
   featureRequests: {
     screenTitle: 'Funksjonsforespørsler',
@@ -67,6 +68,7 @@ export const noStrings: CupThreadStrings = {
     upvote: 'Stem',
     loadingMore: 'Laster inn mer...',
     rateLimited: 'For mange søk. Vent litt og prøv igjen.',
+    sectionUnavailable: 'Funksjonsforespørsler er for øyeblikket ikke tilgjengelig.',
     voteFailed: 'Kunne ikke oppdatere stemme. Prøv igjen.',
   },
   featureRequestCompose: {
@@ -84,6 +86,7 @@ export const noStrings: CupThreadStrings = {
     titleMinLengthError: 'Skriv inn en tittel på minst 3 tegn.',
     descriptionMinLengthError: 'Skriv inn en beskrivelse på minst 5 tegn.',
     submitFailed: 'Kunne ikke sende funksjonsforslag. Vennligst prøv igjen.',
+    sectionUnavailable: 'Funksjonsforespørsler er for øyeblikket ikke tilgjengelig.',
   },
   roadmap: {
     screenTitle: 'Veikart',
@@ -94,6 +97,7 @@ export const noStrings: CupThreadStrings = {
     loadMore: 'Last inn mer',
     showingCount: (shown: number, total: number) => `Viser ${shown} av ${total}`,
     otherColumn: 'Annet',
+    sectionUnavailable: 'Veikartet er for øyeblikket ikke tilgjengelig.',
   },
   featureRequestDetail: {
     title: 'Funksjonsforespørsel',
@@ -127,6 +131,7 @@ export const noStrings: CupThreadStrings = {
     subscribedSuccess: 'Abonnementet er aktivert!',
     unsubscribeButton: 'Avslutt abonnement',
     subscribeFailed: 'Kunne ikke abonnere på endringsloggen.',
+    sectionUnavailable: 'Endringsloggen er for øyeblikket ikke tilgjengelig.',
   },
   userProfile: {
     screenTitle: 'Brukerprofil',

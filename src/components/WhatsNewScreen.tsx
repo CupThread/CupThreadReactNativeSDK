@@ -16,9 +16,11 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadAppConfig,
   useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
 import type { ChangelogEntry } from '../types';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
@@ -38,6 +40,8 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'changelog');
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
   const fetchChangelog = useCallback(
@@ -51,7 +55,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
     error: loadError,
     reload,
     refresh,
-  } = useAsyncData(fetchChangelog);
+  } = useAsyncData(fetchChangelog, { enabled: isEnabled || isLoadingConfig });
   const entries: ChangelogEntry[] = changelogData ?? [];
 
   const [email, setEmail] = useState<string>('');
@@ -151,6 +155,26 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
       )}
     </View>
   );
+
+  if (!isLoadingConfig && !isEnabled) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={strings.common.back}>
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
+        </View>
+        <View style={styles.centerEmpty}>
+          <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+            {strings.changelog.sectionUnavailable}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -332,5 +356,16 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  centerEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

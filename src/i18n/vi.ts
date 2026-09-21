@@ -50,6 +50,7 @@ export const viStrings: CupThreadStrings = {
     unsupportedAttachment: (count: number) =>
       `${count} tệp đã chọn bị bỏ qua vì định dạng tệp đính kèm không được hỗ trợ.`,
     submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
+    sectionUnavailable: 'Tính năng phản hồi hiện không khả dụng.',
   },
   featureRequests: {
     screenTitle: 'Yêu cầu tính năng',
@@ -64,6 +65,7 @@ export const viStrings: CupThreadStrings = {
     upvote: 'Bình chọn',
     loadingMore: 'Đang tải thêm...',
     rateLimited: 'Quá nhiều lần tìm kiếm. Vui lòng đợi một lúc rồi thử lại.',
+    sectionUnavailable: 'Yêu cầu tính năng hiện không khả dụng.',
     voteFailed: 'Không thể cập nhật bình chọn. Vui lòng thử lại.',
   },
   featureRequestCompose: {
@@ -81,6 +83,7 @@ export const viStrings: CupThreadStrings = {
     titleMinLengthError: 'Vui lòng nhập tiêu đề có ít nhất 3 ký tự.',
     descriptionMinLengthError: 'Vui lòng nhập mô tả có ít nhất 5 ký tự.',
     submitFailed: 'Gửi đề xuất tính năng thất bại. Vui lòng thử lại.',
+    sectionUnavailable: 'Yêu cầu tính năng hiện không khả dụng.',
   },
   roadmap: {
     screenTitle: 'Lộ trình',
@@ -91,6 +94,7 @@ export const viStrings: CupThreadStrings = {
     loadMore: 'Tải thêm',
     showingCount: (shown: number, total: number) => `Hiển thị ${shown}/${total}`,
     otherColumn: 'Khác',
+    sectionUnavailable: 'Lộ trình phát triển hiện không khả dụng.',
   },
   featureRequestDetail: {
     title: 'Yêu cầu tính năng',
@@ -124,6 +128,7 @@ export const viStrings: CupThreadStrings = {
     subscribedSuccess: 'Đăng ký thành công!',
     unsubscribeButton: 'Hủy đăng ký',
     subscribeFailed: 'Đăng ký nhận nhật ký thay đổi thất bại.',
+    sectionUnavailable: 'Nhật ký thay đổi hiện không khả dụng.',
   },
   userProfile: {
     screenTitle: 'Hồ sơ người dùng',

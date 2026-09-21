@@ -48,6 +48,7 @@ export const zhHansStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) => `${count} 个附件上传失败。`,
     unsupportedAttachment: (count: number) => `${count} 个所选文件格式不受支持，已跳过。`,
     submitFailed: '提交反馈失败，请重试。',
+    sectionUnavailable: '反馈功能暂不可用。',
   },
   featureRequests: {
     screenTitle: '需求墙',
@@ -62,6 +63,7 @@ export const zhHansStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: '加载更多...',
     rateLimited: '搜索过于频繁，请稍等片刻后重试。',
+    sectionUnavailable: '功能建议暂不可用。',
     voteFailed: '投票失败，请稍后重试。',
   },
   featureRequestCompose: {
@@ -79,6 +81,7 @@ export const zhHansStrings: CupThreadStrings = {
     titleMinLengthError: '需求标题至少需要 3 个字符。',
     descriptionMinLengthError: '详细描述至少需要 5 个字符。',
     submitFailed: '提交需求提案失败，请重试。',
+    sectionUnavailable: '功能建议暂不可用。',
   },
   roadmap: {
     screenTitle: '功能路线图',
@@ -89,6 +92,7 @@ export const zhHansStrings: CupThreadStrings = {
     loadMore: '加载更多',
     showingCount: (shown: number, total: number) => `显示 ${shown} / ${total} 项`,
     otherColumn: '其他',
+    sectionUnavailable: '路线图暂不可用。',
   },
   featureRequestDetail: {
     title: '需求详情',
@@ -122,6 +126,7 @@ export const zhHansStrings: CupThreadStrings = {
     subscribedSuccess: '订阅成功！',
     unsubscribeButton: '退订邮件',
     subscribeFailed: '订阅更新日志失败。',
+    sectionUnavailable: '更新日志暂不可用。',
   },
   userProfile: {
     screenTitle: '用户主页',

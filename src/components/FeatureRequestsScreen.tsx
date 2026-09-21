@@ -16,8 +16,10 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem, AppVersion } from '../types';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { Avatar } from './Avatar';
@@ -84,6 +86,8 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'featureRequests');
 
   const title = headerTitle ?? strings.featureRequests.screenTitle;
 
@@ -127,6 +131,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     query: searchQuery,
     pageSize: 50,
     debounceMs: 250,
+    enabled: isEnabled || isLoadingConfig,
   });
 
   const handleRefresh = useCallback(async () => {
@@ -199,6 +204,26 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
       )}
     </TouchableOpacity>
   );
+
+  if (!isLoadingConfig && !isEnabled) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={strings.common.back}>
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
+        </View>
+        <View style={styles.centerEmpty}>
+          <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+            {strings.featureRequests.sectionUnavailable}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

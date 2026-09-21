@@ -15,8 +15,10 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem } from '../types';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
@@ -96,6 +98,8 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'roadmap');
   const title = headerTitle ?? strings.roadmap.screenTitle;
 
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
@@ -119,6 +123,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     userToken,
     isTokenReady,
     pageSize: 100,
+    enabled: isEnabled || isLoadingConfig,
   });
 
   const fetchColumns = useCallback(
@@ -130,7 +135,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     isLoading: isColumnsLoading,
     error: columnsError,
     reload: reloadColumns,
-  } = useAsyncData(fetchColumns, { enabled: isTokenReady });
+  } = useAsyncData(fetchColumns, { enabled: isTokenReady && (isEnabled || isLoadingConfig) });
 
   const { columns: visibleColumns, orphanRequests } = useMemo(
     () => groupRoadmapRequests(columnsData ?? [], requests),
@@ -191,6 +196,26 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     (isColumnsLoading && visibleColumns.length === 0) ||
     (isRequestsLoading && requests.length === 0);
   const loadError = requestsError ?? columnsError;
+
+  if (!isLoadingConfig && !isEnabled) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={strings.common.back}>
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
+        </View>
+        <View style={styles.centerEmpty}>
+          <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+            {strings.roadmap.sectionUnavailable}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

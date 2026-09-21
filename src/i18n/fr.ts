@@ -57,6 +57,7 @@ export const frStrings: CupThreadStrings = {
         ? '1 fichier a été ignoré : format de pièce jointe non pris en charge.'
         : `${count} fichiers ont été ignorés : format de pièce jointe non pris en charge.`,
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
+    sectionUnavailable: 'Les commentaires sont actuellement indisponibles.',
   },
   featureRequests: {
     screenTitle: 'Demandes de fonctionnalités',
@@ -71,6 +72,7 @@ export const frStrings: CupThreadStrings = {
     upvote: 'Voter',
     loadingMore: 'Chargement de la suite...',
     rateLimited: 'Trop de recherches. Veuillez patienter un instant et réessayer.',
+    sectionUnavailable: 'Les suggestions de fonctionnalités sont actuellement indisponibles.',
     voteFailed: 'Échec de la mise à jour du vote. Veuillez réessayer.',
   },
   featureRequestCompose: {
@@ -88,6 +90,7 @@ export const frStrings: CupThreadStrings = {
     titleMinLengthError: 'Veuillez saisir un titre d’au moins 3 caractères.',
     descriptionMinLengthError: 'Veuillez saisir une description d’au moins 5 caractères.',
     submitFailed: "Échec de l'envoi de la proposition. Veuillez réessayer.",
+    sectionUnavailable: 'Les suggestions de fonctionnalités sont actuellement indisponibles.',
   },
   roadmap: {
     screenTitle: 'Feuille de route',
@@ -98,6 +101,7 @@ export const frStrings: CupThreadStrings = {
     loadMore: 'Charger plus',
     showingCount: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
     otherColumn: 'Autres',
+    sectionUnavailable: 'La feuille de route est actuellement indisponible.',
   },
   featureRequestDetail: {
     title: 'Demande de fonctionnalité',
@@ -131,6 +135,7 @@ export const frStrings: CupThreadStrings = {
     subscribedSuccess: 'Inscription réussie !',
     unsubscribeButton: 'Se désabonner',
     subscribeFailed: "Échec de l'abonnement au journal des modifications.",
+    sectionUnavailable: 'Le journal des modifications est actuellement indisponible.',
   },
   userProfile: {
     screenTitle: 'Profil utilisateur',

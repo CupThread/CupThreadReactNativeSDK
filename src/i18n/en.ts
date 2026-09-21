@@ -52,6 +52,7 @@ export const enStrings: CupThreadStrings = {
     unsupportedAttachment: (count: number) =>
       `${count} selected file${count === 1 ? '' : 's'} skipped: unsupported attachment format.`,
     submitFailed: 'Failed to submit feedback. Please try again.',
+    sectionUnavailable: 'Feedback is currently unavailable.',
   },
   featureRequests: {
     screenTitle: 'Feature Requests',
@@ -66,6 +67,7 @@ export const enStrings: CupThreadStrings = {
     upvote: 'Upvote',
     loadingMore: 'Loading more...',
     rateLimited: 'Too many searches. Please wait a moment and try again.',
+    sectionUnavailable: 'Feature requests are currently unavailable.',
     voteFailed: 'Failed to update vote. Please try again.',
   },
   featureRequestCompose: {
@@ -83,6 +85,7 @@ export const enStrings: CupThreadStrings = {
     titleMinLengthError: 'Please provide a title with at least 3 characters.',
     descriptionMinLengthError: 'Please provide description with at least 5 characters.',
     submitFailed: 'Failed to submit feature proposal. Please try again.',
+    sectionUnavailable: 'Feature requests are currently unavailable.',
   },
   roadmap: {
     screenTitle: 'Roadmap',
@@ -93,6 +96,7 @@ export const enStrings: CupThreadStrings = {
     loadMore: 'Load more',
     showingCount: (shown: number, total: number) => `Showing ${shown} of ${total}`,
     otherColumn: 'Other',
+    sectionUnavailable: 'Roadmap is currently unavailable.',
   },
   featureRequestDetail: {
     title: 'Feature Request',
@@ -126,6 +130,7 @@ export const enStrings: CupThreadStrings = {
     subscribedSuccess: 'Subscribed successfully!',
     unsubscribeButton: 'Unsubscribe',
     subscribeFailed: 'Failed to subscribe to changelog.',
+    sectionUnavailable: 'Changelog is currently unavailable.',
   },
   userProfile: {
     screenTitle: 'User Profile',

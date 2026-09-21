@@ -48,6 +48,7 @@ export const zhHantStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) => `${count} 個附件上傳失敗。`,
     unsupportedAttachment: (count: number) => `${count} 個所選檔案格式不受支援，已略過。`,
     submitFailed: '提交意見回饋失敗，請重試。',
+    sectionUnavailable: '意見反應功能暫時無法使用。',
   },
   featureRequests: {
     screenTitle: '功能需求',
@@ -62,6 +63,7 @@ export const zhHantStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: '載入更多...',
     rateLimited: '搜尋過於頻繁，請稍等片刻後重試。',
+    sectionUnavailable: '功能需求暫時無法使用。',
     voteFailed: '投票失敗，請稍後重試。',
   },
   featureRequestCompose: {
@@ -79,6 +81,7 @@ export const zhHantStrings: CupThreadStrings = {
     titleMinLengthError: '標題至少需要 3 個字元。',
     descriptionMinLengthError: '描述至少需要 5 個字元。',
     submitFailed: '提交功能提案失敗，請重試。',
+    sectionUnavailable: '功能需求暫時無法使用。',
   },
   roadmap: {
     screenTitle: '產品路線圖',
@@ -89,6 +92,7 @@ export const zhHantStrings: CupThreadStrings = {
     loadMore: '載入更多',
     showingCount: (shown: number, total: number) => `顯示 ${shown} / ${total} 項`,
     otherColumn: '其他',
+    sectionUnavailable: '路線圖暫時無法使用。',
   },
   featureRequestDetail: {
     title: '功能需求',
@@ -122,6 +126,7 @@ export const zhHantStrings: CupThreadStrings = {
     subscribedSuccess: '訂閱成功！',
     unsubscribeButton: '取消訂閱',
     subscribeFailed: '訂閱更新紀錄失敗。',
+    sectionUnavailable: '更新日誌暫時無法使用。',
   },
   userProfile: {
     screenTitle: '使用者個人檔案',

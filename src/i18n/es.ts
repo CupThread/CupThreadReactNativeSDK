@@ -55,6 +55,7 @@ export const esStrings: CupThreadStrings = {
         ? 'Se omitió 1 archivo: formato de adjunto no compatible.'
         : `Se omitieron ${count} archivos: formato de adjunto no compatible.`,
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
+    sectionUnavailable: 'Los comentarios no están disponibles en este momento.',
   },
   featureRequests: {
     screenTitle: 'Solicitudes de funciones',
@@ -69,6 +70,7 @@ export const esStrings: CupThreadStrings = {
     upvote: 'Votar',
     loadingMore: 'Cargando más...',
     rateLimited: 'Demasiadas búsquedas. Espere un momento e inténtelo de nuevo.',
+    sectionUnavailable: 'Las solicitudes de funciones no están disponibles en este momento.',
     voteFailed: 'Error al actualizar el voto. Inténtalo de nuevo.',
   },
   featureRequestCompose: {
@@ -86,6 +88,7 @@ export const esStrings: CupThreadStrings = {
     titleMinLengthError: 'Escribe un título de al menos 3 caracteres.',
     descriptionMinLengthError: 'Escribe una descripción de al menos 5 caracteres.',
     submitFailed: 'Error al enviar la propuesta. Por favor, inténtalo de nuevo.',
+    sectionUnavailable: 'Las solicitudes de funciones no están disponibles en este momento.',
   },
   roadmap: {
     screenTitle: 'Hoja de ruta',
@@ -96,6 +99,7 @@ export const esStrings: CupThreadStrings = {
     loadMore: 'Cargar más',
     showingCount: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
     otherColumn: 'Otros',
+    sectionUnavailable: 'La hoja de ruta no está disponible en este momento.',
   },
   featureRequestDetail: {
     title: 'Solicitud de función',
@@ -129,6 +133,7 @@ export const esStrings: CupThreadStrings = {
     subscribedSuccess: '¡Suscripción completada!',
     unsubscribeButton: 'Cancelar suscripción',
     subscribeFailed: 'Error al suscribirse al registro de cambios.',
+    sectionUnavailable: 'El registro de cambios no está disponible en este momento.',
   },
   userProfile: {
     screenTitle: 'Perfil de usuario',

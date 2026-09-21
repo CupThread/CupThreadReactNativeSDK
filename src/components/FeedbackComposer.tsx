@@ -17,7 +17,7 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
-  useCupThreadContext,
+  useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
 import {
   InactiveSubscriptionException,
@@ -28,6 +28,7 @@ import {
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 import { createFeedbackComposerState, resetFeedbackComposerState } from '../utils/composer-state';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
@@ -151,7 +152,9 @@ export function FeedbackComposer({
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
-  const { appConfig } = useCupThreadContext();
+  const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
+  const isEnabled = isSurfaceEnabled(appConfig, 'feedback');
+  const isFeedbackDisabled = !isLoadingConfig && !isEnabled;
 
   const initialState = createFeedbackComposerState(initialDraft);
   const [title, setTitle] = useState(initialState.title);
@@ -208,7 +211,13 @@ export function FeedbackComposer({
   }, [preserveDraftOnClose, initialDraft, resetForm, onClose]);
 
   const handlePickAttachment = async () => {
-    if (!onPickAttachment || isSubmittingRef.current || isSubmitting || isUploadingAttachment) {
+    if (
+      !onPickAttachment ||
+      isFeedbackDisabled ||
+      isSubmittingRef.current ||
+      isSubmitting ||
+      isUploadingAttachment
+    ) {
       return;
     }
     try {
@@ -270,6 +279,10 @@ export function FeedbackComposer({
   };
 
   const handleSubmit = async () => {
+    if (isFeedbackDisabled) {
+      setErrorMessage(strings.feedbackComposer.sectionUnavailable);
+      return;
+    }
     if (isSubmittingRef.current || isSubmitting || isUploadingAttachment || !isTokenReady) {
       return;
     }
@@ -362,14 +375,16 @@ export function FeedbackComposer({
         )}
       </View>
 
-      {errorMessage && (
+      {(errorMessage || isFeedbackDisabled) && (
         <View
           style={[
             styles.errorBox,
             { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
           ]}
         >
-          <Text style={{ color: colors.danger, fontSize: 13 }}>{errorMessage}</Text>
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {errorMessage || strings.feedbackComposer.sectionUnavailable}
+          </Text>
         </View>
       )}
 
@@ -539,13 +554,16 @@ export function FeedbackComposer({
 
       <TouchableOpacity
         activeOpacity={0.8}
-        disabled={isSubmitting || isUploadingAttachment || !isTokenReady}
+        disabled={isSubmitting || isUploadingAttachment || !isTokenReady || isFeedbackDisabled}
         onPress={handleSubmit}
         style={[
           styles.submitBtn,
           {
             backgroundColor: colors.primary,
-            opacity: isSubmitting || isUploadingAttachment || !isTokenReady ? 0.6 : 1,
+            opacity:
+              isSubmitting || isUploadingAttachment || !isTokenReady || isFeedbackDisabled
+                ? 0.6
+                : 1,
           },
         ]}
         accessibilityRole="button"
