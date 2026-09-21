@@ -416,9 +416,12 @@ test(
       });
       await flush();
 
-      // Find VoteButton in rendered tree
+      // Find VoteButton in rendered tree. The detail view also has a labeled
+      // back button, so match the vote label rather than the first button.
       const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
-      const voteBtn = buttons.find((b) => b.props?.accessibilityRole === 'button');
+      const voteBtn = buttons.find(
+        (b) => b.props?.accessibilityLabel === 'Upvote' || b.props?.accessibilityLabel === 'Upvoted'
+      );
       assert.ok(voteBtn, 'VoteButton must exist in rendered detail view');
 
       // Tap vote button -> fails
