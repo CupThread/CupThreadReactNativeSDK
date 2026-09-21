@@ -114,6 +114,10 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Whether the initial load or a filter/search change request is in flight.
+   *
+   * Note: This reflects whether a page-0 network request is actively in flight.
+   * Presentation logic (such as showing a full-screen spinner vs. keeping stale
+   * results visible while reloading) is the decision of the consuming screen.
    */
   isLoading: boolean;
 
@@ -360,10 +364,8 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
-        if (!signal?.aborted) {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        }
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
     },
     [client, userToken, isTokenReady, versionId, query, pageSize, enterSearchCooldown]
@@ -397,13 +399,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
-    setIsLoading(true);
-
     // Debounce first, then the search spacing window so a typing burst waits
     // for its turn instead of silently dropping the final query.
     const searchWaitMs = isSearch ? limiter.waitTime() : 0;
     const timer = setTimeout(
       () => {
+        setIsLoading(true);
         loadPage0(controller.signal);
       },
       (debounceMs > 0 ? debounceMs : 0) + searchWaitMs

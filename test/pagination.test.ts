@@ -597,3 +597,239 @@ test('all 14 locales define non-empty loadingMore in common, featureRequests, an
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #31: Search debounce isLoading decoupling & stale results preservation
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests: debounce window stays quiet and keeps prior results mounted', async () => {
+  let fetchCalls = 0;
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      fetchCalls++;
+      return {
+        requests: [makeMockItem('fr_init', 1)],
+        total: 1,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  let query = '';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      debounceMs: 40,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // Initial load completes
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(fetchCalls, 1);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items.length, 1);
+  assert.equal(harness.result.items[0].id, 'fr_init');
+
+  // Change query (keystroke)
+  query = 'search term';
+  harness.rerender();
+
+  // Immediately before debounceMs elapses (at t = 10ms < 40ms):
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(
+    harness.result.isLoading,
+    false,
+    'isLoading must remain false during the debounce window'
+  );
+  assert.equal(
+    harness.result.items.length,
+    1,
+    'items must remain cached during the debounce window'
+  );
+  assert.equal(harness.result.items[0].id, 'fr_init');
+  assert.equal(fetchCalls, 1, 'no fetch call should have been dispatched yet');
+
+  // After debounceMs elapses (at t = 60ms > 40ms):
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(fetchCalls, 2, 'fetch call must be dispatched once debounce elapses');
+  assert.equal(harness.result.isLoading, false);
+});
+
+test('useFeatureRequests: isLoading flips true only when request is dispatched, then false on resolve', async () => {
+  let resolveSecondFetch!: (val: any) => void;
+  let fetchCalls = 0;
+
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      fetchCalls++;
+      if (fetchCalls === 1) {
+        return {
+          requests: [makeMockItem('fr_1', 1)],
+          total: 1,
+        };
+      }
+      return new Promise((resolve) => {
+        resolveSecondFetch = resolve;
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  let query = '';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      debounceMs: 20,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_1');
+
+  // Trigger search
+  query = 'widget';
+  harness.rerender();
+
+  // Before debounce (at 5ms < 20ms)
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(fetchCalls, 1);
+
+  // After debounce (at 30ms > 20ms): dispatch has occurred
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(fetchCalls, 2);
+  assert.equal(harness.result.isLoading, true, 'isLoading must be true while request is in flight');
+  assert.equal(harness.result.items[0].id, 'fr_1', 'prior items stay mounted while in flight');
+
+  // Resolve the second fetch
+  resolveSecondFetch({
+    requests: [makeMockItem('fr_search_result', 2)],
+    total: 1,
+  });
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(harness.result.isLoading, false, 'isLoading must be false once request resolves');
+  assert.equal(harness.result.items.length, 1);
+  assert.equal(harness.result.items[0].id, 'fr_search_result');
+});
+
+test('useFeatureRequests: stale data is preserved and error is set when search fetch rejects', async () => {
+  let rejectSecondFetch!: (err: any) => void;
+  let fetchCalls = 0;
+
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      fetchCalls++;
+      if (fetchCalls === 1) {
+        return {
+          requests: [makeMockItem('fr_cached', 1)],
+          total: 1,
+        };
+      }
+      return new Promise((_, reject) => {
+        rejectSecondFetch = reject;
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  let query = '';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      debounceMs: 20,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_cached');
+
+  query = 'failing query';
+  harness.rerender();
+
+  // Wait for debounce to elapse
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(fetchCalls, 2);
+  assert.equal(harness.result.isLoading, true);
+
+  // Reject fetch
+  const testError = new Error('Search network failure');
+  rejectSecondFetch(testError);
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(harness.result.isLoading, false, 'isLoading must return to false after error');
+  assert.equal(harness.result.items.length, 1, 'items must preserve prior results on failure');
+  assert.equal(harness.result.items[0].id, 'fr_cached');
+  assert.equal(harness.result.error?.message, 'Search network failure');
+});
+
+test('useFeatureRequests: regression guards for refresh() and reload() loading flags', async () => {
+  let deferredPromise!: Promise<any>;
+  let resolveFetch!: (val: any) => void;
+
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      return deferredPromise;
+    },
+  } as unknown as FeedbackClient;
+
+  deferredPromise = Promise.resolve({
+    requests: [makeMockItem('fr_1', 1)],
+    total: 1,
+  });
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.isRefreshing, false);
+
+  // refresh() flips isRefreshing and NOT isLoading
+  deferredPromise = new Promise((resolve) => {
+    resolveFetch = resolve;
+  });
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isRefreshing, true, 'refresh() must set isRefreshing = true');
+  assert.equal(harness.result.isLoading, false, 'refresh() must NOT set isLoading = true');
+
+  resolveFetch({
+    requests: [makeMockItem('fr_1', 1)],
+    total: 1,
+  });
+  await refreshPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.isLoading, false);
+
+  // reload() flips isLoading
+  deferredPromise = new Promise((resolve) => {
+    resolveFetch = resolve;
+  });
+  const reloadPromise = harness.result.reload();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, true, 'reload() must set isLoading = true');
+  assert.equal(harness.result.isRefreshing, false, 'reload() must NOT set isRefreshing = true');
+
+  resolveFetch({
+    requests: [makeMockItem('fr_1', 1)],
+    total: 1,
+  });
+  await reloadPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.isRefreshing, false);
+});
