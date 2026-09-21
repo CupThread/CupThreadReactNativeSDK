@@ -23,6 +23,8 @@ export const trStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d} gün önce`,
     verificationRequired:
       'Gönderim için insan doğrulaması gerekli. Doğrulamayı tamamladıktan sonra tekrar deneyin.',
+    quotaExceeded: 'Aylık gönderim kotasına ulaşıldı. Gönderimler geçici olarak durduruldu.',
+    subscriptionInactive: 'Uygulama aboneliği etkin olmadığı için gönderimler durduruldu.',
   },
   feedbackComposer: {
     title: 'Geri bildirim gönder',
@@ -60,6 +62,7 @@ export const trStrings: CupThreadStrings = {
     upvote: 'Oy ver',
     loadingMore: 'Daha fazla yükleniyor...',
     rateLimited: 'Çok fazla arama. Lütfen bir süre bekleyip tekrar deneyin.',
+    voteFailed: 'Oy güncellenemedi. Lütfen tekrar deneyin.',
   },
   featureRequestCompose: {
     modalTitle: 'Özellik öner',

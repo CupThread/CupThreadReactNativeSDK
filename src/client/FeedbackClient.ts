@@ -22,7 +22,10 @@ import type {
 } from '../types';
 import {
   AuthenticationRequiredException,
+  InactiveSubscriptionException,
   InvalidResponseException,
+  PaymentRequiredException,
+  QuotaExceededException,
   RateLimitedException,
   RequestTimeoutException,
   TurnstileRequiredException,
@@ -386,6 +389,7 @@ export class FeedbackClient {
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       uploadTimeoutMs: config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
       turnstileTokenProvider: config.turnstileTokenProvider,
+      tokenTransport: config.tokenTransport ?? 'header',
     };
   }
 
@@ -437,9 +441,17 @@ export class FeedbackClient {
   /**
    * Submits a user feedback draft, bug report, or feature inquiry.
    *
+   * Note: Platform allowlist enforcement against `PublicAppConfig.allowedPlatforms`
+   * happens at the composer layer (such as {@link FeedbackComposer}) via
+   * {@link resolveAllowedPlatform}. Direct client calls forward the draft's
+   * platform or client `defaultPlatform` directly to the intake endpoint.
+   *
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
+   * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
+   * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
+   * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link UnexpectedStatusException} If the server returns a non-2xx status code.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    * @throws {@link InvalidResponseException} If a network failure occurs or JSON parsing fails.
@@ -569,8 +581,13 @@ export class FeedbackClient {
   /**
    * Retrieves public application settings, features, and styling configuration.
    *
+   * As of the September 2026 API sync, the public config endpoints answer private
+   * applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}` identically
+   * to unknown app keys, rather than returning a 200 body with `allowPublic: false`.
+   *
+   * @param options - Optional request options or an AbortSignal.
    * @returns Application metadata and visual theme configuration.
-   * @throws {@link UnexpectedStatusException} If the app key is invalid or unpublished.
+   * @throws {@link UnexpectedStatusException} If the app key is invalid, private/unpublished (HTTP 404), or the server returns an unexpected status code.
    *
    * @example
    * ```ts
@@ -632,6 +649,10 @@ export class FeedbackClient {
   /**
    * Fetches paginated feature requests with optional milestone filtering and keyword search.
    *
+   * By default, the caller's identity token is sent via the `X-User-Token` HTTP header
+   * rather than as a URL query parameter to prevent credential leakage into server access logs,
+   * reverse proxies, CDNs, and browser history (CWE-598).
+   *
    * @param options - Query parameters including `userToken`, `limit`, `offset`, `versionId`, and `query`.
    * @returns Paginated list of feature request items.
    *
@@ -674,19 +695,34 @@ export class FeedbackClient {
      * Optional timeout in milliseconds for this request.
      */
     timeoutMs?: number;
+    /**
+     * Optional token transport override for this call (`'header' | 'both' | 'query'`).
+     * Defaults to the client configuration's `tokenTransport` (or `'header'`).
+     */
+    tokenTransport?: 'query' | 'header' | 'both';
   }): Promise<ListFeatureRequestsResult> {
+    const transport = options.tokenTransport ?? this.config.tokenTransport ?? 'header';
     const params = new URLSearchParams({
       appKey: this.config.appKey,
-      userToken: options.userToken,
       limit: String(options.limit ?? 50),
       offset: String(options.offset ?? 0),
     });
+
+    if (transport === 'query' || transport === 'both') {
+      if (options.userToken) {
+        params.append('userToken', options.userToken);
+      }
+    }
+
     if (options.versionId) params.append('versionId', options.versionId);
     if (options.query) params.append('q', options.query);
+
+    const sendHeader = (transport === 'header' || transport === 'both') && !!options.userToken;
 
     return this.request<ListFeatureRequestsResult>({
       method: 'GET',
       path: `/api/v1/feature-requests?${params.toString()}`,
+      userToken: sendHeader ? options.userToken : undefined,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
     });
@@ -698,6 +734,9 @@ export class FeedbackClient {
    * @param draft - Feature request proposal details (title, description, requesterName).
    * @param userToken - Current user identifier token.
    * @returns Submission confirmation and moderation pending status.
+   * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
+   * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
+   * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
    *
    * @example
@@ -884,6 +923,9 @@ export class FeedbackClient {
 
     if (options?.onlyIfUnseen) {
       const store = options.tokenStore || UserTokenStore.shared;
+      if (!store.isPersistent) {
+        store.warnUnpersistedChangelogSeen();
+      }
       const seen = await store.hasSeenChangelog(latestKey);
       if (seen) {
         return null;
@@ -1087,6 +1129,40 @@ export class FeedbackClient {
         if (!accepted.includes(response.status)) {
           if (response.status === 401) {
             throw new AuthenticationRequiredException();
+          }
+          if (response.status === 402) {
+            let parsed: any = null;
+            try {
+              parsed = JSON.parse(text);
+            } catch {
+              parsed = null;
+            }
+            const code =
+              parsed && typeof parsed === 'object' && typeof parsed.code === 'string'
+                ? parsed.code
+                : undefined;
+            const errorMsg =
+              parsed && typeof parsed === 'object' && typeof parsed.error === 'string'
+                ? parsed.error
+                : undefined;
+
+            if (code === 'tier_limit_submissions') {
+              throw new QuotaExceededException(
+                errorMsg || 'Monthly submission quota reached for this workspace.',
+                text
+              );
+            }
+            if (code === 'subscription_inactive') {
+              throw new InactiveSubscriptionException(
+                errorMsg || 'Workspace subscription is inactive or canceled.',
+                text
+              );
+            }
+            throw new PaymentRequiredException(
+              errorMsg || 'CupThread API responded with HTTP 402: Payment Required',
+              code,
+              text
+            );
           }
           if (response.status === 429) {
             throw new RateLimitedException(

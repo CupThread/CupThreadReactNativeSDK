@@ -23,6 +23,8 @@ export const noStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 dag siden' : `${d} dager siden`),
     verificationRequired:
       'Menneskelig verifisering kreves for å sende. Prøv igjen etter å ha fullført verifiseringen.',
+    quotaExceeded: 'Månedlig innsendingskvote er nådd. Innsendinger er midlertidig satt på pause.',
+    subscriptionInactive: 'Innsendinger er satt på pause fordi app-abonnementet er inaktivt.',
   },
   feedbackComposer: {
     title: 'Send tilbakemelding',
@@ -61,6 +63,7 @@ export const noStrings: CupThreadStrings = {
     upvote: 'Stem',
     loadingMore: 'Laster inn mer...',
     rateLimited: 'For mange søk. Vent litt og prøv igjen.',
+    voteFailed: 'Kunne ikke oppdatere stemme. Prøv igjen.',
   },
   featureRequestCompose: {
     modalTitle: 'Foreslå funksjon',

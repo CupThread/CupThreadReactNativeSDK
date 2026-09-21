@@ -23,6 +23,8 @@ export const viStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d} ngày trước`,
     verificationRequired:
       'Cần xác minh con người để gửi. Vui lòng thử lại sau khi hoàn tất xác minh.',
+    quotaExceeded: 'Đã đạt hạn mức gửi hàng tháng. Việc gửi tạm thời bị tạm dừng.',
+    subscriptionInactive: 'Việc gửi tạm dừng do đăng ký của ứng dụng không hoạt động.',
   },
   feedbackComposer: {
     title: 'Gửi phản hồi',
@@ -60,6 +62,7 @@ export const viStrings: CupThreadStrings = {
     upvote: 'Bình chọn',
     loadingMore: 'Đang tải thêm...',
     rateLimited: 'Quá nhiều lần tìm kiếm. Vui lòng đợi một lúc rồi thử lại.',
+    voteFailed: 'Không thể cập nhật bình chọn. Vui lòng thử lại.',
   },
   featureRequestCompose: {
     modalTitle: 'Đề xuất tính năng',

@@ -65,7 +65,12 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -214,6 +219,7 @@ function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
           Linking.openURL(safeUrl).catch(() => {});
         });
       }}
+      accessibilityRole="link"
     >
       <Text style={[styles.website, { color: colors.primary }]}>
         {sanitizeSafeLinkUrl(websiteUrl)}

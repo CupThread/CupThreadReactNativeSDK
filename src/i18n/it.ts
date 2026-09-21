@@ -23,6 +23,9 @@ export const itStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 giorno fa' : `${d} giorni fa`),
     verificationRequired:
       'È richiesta la verifica umana per inviare. Riprova dopo aver completato la verifica.',
+    quotaExceeded: 'Quota mensile di invii raggiunta. Gli invii sono temporaneamente sospesi.',
+    subscriptionInactive:
+      'Gli invii sono sospesi perché l’abbonamento dell’applicazione non è attivo.',
   },
   feedbackComposer: {
     title: 'Invia feedback',
@@ -61,6 +64,7 @@ export const itStrings: CupThreadStrings = {
     upvote: 'Vota',
     loadingMore: 'Caricamento altri...',
     rateLimited: 'Troppe ricerche. Attendere un momento e riprovare.',
+    voteFailed: 'Aggiornamento del voto non riuscito. Riprova.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponi una funzionalità',

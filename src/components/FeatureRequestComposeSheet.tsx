@@ -19,6 +19,12 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
+import {
+  InactiveSubscriptionException,
+  PaymentRequiredException,
+  QuotaExceededException,
+  TurnstileRequiredException,
+} from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
 import { userFacingErrorMessage } from '../utils/errors';
 
@@ -137,9 +143,21 @@ export function FeatureRequestComposeSheet({
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setErrorMessage(
-        userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
-      );
+      if (err instanceof TurnstileRequiredException) {
+        // The draft stays intact so the user can retry after the host's
+        // verification flow resolves a fresh token.
+        setErrorMessage(strings.common.verificationRequired);
+      } else if (err instanceof QuotaExceededException) {
+        setErrorMessage(strings.common.quotaExceeded || err.message);
+      } else if (err instanceof InactiveSubscriptionException) {
+        setErrorMessage(strings.common.subscriptionInactive || err.message);
+      } else if (err instanceof PaymentRequiredException) {
+        setErrorMessage(err.message || strings.featureRequestCompose.submitFailed);
+      } else {
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
+        );
+      }
     }
   };
 
@@ -150,7 +168,12 @@ export function FeatureRequestComposeSheet({
           {strings.featureRequestCompose.modalTitle}
         </Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.close}
+          >
             <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -237,6 +260,8 @@ export function FeatureRequestComposeSheet({
             opacity: isSubmitting || !isTokenReady ? 0.6 : 1,
           },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: isSubmitting || !isTokenReady }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
@@ -251,7 +276,12 @@ export function FeatureRequestComposeSheet({
 
   if (isModal) {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={onClose}
+        accessibilityViewIsModal={true}
+      >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {content}
         </SafeAreaView>

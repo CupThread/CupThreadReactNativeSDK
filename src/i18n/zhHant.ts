@@ -22,6 +22,8 @@ export const zhHantStrings: CupThreadStrings = {
     hoursAgo: (h: number) => `${h} 小時前`,
     daysAgo: (d: number) => `${d} 天前`,
     verificationRequired: '提交前需要完成人機驗證，請在完成驗證後重試。',
+    quotaExceeded: '本月提交配額已達上限，暫時暫停提交。',
+    subscriptionInactive: '應用訂閱已停用，暫時暫停提交。',
   },
   feedbackComposer: {
     title: '提供意見回饋',
@@ -59,6 +61,7 @@ export const zhHantStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: '載入更多...',
     rateLimited: '搜尋過於頻繁，請稍等片刻後重試。',
+    voteFailed: '投票失敗，請稍後重試。',
   },
   featureRequestCompose: {
     modalTitle: '提出功能需求',
