@@ -29,10 +29,15 @@ export interface UseFeatureRequestsSearchLimiterOptions {
 
 /**
  * Builds the deduplication key for a query-bearing search: the same trimmed
- * query + version filter must not refetch when the effect re-fires.
+ * query + version filter under the same user identity must not refetch when the
+ * effect re-fires.
  */
-function buildSearchKey(query: string, versionId: string | null | undefined): string {
-  return `${query}|${versionId || ''}`;
+function buildSearchKey(
+  userToken: string,
+  query: string,
+  versionId: string | null | undefined
+): string {
+  return `${userToken}|${query}|${versionId || ''}`;
 }
 
 /**
@@ -341,8 +346,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         setTotal(reportedTotal);
         setError(null);
         if (isSearch) {
-          lastSearchKeyRef.current = buildSearchKey(trimmedQuery, versionId);
+          lastSearchKeyRef.current = buildSearchKey(userToken, trimmedQuery, versionId);
           setIsRateLimited(false);
+        } else {
+          lastSearchKeyRef.current = null;
         }
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal?.aborted) return;
@@ -372,9 +379,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const isSearch = trimmedQuery.length > 0;
     const limiter = searchLimiterRef.current!;
 
-    // Same trimmed query + version filter already loaded successfully — keep
-    // the results on screen and do not refetch.
-    if (isSearch && lastSearchKeyRef.current === buildSearchKey(trimmedQuery, versionId)) {
+    // Same trimmed query + version filter under the same identity already
+    // loaded successfully — keep the results on screen and do not refetch.
+    if (
+      isSearch &&
+      lastSearchKeyRef.current === buildSearchKey(userToken, trimmedQuery, versionId)
+    ) {
       return;
     }
 
@@ -403,7 +413,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady, query, versionId]);
+  }, [loadPage0, debounceMs, isTokenReady, query, versionId, userToken]);
 
   // Load next page
   const loadMore = useCallback(async () => {
