@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,19 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
-import { TurnstileRequiredException } from '../client/FeedbackException';
+import {
+  InactiveSubscriptionException,
+  PaymentRequiredException,
+  QuotaExceededException,
+  TurnstileRequiredException,
+} from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
+import {
+  createFeatureRequestComposeState,
+  resetFeatureRequestComposeState,
+} from '../utils/composer-state';
+import { userFacingErrorMessage } from '../utils/errors';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
@@ -65,6 +75,14 @@ export interface FeatureRequestComposeSheetProps {
    * @defaultValue `true`
    */
   showSuccessFeedback?: boolean;
+
+  /**
+   * Whether to preserve entered draft state when the sheet is closed without submitting.
+   * When `false` (default), dismissing or reopening the sheet resets the form to `initialDraft`.
+   *
+   * @defaultValue `false`
+   */
+  preserveDraftOnClose?: boolean;
 }
 
 /**
@@ -81,6 +99,7 @@ export function FeatureRequestComposeSheet({
   initialDraft,
   isModal = true,
   showSuccessFeedback = true,
+  preserveDraftOnClose = false,
 }: FeatureRequestComposeSheetProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
@@ -88,13 +107,53 @@ export function FeatureRequestComposeSheet({
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
 
-  const [title, setTitle] = useState(initialDraft?.title || '');
-  const [description, setDescription] = useState(initialDraft?.description || '');
-  const [requesterName, setRequesterName] = useState(initialDraft?.requesterName || '');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const initialState = createFeatureRequestComposeState(initialDraft);
+  const [title, setTitle] = useState(initialState.title);
+  const [description, setDescription] = useState(initialState.description);
+  const [requesterName, setRequesterName] = useState(initialState.requesterName);
+  const [isSubmitting, setIsSubmitting] = useState(initialState.isSubmitting);
+  const isSubmittingRef = useRef(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialState.errorMessage);
+
+  const resetForm = useCallback((draft?: Partial<FeatureRequestDraft>) => {
+    const fresh = resetFeatureRequestComposeState(draft);
+    setTitle(fresh.title);
+    setDescription(fresh.description);
+    setRequesterName(fresh.requesterName);
+    setIsSubmitting(fresh.isSubmitting);
+    setErrorMessage(fresh.errorMessage);
+  }, []);
+
+  const prevVisibleRef = useRef(visible);
+  const prevInitialDraftRef = useRef(initialDraft);
+  const hasSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    const wasVisible = prevVisibleRef.current;
+    if (!wasVisible && visible) {
+      const draftChanged = initialDraft !== prevInitialDraftRef.current;
+      const shouldReset = !preserveDraftOnClose || hasSubmittedRef.current || draftChanged;
+      if (shouldReset) {
+        resetForm(initialDraft);
+        hasSubmittedRef.current = false;
+      } else {
+        setErrorMessage(null);
+        setIsSubmitting(false);
+      }
+      prevInitialDraftRef.current = initialDraft;
+    }
+    prevVisibleRef.current = visible;
+  }, [visible, preserveDraftOnClose, initialDraft, resetForm]);
+
+  const handleClose = useCallback(() => {
+    if (!preserveDraftOnClose) {
+      resetForm(initialDraft);
+    }
+    if (onClose) onClose();
+  }, [preserveDraftOnClose, initialDraft, resetForm, onClose]);
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     if (!isTokenReady) return;
     if (title.trim().length < 3) {
       setErrorMessage(strings.featureRequestCompose.titleMinLengthError);
@@ -105,6 +164,7 @@ export function FeatureRequestComposeSheet({
       return;
     }
 
+    isSubmittingRef.current = true;
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -115,9 +175,10 @@ export function FeatureRequestComposeSheet({
         requesterName: requesterName.trim() || undefined,
       };
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submitFeatureRequest(draft, effectiveToken);
-      setIsSubmitting(false);
+      hasSubmittedRef.current = true;
+      resetForm(initialDraft);
 
       // Surface the outcome even when a host provides `onSubmitSuccess`:
       // pending-moderation submissions are absent from the reloaded list, so
@@ -136,14 +197,24 @@ export function FeatureRequestComposeSheet({
         onClose();
       }
     } catch (err: any) {
-      setIsSubmitting(false);
       if (err instanceof TurnstileRequiredException) {
         // The draft stays intact so the user can retry after the host's
         // verification flow resolves a fresh token.
         setErrorMessage(strings.common.verificationRequired);
+      } else if (err instanceof QuotaExceededException) {
+        setErrorMessage(strings.common.quotaExceeded || err.message);
+      } else if (err instanceof InactiveSubscriptionException) {
+        setErrorMessage(strings.common.subscriptionInactive || err.message);
+      } else if (err instanceof PaymentRequiredException) {
+        setErrorMessage(err.message || strings.featureRequestCompose.submitFailed);
       } else {
-        setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
+        );
       }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -154,7 +225,12 @@ export function FeatureRequestComposeSheet({
           {strings.featureRequestCompose.modalTitle}
         </Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity
+            onPress={handleClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.close}
+          >
             <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -241,6 +317,8 @@ export function FeatureRequestComposeSheet({
             opacity: isSubmitting || !isTokenReady ? 0.6 : 1,
           },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: isSubmitting || !isTokenReady }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
@@ -255,7 +333,12 @@ export function FeatureRequestComposeSheet({
 
   if (isModal) {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={handleClose}
+        accessibilityViewIsModal={true}
+      >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {content}
         </SafeAreaView>

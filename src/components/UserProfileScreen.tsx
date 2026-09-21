@@ -18,6 +18,7 @@ import type { PublicUserProfileResult } from '../types';
 import { Avatar } from './Avatar';
 import { formatDate } from '../utils/formatters';
 import { isSafeLinkUrl, openSafeLinkUrl, sanitizeSafeLinkUrl } from '../utils/linkUrl';
+import { userFacingErrorMessage } from '../utils/errors';
 
 export interface UserProfileScreenProps {
   userId: string;
@@ -47,7 +48,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
       })
       .catch((err) => {
         if (err?.name === 'AbortError' || controller.signal.aborted) return;
-        setError(err?.message || strings.userProfile.loadFailed);
+        setError(userFacingErrorMessage(err, strings.userProfile.loadFailed, strings.common));
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -58,13 +59,18 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     return () => {
       controller.abort();
     };
-  }, [client, userId, strings.userProfile.loadFailed]);
+  }, [client, userId, strings.userProfile.loadFailed, strings.common]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -213,6 +219,7 @@ function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
           Linking.openURL(safeUrl).catch(() => {});
         });
       }}
+      accessibilityRole="link"
     >
       <Text style={[styles.website, { color: colors.primary }]}>
         {sanitizeSafeLinkUrl(websiteUrl)}

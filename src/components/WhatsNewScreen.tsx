@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
 import type { ChangelogEntry } from '../types';
 import { Badge } from './Badge';
@@ -23,19 +24,19 @@ import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { resolveEffectiveUserToken } from '../utils/userToken';
+import { userFacingErrorMessage } from '../utils/errors';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
   headerTitle?: string;
 }
 
-export function WhatsNewScreen({
-  onBack,
-  headerTitle,
-}: WhatsNewScreenProps) {
+export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
@@ -55,22 +56,31 @@ export function WhatsNewScreen({
 
   const [email, setEmail] = useState<string>('');
   const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
+  const isSubscribingRef = useRef<boolean>(false);
   const [isSubscribed, setIsSubscribed] = useState<boolean>(false);
 
   const handleSubscribe = async () => {
+    if (isSubscribingRef.current) return;
     if (!email.trim() || !email.includes('@')) {
       Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
+    if (!isTokenReady) return;
 
+    isSubscribingRef.current = true;
     try {
       setIsSubscribing(true);
-      await client.subscribeToChangelog(email.trim(), userToken);
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
+      await client.subscribeToChangelog(email.trim(), effectiveToken);
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
-      Alert.alert(strings.common.error, err?.message || strings.changelog.subscribeFailed);
+      Alert.alert(
+        strings.common.error,
+        userFacingErrorMessage(err, strings.changelog.subscribeFailed, strings.common)
+      );
     } finally {
+      isSubscribingRef.current = false;
       setIsSubscribing(false);
     }
   };
@@ -118,8 +128,16 @@ export function WhatsNewScreen({
           />
           <TouchableOpacity
             onPress={handleSubscribe}
-            disabled={isSubscribing}
-            style={[styles.subscribeButton, { backgroundColor: colors.primary }]}
+            disabled={isSubscribing || !isTokenReady}
+            style={[
+              styles.subscribeButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: isSubscribing || !isTokenReady ? 0.6 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubscribing || !isTokenReady }}
           >
             {isSubscribing ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
@@ -138,7 +156,12 @@ export function WhatsNewScreen({
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -181,12 +204,8 @@ export function WhatsNewScreen({
               ]}
             >
               <View style={styles.cardHeader}>
-                <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
-                  {item.title}
-                </Text>
-                {item.versionLabel && (
-                  <Badge label={`v${item.versionLabel}`} variant="outline" />
-                )}
+                <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+                {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
               </View>
 
               <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
