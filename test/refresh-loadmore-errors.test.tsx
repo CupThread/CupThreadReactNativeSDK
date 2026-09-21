@@ -100,8 +100,9 @@ const fail = (): FetchRoute => ({ status: 500, body: 'server error' });
 /**
  * Fetch stub shared by the tests. Route objects are mutable so a test can
  * flip the network from success to failure (or back) between interactions.
- * The config and versions endpoints always 404 (both failures are caught
- * silently by the provider / screen).
+ * The config endpoint always 404s (that failure is caught silently by the
+ * provider); versions succeeds with an empty list so the screen's own
+ * versions-error retry state stays out of the way.
  */
 function installFetch(routes: {
   page0: FetchRoute;
@@ -123,7 +124,10 @@ function installFetch(routes: {
       return respond(routes.columns);
     }
     if (target.includes('/api/v1/public/versions/')) {
-      return new Response('not found', { status: 404 });
+      // Succeed with an empty list: these tests exercise page-0/loadMore
+      // failures, and the screen now surfaces versions failures with their
+      // own retry ErrorState (which would pollute the error-text checks).
+      return respond(ok({ versions: [] }));
     }
     if (target.includes('/api/v1/feature-requests') && (init?.method ?? 'GET') === 'GET') {
       const query = target.split('?')[1] ?? '';

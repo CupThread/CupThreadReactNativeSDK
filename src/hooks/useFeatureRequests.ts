@@ -29,10 +29,15 @@ export interface UseFeatureRequestsSearchLimiterOptions {
 
 /**
  * Builds the deduplication key for a query-bearing search: the same trimmed
- * query + version filter must not refetch when the effect re-fires.
+ * query + version filter under the same user identity must not refetch when the
+ * effect re-fires.
  */
-function buildSearchKey(query: string, versionId: string | null | undefined): string {
-  return `${query}|${versionId || ''}`;
+function buildSearchKey(
+  userToken: string,
+  query: string,
+  versionId: string | null | undefined
+): string {
+  return `${userToken}|${query}|${versionId || ''}`;
 }
 
 /**
@@ -109,6 +114,10 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Whether the initial load or a filter/search change request is in flight.
+   *
+   * Note: This reflects whether a page-0 network request is actively in flight.
+   * Presentation logic (such as showing a full-screen spinner vs. keeping stale
+   * results visible while reloading) is the decision of the consuming screen.
    */
   isLoading: boolean;
 
@@ -233,9 +242,36 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
 
+  const localRevisionRef = useRef<number>(0);
+  const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
+
   const applyItemChange = useCallback(
     (itemId: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
-      setItems((prev) => prev.map((item) => (item.id === itemId ? transform(item) : item)));
+      localRevisionRef.current += 1;
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.id === itemId) {
+            const updated = transform(item);
+            pendingItemMutationsRef.current.set(itemId, updated);
+            return updated;
+          }
+          return item;
+        })
+      );
+    },
+    []
+  );
+
+  const wrappedSetItems: React.Dispatch<React.SetStateAction<FeatureRequestItem[]>> = useCallback(
+    (action) => {
+      localRevisionRef.current += 1;
+      setItems((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        for (const item of next) {
+          pendingItemMutationsRef.current.set(item.id, item);
+        }
+        return next;
+      });
     },
     []
   );
@@ -244,6 +280,15 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // Duplicate suppression: re-firing the effect with the same key must not
   // burn another search against the server's per-IP rate budget.
   const lastSearchKeyRef = useRef<string | null>(null);
+
+  const enterSearchCooldown = useCallback((retryAfterMs?: number | null) => {
+    const limiter = searchLimiterRef.current!;
+    const cooldownMs = limiter.enterCooldown(retryAfterMs);
+    setIsRateLimited(true);
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    cooldownTimerRef.current = setTimeout(() => setIsRateLimited(false), cooldownMs);
+    return cooldownMs;
+  }, []);
 
   // Initial load or query/filter change
   const loadPage0 = useCallback(
@@ -266,6 +311,8 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
       }
 
+      const rev = localRevisionRef.current;
+
       try {
         if (skipped) return;
 
@@ -282,35 +329,59 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         const fetchedItems = res.requests || [];
         const reportedTotal = typeof res.total === 'number' ? res.total : fetchedItems.length;
 
-        setItems(fetchedItems);
+        // Monotonic local revision guard: if local mutations occurred (e.g. optimistic
+        // votes applied while fetch was in flight), merge the pending state on top of
+        // the server snapshot rather than blind-overwriting.
+        const reconcileWithPending = (
+          itemsToReconcile: FeatureRequestItem[]
+        ): FeatureRequestItem[] => {
+          if (pendingItemMutationsRef.current.size === 0) return itemsToReconcile;
+          return itemsToReconcile.map((item) => {
+            const pending = pendingItemMutationsRef.current.get(item.id);
+            if (!pending) return item;
+            if (item.hasVoted === pending.hasVoted) {
+              // Server response already reflects the new vote state, clear pending mutation.
+              pendingItemMutationsRef.current.delete(item.id);
+              return item;
+            }
+            return {
+              ...item,
+              ...pending,
+            };
+          });
+        };
+
+        const hadInterimMutation = localRevisionRef.current !== rev;
+        const mergedItems =
+          hadInterimMutation || pendingItemMutationsRef.current.size > 0
+            ? reconcileWithPending(fetchedItems)
+            : fetchedItems;
+        setItems(mergedItems);
         setTotal(reportedTotal);
         setError(null);
         // A fresh page-0 result replaces the whole list, so a load-more
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
         if (isSearch) {
-          lastSearchKeyRef.current = buildSearchKey(trimmedQuery, versionId);
+          lastSearchKeyRef.current = buildSearchKey(userToken, trimmedQuery, versionId);
           setIsRateLimited(false);
+        } else {
+          lastSearchKeyRef.current = null;
         }
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal?.aborted) return;
         if (err instanceof RateLimitedException) {
           // Enter the search cooldown (server Retry-After wins) and surface a
           // rate-limit notice instead of an endless autofire loop.
-          const cooldownMs = limiter.enterCooldown(err.retryAfterMs);
-          setIsRateLimited(true);
-          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
-          cooldownTimerRef.current = setTimeout(() => setIsRateLimited(false), cooldownMs);
+          enterSearchCooldown(err.retryAfterMs);
         }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
-        if (!signal?.aborted) {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        }
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
     },
-    [client, userToken, isTokenReady, versionId, query, pageSize]
+    [client, userToken, isTokenReady, versionId, query, pageSize, enterSearchCooldown]
   );
 
   useEffect(() => {
@@ -323,9 +394,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const isSearch = trimmedQuery.length > 0;
     const limiter = searchLimiterRef.current!;
 
-    // Same trimmed query + version filter already loaded successfully — keep
-    // the results on screen and do not refetch.
-    if (isSearch && lastSearchKeyRef.current === buildSearchKey(trimmedQuery, versionId)) {
+    // Same trimmed query + version filter under the same identity already
+    // loaded successfully — keep the results on screen and do not refetch.
+    if (
+      isSearch &&
+      lastSearchKeyRef.current === buildSearchKey(userToken, trimmedQuery, versionId)
+    ) {
       return;
     }
 
@@ -338,13 +412,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
-    setIsLoading(true);
-
     // Debounce first, then the search spacing window so a typing burst waits
     // for its turn instead of silently dropping the final query.
     const searchWaitMs = isSearch ? limiter.waitTime() : 0;
     const timer = setTimeout(
       () => {
+        setIsLoading(true);
         loadPage0(controller.signal);
       },
       (debounceMs > 0 ? debounceMs : 0) + searchWaitMs
@@ -354,12 +427,16 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady, query, versionId]);
+  }, [loadPage0, debounceMs, isTokenReady, query, versionId, userToken]);
 
   // Load next page
   const loadMore = useCallback(async () => {
     if (!isTokenReady || isLoading || isRefreshing || isLoadingMoreRef.current) return;
     if (itemsRef.current.length >= totalRef.current) return;
+
+    const trimmedQuery = query?.trim() || '';
+    const isSearch = trimmedQuery.length > 0;
+    const limiter = searchLimiterRef.current!;
 
     loadMoreControllerRef.current?.abort();
     const controller = new AbortController();
@@ -369,11 +446,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     setIsLoadingMore(true);
 
     try {
+      // While cooldown is active, query-bearing pagination is suppressed.
+      if (isSearch && limiter.cooldownRemaining() > 0) return;
+
+      if (isSearch) {
+        limiter.markFetched();
+      }
+
       const currentOffset = itemsRef.current.length;
       const res = await client.fetchFeatureRequests({
         userToken,
         versionId: versionId || undefined,
-        query: query?.trim() || undefined,
+        query: trimmedQuery || undefined,
         limit: pageSize,
         offset: currentOffset,
         signal: controller.signal,
@@ -404,8 +488,14 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
       setTotal(nextTotal);
       setLoadMoreError(null);
+      if (isSearch) {
+        setIsRateLimited(false);
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      if (isSearch && err instanceof RateLimitedException) {
+        enterSearchCooldown(err.retryAfterMs);
+      }
       setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       // Reset even when aborted: refresh()/reload()/filter changes abort an
@@ -414,7 +504,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [client, userToken, isTokenReady, isLoading, isRefreshing, versionId, query, pageSize]);
+  }, [
+    client,
+    userToken,
+    isTokenReady,
+    isLoading,
+    isRefreshing,
+    versionId,
+    query,
+    pageSize,
+    enterSearchCooldown,
+  ]);
 
   // Pull-to-refresh
   const refresh = useCallback(async () => {
@@ -465,7 +565,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     loadMore,
     refresh,
     reload,
-    setItems,
+    setItems: wrappedSetItems,
     applyItemChange,
   };
 }

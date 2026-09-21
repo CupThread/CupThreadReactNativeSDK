@@ -43,6 +43,12 @@ export interface FeedbackClientConfig {
    * Default platform reported on feedback submissions and requests when
    * not explicitly overridden by the caller.
    *
+   * Note: Platform validation against the application's configured allowlist
+   * (`PublicAppConfig.allowedPlatforms`) is enforced at the composer layer
+   * (such as {@link FeedbackComposer}) via {@link resolveAllowedPlatform}.
+   * Direct calls to `client.submit` forward the draft or client default platform
+   * directly to the intake endpoint.
+   *
    * @defaultValue Auto-detected at runtime via React Native `Platform.OS`
    */
   defaultPlatform?: FeedbackPlatform;
@@ -85,6 +91,19 @@ export interface FeedbackClientConfig {
    * the field (e.g. when the host knows the endpoint is exempt).
    */
   turnstileTokenProvider?: () => string | undefined | Promise<string | undefined>;
+
+  /**
+   * Strategy for transmitting the user identity token on `GET /api/v1/feature-requests`.
+   *
+   * - `'header'` (default): Sends the token via the `X-User-Token` HTTP header only.
+   *   Prevents token leakage into access logs, reverse proxies, and browser history (CWE-598).
+   * - `'both'`: Sends the token in both the `X-User-Token` header and the `userToken` query parameter.
+   *   Provided for transition compatibility during backend deployments.
+   * - `'query'`: Sends the token via the `userToken` query parameter only (legacy behavior, deprecated).
+   *
+   * @defaultValue 'header'
+   */
+  tokenTransport?: 'query' | 'header' | 'both';
 }
 
 /**
@@ -427,6 +446,13 @@ export interface PublicAppConfig {
 
   /**
    * Whether public board access is enabled.
+   *
+   * As of the September 2026 API sync, public config endpoints (`GET /api/v1/public/config/:appKey`
+   * and `GET /api/v1/public/workspaces/:workspaceSlug/apps/:appSlug/config`) answer private
+   * applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}` rather than
+   * returning an HTTP 200 payload with `allowPublic: false`. A successfully fetched
+   * {@link PublicAppConfig} will therefore always carry `allowPublic: true`. This property is
+   * retained for API schema parity with the server's PublicAppConfig model.
    */
   allowPublic: boolean;
 

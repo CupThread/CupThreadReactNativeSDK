@@ -11,6 +11,8 @@ export const koStrings: CupThreadStrings = {
     submitting: '제출 중...',
     error: '오류',
     retry: '다시 시도',
+    timeoutError: '요청 시간이 초과되었습니다. 다시 시도해 주세요.',
+    networkError: '네트워크 오류가 발생했습니다. 연결 상태를 확인한 후 다시 시도해 주세요.',
     optional: '선택 사항',
     required: '필수',
     anonymous: '익명 사용자',
@@ -21,6 +23,8 @@ export const koStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}일 전`,
     verificationRequired:
       '제출하려면 사용자 인증이 필요합니다. 인증을 완료한 후 다시 시도해 주세요.',
+    quotaExceeded: '이번 달 제출 한도에 도달했습니다. 제출이 일시 중지되었습니다.',
+    subscriptionInactive: '앱 구독이 비활성 상태이므로 제출이 일시 중지되었습니다.',
   },
   feedbackComposer: {
     title: '피드백 보내기',
@@ -58,6 +62,7 @@ export const koStrings: CupThreadStrings = {
     upvote: '투표',
     loadingMore: '더 불러오는 중...',
     rateLimited: '검색 횟수가 너무 많습니다. 잠시 기다린 후 다시 시도해 주세요.',
+    voteFailed: '투표에 실패했습니다. 다시 시도해 주세요.',
   },
   featureRequestCompose: {
     modalTitle: '기능 제안',

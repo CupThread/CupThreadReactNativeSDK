@@ -11,6 +11,8 @@ export const plStrings: CupThreadStrings = {
     submitting: 'Wysyłanie...',
     error: 'Błąd',
     retry: 'Spróbuj ponownie',
+    timeoutError: 'Żądanie trwało zbyt długo. Spróbuj ponownie.',
+    networkError: 'Błąd sieci. Sprawdź połączenie internetowe i spróbuj ponownie.',
     optional: 'opcjonalne',
     required: 'wymagane',
     anonymous: 'Anonimowy użytkownik',
@@ -21,6 +23,9 @@ export const plStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 dzień temu' : `${d} dni temu`),
     verificationRequired:
       'Wysłanie wymaga weryfikacji człowieka. Spróbuj ponownie po jej ukończeniu.',
+    quotaExceeded: 'Osiągnięto miesięczny limit zgłoszeń. Zgłoszenia są tymczasowo wstrzymane.',
+    subscriptionInactive:
+      'Zgłoszenia są wstrzymane, ponieważ subskrypcja aplikacji jest nieaktywna.',
   },
   feedbackComposer: {
     title: 'Wyślij opinię',
@@ -61,6 +66,7 @@ export const plStrings: CupThreadStrings = {
     upvote: 'Głosuj',
     loadingMore: 'Ładowanie kolejnych...',
     rateLimited: 'Zbyt wiele wyszukiwań. Odczekaj chwilę i spróbuj ponownie.',
+    voteFailed: 'Nie udało się zaktualizować głosu. Spróbuj ponownie.',
   },
   featureRequestCompose: {
     modalTitle: 'Zaproponuj funkcję',
