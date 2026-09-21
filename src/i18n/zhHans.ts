@@ -11,6 +11,8 @@ export const zhHansStrings: CupThreadStrings = {
     submitting: '提交中...',
     error: '错误',
     retry: '重试',
+    timeoutError: '请求超时，请重试。',
+    networkError: '网络错误，请检查网络连接后重试。',
     optional: '选填',
     required: '必填',
     anonymous: '匿名用户',
@@ -20,6 +22,8 @@ export const zhHansStrings: CupThreadStrings = {
     hoursAgo: (h: number) => `${h} 小时前`,
     daysAgo: (d: number) => `${d} 天前`,
     verificationRequired: '提交前需要完成人机验证，请在完成验证后重试。',
+    quotaExceeded: '本月提交配额已达上限，暂时暂停提交。',
+    subscriptionInactive: '应用订阅已停用，暂时暂停提交。',
   },
   feedbackComposer: {
     title: '提供反馈',
@@ -58,6 +62,7 @@ export const zhHansStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: '加载更多...',
     rateLimited: '搜索过于频繁，请稍等片刻后重试。',
+    voteFailed: '投票失败，请稍后重试。',
   },
   featureRequestCompose: {
     modalTitle: '提出新需求',

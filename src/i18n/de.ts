@@ -11,6 +11,9 @@ export const deStrings: CupThreadStrings = {
     submitting: 'Wird gesendet...',
     error: 'Fehler',
     retry: 'Erneut versuchen',
+    timeoutError: 'Die Anfrage hat zu lange gedauert. Bitte versuchen Sie es erneut.',
+    networkError:
+      'Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.',
     optional: 'optional',
     required: 'erforderlich',
     anonymous: 'Anonymer Benutzer',
@@ -21,6 +24,10 @@ export const deStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? 'vor 1 Tag' : `vor ${d} Tagen`),
     verificationRequired:
       'Zum Senden ist eine menschliche Verifizierung erforderlich. Bitte nach Abschluss der Verifizierung erneut versuchen.',
+    quotaExceeded:
+      'Monatliches Einreichungskontingent erreicht. Einreichungen sind vorübergehend pausiert.',
+    subscriptionInactive:
+      'Einreichungen sind vorübergehend pausiert, da das App-Abonnement inaktiv ist.',
   },
   feedbackComposer: {
     title: 'Feedback senden',
@@ -66,6 +73,7 @@ export const deStrings: CupThreadStrings = {
     loadingMore: 'Weitere werden geladen...',
     rateLimited:
       'Zu viele Suchanfragen. Bitte warten Sie einen Moment und versuchen Sie es erneut.',
+    voteFailed: 'Abstimmung fehlgeschlagen. Bitte versuchen Sie es erneut.',
   },
   featureRequestCompose: {
     modalTitle: 'Feature vorschlagen',

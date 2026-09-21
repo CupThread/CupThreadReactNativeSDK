@@ -55,6 +55,16 @@ export type VoteItemTransform = (item: FeatureRequestItem) => FeatureRequestItem
 export type VoteChangeApplier = (itemId: string, transform: VoteItemTransform) => void;
 
 /**
+ * Options for configuring {@link useToggleVote}.
+ */
+export interface UseToggleVoteOptions {
+  /**
+   * Optional callback invoked whenever a vote toggle request rejects.
+   */
+  onVoteError?: (error: unknown, item: FeatureRequestItem) => void;
+}
+
+/**
  * Result of {@link useToggleVote}.
  */
 export interface UseToggleVoteResult {
@@ -69,6 +79,21 @@ export interface UseToggleVoteResult {
    * Whether a vote toggle request is currently in flight for the given item.
    */
   isVoting: (itemId: string) => boolean;
+
+  /**
+   * Most recent vote error, or `null` if the last attempt succeeded or has been cleared.
+   */
+  voteError: Error | null;
+
+  /**
+   * Returns the error for a specific item, or `null` if none occurred or has been cleared.
+   */
+  getVoteError: (itemId: string) => Error | null;
+
+  /**
+   * Clears the active vote error state.
+   */
+  clearVoteError: (itemId?: string) => void;
 }
 
 /**
@@ -81,34 +106,72 @@ export interface UseToggleVoteResult {
  * - Success applies the server truth (`voted` / `voteCount`) on top of current state.
  * - Failure reverts only the optimistic delta relative to current state, never a
  *   stale whole-item snapshot.
+ * - Surfaces vote errors via `voteError`, `getVoteError`, and `options.onVoteError`.
  *
  * @param client - {@link FeedbackClient} used to dispatch the toggle request.
  * @param userToken - Current user token; toggles are ignored while empty.
  * @param applyChange - Applier that persists a transform into the component's state.
+ * @param options - Optional configuration options such as error callbacks.
  *
  * @example
  * ```tsx
  * const applyVoteChange = useCallback((itemId, transform) => {
  *   setItems((prev) => prev.map((i) => (i.id === itemId ? transform(i) : i)));
  * }, []);
- * const { toggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
+ * const { toggleVote, isVoting, voteError } = useToggleVote(client, userToken, applyVoteChange);
  * ```
  */
 export function useToggleVote(
   client: FeedbackClient,
   userToken: string,
-  applyChange: VoteChangeApplier
+  applyChange: VoteChangeApplier,
+  options?: UseToggleVoteOptions
 ): UseToggleVoteResult {
   const applyChangeRef = useRef(applyChange);
   applyChangeRef.current = applyChange;
 
+  const onVoteErrorRef = useRef(options?.onVoteError);
+  onVoteErrorRef.current = options?.onVoteError;
+
   const pendingIdsRef = useRef<Set<string>>(new Set());
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+
+  const [voteError, setVoteError] = useState<Error | null>(null);
+  const [errorsByItemId, setErrorsByItemId] = useState<Record<string, Error>>({});
+
+  const clearVoteError = useCallback((itemId?: string) => {
+    if (itemId) {
+      setErrorsByItemId((prev) => {
+        if (!prev[itemId]) return prev;
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+      setVoteError((prev) => (prev ? null : null));
+    } else {
+      setErrorsByItemId({});
+      setVoteError(null);
+    }
+  }, []);
+
+  const getVoteError = useCallback(
+    (itemId: string) => errorsByItemId[itemId] || null,
+    [errorsByItemId]
+  );
 
   const toggleVote = useCallback(
     (item: FeatureRequestItem) => {
       if (!item || item.isOwnRequest || !userToken) return;
       if (pendingIdsRef.current.has(item.id)) return;
+
+      // Clear previous error on the same item at tap time
+      setErrorsByItemId((prev) => {
+        if (!prev[item.id]) return prev;
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+      setVoteError(null);
 
       pendingIdsRef.current.add(item.id);
       setPendingIds(Array.from(pendingIdsRef.current));
@@ -123,9 +186,20 @@ export function useToggleVote(
         .toggleVote(item.id, userToken)
         .then((res) => {
           applyChangeRef.current(item.id, (current) => withServerVote(current, res));
+          setErrorsByItemId((prev) => {
+            if (!prev[item.id]) return prev;
+            const next = { ...prev };
+            delete next[item.id];
+            return next;
+          });
+          setVoteError(null);
         })
-        .catch(() => {
+        .catch((err: unknown) => {
           applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot));
+          const errorObj = err instanceof Error ? err : new Error(String(err));
+          setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));
+          setVoteError(errorObj);
+          onVoteErrorRef.current?.(err, item);
         })
         .finally(() => {
           pendingIdsRef.current.delete(item.id);
@@ -140,5 +214,5 @@ export function useToggleVote(
     [pendingIds]
   );
 
-  return { toggleVote, isVoting };
+  return { toggleVote, isVoting, voteError, getVoteError, clearVoteError };
 }

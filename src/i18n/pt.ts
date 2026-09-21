@@ -11,6 +11,8 @@ export const ptStrings: CupThreadStrings = {
     submitting: 'Enviando...',
     error: 'Erro',
     retry: 'Tentar novamente',
+    timeoutError: 'A solicitação demorou demasiado. Tente novamente.',
+    networkError: 'Erro de rede. Verifique sua conexão e tente novamente.',
     optional: 'opcional',
     required: 'obrigatório',
     anonymous: 'Usuário anônimo',
@@ -21,6 +23,9 @@ export const ptStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? 'Há 1 dia' : `Há ${d} dias`),
     verificationRequired:
       'É necessária verificação humana para enviar. Tente novamente após concluir a verificação.',
+    quotaExceeded: 'Limite mensal de envios atingido. Os envios estão temporariamente pausados.',
+    subscriptionInactive:
+      'Os envios estão pausados porque a assinatura do aplicativo está inativa.',
   },
   feedbackComposer: {
     title: 'Enviar feedback',
@@ -63,6 +68,7 @@ export const ptStrings: CupThreadStrings = {
     upvote: 'Votar',
     loadingMore: 'Carregando mais...',
     rateLimited: 'Pesquisas em excesso. Aguarde um momento e tente novamente.',
+    voteFailed: 'Falha ao atualizar o voto. Tente novamente.',
   },
   featureRequestCompose: {
     modalTitle: 'Propor um recurso',

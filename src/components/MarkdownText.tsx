@@ -127,6 +127,7 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
                 : { color: colors.textPrimary }
             }
             onPress={isPressable ? () => handleLinkPress(url) : undefined}
+            accessibilityRole={isPressable ? 'link' : undefined}
           >
             {match[5]}
           </Text>

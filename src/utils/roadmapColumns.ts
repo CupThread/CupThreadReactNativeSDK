@@ -44,3 +44,16 @@ export function groupRoadmapRequests(
  * non-empty. Chosen to never collide with server-generated column ids.
  */
 export const ROADMAP_OTHER_COLUMN_ID = '__cupthread_other__';
+
+/**
+ * Renders a roadmap column tab's request count as a user-facing label.
+ *
+ * Tab counts are computed from the pages loaded so far, so while the
+ * underlying list still has unloaded pages (`hasMore`) the number is only a
+ * lower bound of the column's real total. Appending `+` keeps the badge
+ * honest (`0+` instead of a bare `0`) until every page has been fetched and
+ * the exact count can be asserted.
+ */
+export function formatColumnTabCount(count: number, hasMore: boolean): string {
+  return hasMore ? `${count}+` : `${count}`;
+}

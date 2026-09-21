@@ -298,10 +298,15 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
   for (const loc of allLocales) {
     // common
     assert.ok(typeof loc.common.invalidEmail === 'string' && loc.common.invalidEmail.length > 0);
+    assert.ok(typeof loc.common.timeoutError === 'string' && loc.common.timeoutError.length > 0);
+    assert.ok(typeof loc.common.networkError === 'string' && loc.common.networkError.length > 0);
 
     // feedbackComposer
     assert.ok(typeof loc.feedbackComposer.uploadFailed === 'string' && loc.feedbackComposer.uploadFailed.length > 0);
     assert.ok(typeof loc.feedbackComposer.submitFailed === 'string' && loc.feedbackComposer.submitFailed.length > 0);
+
+    // featureRequests
+    assert.ok(typeof loc.featureRequests.voteFailed === 'string' && loc.featureRequests.voteFailed.length > 0);
 
     // featureRequestCompose
     assert.ok(typeof loc.featureRequestCompose.submitFailed === 'string' && loc.featureRequestCompose.submitFailed.length > 0);
