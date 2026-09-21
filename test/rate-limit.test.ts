@@ -279,12 +279,15 @@ interface SearchCall {
 function makeSearchClient(responder: (call: SearchCall, index: number) => Response) {
   const calls: SearchCall[] = [];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const parsed = new URL(url.toString());
+    // The client ships the identity token via the X-User-Token header by
+    // default (CWE-598); fall back to the query param for query transports.
+    const headers = (init?.headers ?? {}) as Record<string, string>;
     const call: SearchCall = {
       q: parsed.searchParams.get('q'),
       offset: parsed.searchParams.get('offset'),
-      userToken: parsed.searchParams.get('userToken'),
+      userToken: headers['X-User-Token'] ?? parsed.searchParams.get('userToken'),
     };
     const index = calls.length;
     calls.push(call);
