@@ -23,6 +23,7 @@ import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { userFacingErrorMessage } from '../utils/errors';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
@@ -69,7 +70,10 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
-      Alert.alert(strings.common.error, err?.message || strings.changelog.subscribeFailed);
+      Alert.alert(
+        strings.common.error,
+        userFacingErrorMessage(err, strings.changelog.subscribeFailed, strings.common)
+      );
     } finally {
       isSubscribingRef.current = false;
       setIsSubscribing(false);
@@ -121,6 +125,8 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
             onPress={handleSubscribe}
             disabled={isSubscribing}
             style={[styles.subscribeButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubscribing }}
           >
             {isSubscribing ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
@@ -139,7 +145,12 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}

@@ -6,7 +6,15 @@ import { generateUUID } from '../utils/formatters';
  * @remarks
  * Compatible with `AsyncStorage`, `expo-secure-store`, MMKV, `localStorage`, or in-memory dictionaries.
  *
+ * **Storage security**: The configured adapter persists the bearer identity token used to attribute
+ * all SDK actions (votes, comments, feedback, user attributes). Plaintext adapters like `AsyncStorage`
+ * are suitable for local development or anonymous-only identifiers, but production applications—particularly
+ * those calling {@link UserTokenStore.setToken} with real user IDs—should configure an encrypted-at-rest
+ * adapter (such as `expo-secure-store` in Expo or `react-native-keychain` / encrypted MMKV in bare React Native)
+ * to prevent token exposure via device backups or rooted device storage.
+ *
  * @example
+ * Plaintext adapter (development / anonymous-only):
  * ```ts
  * import AsyncStorage from '@react-native-async-storage/async-storage';
  * import { TokenStorageAdapter, UserTokenStore } from '@cupthread/react-native';
@@ -18,6 +26,21 @@ import { generateUUID } from '../utils/formatters';
  * };
  *
  * UserTokenStore.configure(adapter);
+ * ```
+ *
+ * @example
+ * Encrypted adapter using `expo-secure-store` (recommended for production & authenticated users):
+ * ```ts
+ * import * as SecureStore from 'expo-secure-store';
+ * import { TokenStorageAdapter, UserTokenStore } from '@cupthread/react-native';
+ *
+ * const secureAdapter: TokenStorageAdapter = {
+ *   getItem: (key) => SecureStore.getItemAsync(key),
+ *   setItem: (key, value) => SecureStore.setItemAsync(key, value),
+ *   removeItem: (key) => SecureStore.deleteItemAsync(key),
+ * };
+ *
+ * UserTokenStore.configure(secureAdapter);
  * ```
  */
 export interface TokenStorageAdapter {
@@ -48,6 +71,24 @@ export interface TokenStorageAdapter {
 /**
  * Storage key used to persist the anonymous user identifier in key-value storage.
  */
+function isDevMode(): boolean {
+  try {
+    if (typeof (globalThis as any).__DEV__ !== 'undefined') {
+      return Boolean((globalThis as any).__DEV__);
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.NODE_ENV !== 'production';
+    }
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
 const STORAGE_KEY = 'cupthread_user_token_v1';
 
 /**
@@ -124,6 +165,55 @@ export class UserTokenStore {
    * Storage key used to persist seen changelog versions.
    */
   private static readonly CHANGELOG_SEEN_KEY = 'cupthread_seen_changelogs_v1';
+
+  /**
+   * Tracks whether a warning about unpersisted changelog seen-status has already been logged.
+   */
+  private hasWarnedTransientSeen = false;
+
+  /**
+   * Indicates whether this store instance is backed by a persistent storage adapter.
+   *
+   * @remarks
+   * When `false`, user tokens and changelog seen sets exist in memory only
+   * and will not survive application restarts. Call {@link UserTokenStore.configure}
+   * or provide a custom {@link TokenStorageAdapter} to the constructor to enable
+   * durable cross-session persistence.
+   */
+  public get isPersistent(): boolean {
+    return this.storage !== null;
+  }
+
+  /**
+   * Emits a one-time console warning in development mode if the store is not backed
+   * by a persistent storage adapter when changelog seen-status is inspected or marked.
+   */
+  public warnUnpersistedChangelogSeen(): void {
+    if (this.storage !== null || this.hasWarnedTransientSeen) {
+      return;
+    }
+    if (isDevMode()) {
+      this.hasWarnedTransientSeen = true;
+      console.warn(
+        '[CupThread] Changelog seen-status will not survive app restarts because no persistent storage adapter is configured. ' +
+          'Call UserTokenStore.configure(adapter) with an AsyncStorage adapter (or pass a persistent tokenStore) to prevent the changelog overlay from appearing on every launch.'
+      );
+    }
+  }
+
+  /**
+   * Resets the dev warning flag for test environments.
+   */
+  public resetWarningForTests(): void {
+    this.hasWarnedTransientSeen = false;
+  }
+
+  /**
+   * Resets the shared singleton instance for test isolation.
+   */
+  public static resetSharedForTests(): void {
+    this._shared = null;
+  }
 
   /**
    * Creates a new `UserTokenStore` instance.
@@ -493,6 +583,9 @@ export class UserTokenStore {
    */
   public async markChangelogSeen(versionOrId: string): Promise<void> {
     if (!versionOrId) return;
+    if (!this.isPersistent) {
+      this.warnUnpersistedChangelogSeen();
+    }
     const seenSet = await this.getSeenChangelogs();
     if (seenSet.has(versionOrId)) return;
 

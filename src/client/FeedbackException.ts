@@ -29,7 +29,9 @@ export class UnexpectedStatusException extends FeedbackException {
   readonly responseBody: string;
 
   constructor(status: number, responseBody: string) {
-    super(`CupThread API responded with unexpected status HTTP ${status}: ${responseBody}`);
+    // Keep the raw body off `message` — it must never reach end-user UI. The
+    // full payload stays available on `responseBody` for host diagnostics.
+    super(`CupThread API responded with unexpected status HTTP ${status}`);
     this.name = 'UnexpectedStatusException';
     this.status = status;
     this.responseBody = responseBody;
@@ -62,6 +64,60 @@ export class TurnstileRequiredException extends FeedbackException {
     this.name = 'TurnstileRequiredException';
     this.status = status;
     this.responseBody = responseBody;
+  }
+}
+
+/**
+ * Thrown when an intake endpoint (`POST /api/v1/feedback`,
+ * `POST /api/v1/feature-requests`) returns HTTP 402 Payment Required because
+ * the workspace has reached its monthly submission quota or its subscription
+ * is inactive.
+ */
+export class PaymentRequiredException extends FeedbackException {
+  readonly status: number = 402;
+  readonly code?: string;
+  readonly responseBody: string;
+
+  constructor(message: string = 'Payment required.', code?: string, responseBody: string = '') {
+    super(message);
+    this.name = 'PaymentRequiredException';
+    this.code = code;
+    this.responseBody = responseBody;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Thrown when a submission is rejected because the workspace has reached its
+ * monthly submission quota (`tier_limit_submissions`).
+ */
+export class QuotaExceededException extends PaymentRequiredException {
+  override readonly code = 'tier_limit_submissions';
+
+  constructor(
+    message: string = 'Monthly submission quota reached for this workspace.',
+    responseBody: string = ''
+  ) {
+    super(message, 'tier_limit_submissions', responseBody);
+    this.name = 'QuotaExceededException';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+/**
+ * Thrown when a submission is rejected because the workspace subscription is
+ * inactive or canceled (`subscription_inactive`).
+ */
+export class InactiveSubscriptionException extends PaymentRequiredException {
+  override readonly code = 'subscription_inactive';
+
+  constructor(
+    message: string = 'Workspace subscription is inactive or canceled.',
+    responseBody: string = ''
+  ) {
+    super(message, 'subscription_inactive', responseBody);
+    this.name = 'InactiveSubscriptionException';
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 

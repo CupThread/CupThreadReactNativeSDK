@@ -165,10 +165,10 @@ test('withVoteRollback restores the exact pre-tap count even when the optimistic
 
   // Degenerate hasVoted=true + voteCount=0: optimistic clamps at 0, rollback is exact
   const zeroItem = makeItem({ hasVoted: true, voteCount: 0 });
-  const zeroRollback = withVoteRollback(
-    withOptimisticVote(zeroItem),
-    { hasVoted: zeroItem.hasVoted, voteCount: zeroItem.voteCount }
-  );
+  const zeroRollback = withVoteRollback(withOptimisticVote(zeroItem), {
+    hasVoted: zeroItem.hasVoted,
+    voteCount: zeroItem.voteCount,
+  });
   assert.equal(zeroRollback.hasVoted, true);
   assert.equal(zeroRollback.voteCount, 0);
 });
@@ -249,7 +249,10 @@ test('useToggleVote prevents double-tap race and tracks isVoting in-flight state
   } as any;
 
   let stateItem = makeItem({ id: 'fr_rapid', hasVoted: false, voteCount: 10 });
-  const applyChange = (_id: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem
+  ) => {
     stateItem = transform(stateItem);
   };
 
@@ -294,7 +297,10 @@ test('useToggleVote rolls back optimistic state on network error and clears isVo
   } as any;
 
   let stateItem = makeItem({ id: 'fr_fail', hasVoted: false, voteCount: 42 });
-  const applyChange = (_id: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem
+  ) => {
     stateItem = transform(stateItem);
   };
 
@@ -327,7 +333,10 @@ test('useToggleVote ignores own requests and empty userToken', () => {
   } as any;
 
   let ownItem = makeItem({ id: 'fr_own', isOwnRequest: true, hasVoted: false, voteCount: 5 });
-  const applyChange = (_id: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem
+  ) => {
     ownItem = transform(ownItem);
   };
 
@@ -425,8 +434,7 @@ test('uploadAttachment accepts 202 responses like the rest of the pipeline', asy
 test('uploadAttachment maps error statuses through the shared pipeline', async () => {
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async () =>
-    new Response('server exploded', { status: 500 })) as any;
+  globalThis.fetch = (async () => new Response('server exploded', { status: 500 })) as any;
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
     await assert.rejects(
@@ -438,7 +446,10 @@ test('uploadAttachment maps error statuses through the shared pipeline', async (
       (err: any) => {
         assert.ok(err instanceof UnexpectedStatusException);
         assert.equal(err.status, 500);
-        assert.equal(err.message.includes('server exploded'), true);
+        // The raw body must stay off `message` (it can reach end-user UI);
+        // it remains available on `responseBody` for host diagnostics.
+        assert.equal(err.message.includes('server exploded'), false);
+        assert.equal(err.responseBody, 'server exploded');
         return true;
       }
     );
@@ -468,8 +479,7 @@ test('uploadAttachment maps error statuses through the shared pipeline', async (
 
 test('uploadAttachment throws UnreadableUploadResponseException on malformed JSON', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response('this is not json {', { status: 200 })) as any;
+  globalThis.fetch = (async () => new Response('this is not json {', { status: 200 })) as any;
 
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
@@ -495,7 +505,7 @@ test('uploadAttachment throws UnreadableUploadResponseException on malformed JSO
 
 test('UserTokenStore: persisted token wins even if the sync getter was read during load', async () => {
   const EXISTING_TOKEN = 'persisted-token-wins-123';
-  const mem: Record<string, string> = { 'cupthread_user_token_v1': EXISTING_TOKEN };
+  const mem: Record<string, string> = { cupthread_user_token_v1: EXISTING_TOKEN };
 
   const asyncAdapter = {
     getItem: async (key: string) => {
@@ -567,4 +577,191 @@ test('openSafeLinkUrl never opens phone, SMS, intent, or custom deep-link scheme
   }
 
   assert.equal(openCalls, 0, 'opener must never be called for unsafe schemes');
+});
+
+// ---------------------------------------------------------------------------
+// Issue #32 — fetchFeatureRequests user token transport (CWE-598 prevention)
+// ---------------------------------------------------------------------------
+
+test('fetchFeatureRequests URL hygiene: token is omitted from query string and sent in X-User-Token header by default', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedHeaders: Record<string, string> = {};
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = url.toString();
+    capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_sec_test',
+    });
+
+    await client.fetchFeatureRequests({ userToken: 'usr_secret_123' });
+
+    const parsed = new URL(capturedUrl);
+    // 1. URL hygiene: query string must NOT contain userToken or token secret
+    assert.equal(
+      parsed.searchParams.has('userToken'),
+      false,
+      'URL query must not have userToken parameter'
+    );
+    assert.equal(
+      capturedUrl.includes('usr_secret_123'),
+      false,
+      'URL must not contain token value anywhere'
+    );
+
+    // 2. Header presence: token transmitted via X-User-Token
+    assert.equal(
+      capturedHeaders['X-User-Token'],
+      'usr_secret_123',
+      'X-User-Token header must contain token'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchFeatureRequests transition modes: tokenTransport config and per-call override', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedHeaders: Record<string, string> = {};
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = url.toString();
+    capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    // Mode: 'both' -> both header and query param present
+    const clientBoth = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_sec_test',
+      tokenTransport: 'both',
+    });
+    await clientBoth.fetchFeatureRequests({ userToken: 'usr_both_456' });
+    let parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('userToken'), 'usr_both_456');
+    assert.equal(capturedHeaders['X-User-Token'], 'usr_both_456');
+
+    // Mode: 'query' -> query param present, header absent
+    const clientQuery = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_sec_test',
+      tokenTransport: 'query',
+    });
+    await clientQuery.fetchFeatureRequests({ userToken: 'usr_query_789' });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('userToken'), 'usr_query_789');
+    assert.equal(capturedHeaders['X-User-Token'], undefined);
+
+    // Mode: 'header' -> header present, query param absent
+    const clientHeader = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_sec_test',
+      tokenTransport: 'header',
+    });
+    await clientHeader.fetchFeatureRequests({ userToken: 'usr_header_999' });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['X-User-Token'], 'usr_header_999');
+
+    // Per-call override: client is 'header', call overrides with 'both'
+    await clientHeader.fetchFeatureRequests({
+      userToken: 'usr_override_111',
+      tokenTransport: 'both',
+    });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('userToken'), 'usr_override_111');
+    assert.equal(capturedHeaders['X-User-Token'], 'usr_override_111');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchFeatureRequests regression guard: query parameters (appKey, limit, offset, q, versionId) still round-trip', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    capturedUrl = url.toString();
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_roundtrip',
+    });
+
+    await client.fetchFeatureRequests({
+      userToken: 'usr_secret_123',
+      limit: 30,
+      offset: 60,
+      query: 'bluetooth audio',
+      versionId: 'v1.5.0',
+    });
+
+    const parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('appKey'), 'app_roundtrip');
+    assert.equal(parsed.searchParams.get('limit'), '30');
+    assert.equal(parsed.searchParams.get('offset'), '60');
+    assert.equal(parsed.searchParams.get('q'), 'bluetooth audio');
+    assert.equal(parsed.searchParams.get('versionId'), 'v1.5.0');
+    assert.equal(parsed.searchParams.has('userToken'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchFeatureRequests: absent or empty userToken does not serialize literal undefined or empty param', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedHeaders: Record<string, string> = {};
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = url.toString();
+    capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_empty_tok',
+      tokenTransport: 'both',
+    });
+
+    // Empty string
+    await client.fetchFeatureRequests({ userToken: '' });
+    let parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['X-User-Token'], undefined);
+
+    // undefined token (e.g. from JS consumer)
+    await client.fetchFeatureRequests({ userToken: undefined as any });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedUrl.includes('undefined'), false);
+    assert.equal(capturedHeaders['X-User-Token'], undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

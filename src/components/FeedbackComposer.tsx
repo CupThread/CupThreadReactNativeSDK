@@ -17,13 +17,21 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadContext,
 } from '../theme/CupThreadThemeProvider';
 import { UserTokenStore } from '../client/UserTokenStore';
-import { TurnstileRequiredException } from '../client/FeedbackException';
+import {
+  InactiveSubscriptionException,
+  PaymentRequiredException,
+  QuotaExceededException,
+  TurnstileRequiredException,
+} from '../client/FeedbackException';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { userFacingErrorMessage } from '../utils/errors';
+import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -132,6 +140,7 @@ export function FeedbackComposer({
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const { appConfig } = useCupThreadContext();
 
   const [title, setTitle] = useState(initialDraft?.title || '');
   const [description, setDescription] = useState(initialDraft?.description || '');
@@ -146,21 +155,30 @@ export function FeedbackComposer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handlePickAttachment = async () => {
-    if (!onPickAttachment) return;
+    if (!onPickAttachment || isSubmittingRef.current || isSubmitting || isUploadingAttachment) {
+      return;
+    }
     try {
       setIsUploadingAttachment(true);
       const picked = await onPickAttachment();
-      if (!picked) {
+      if (!picked || isSubmittingRef.current || isSubmitting) {
         return;
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
       const { succeeded, failed } = await processPickedAttachments(items, {
         upload: async (options) => {
+          if (isSubmittingRef.current || isSubmitting) {
+            throw new Error('Upload cancelled: submission in progress');
+          }
           const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
           return client.uploadAttachment({ ...options, userToken: effectiveToken });
         },
       });
+
+      if (isSubmittingRef.current || isSubmitting) {
+        return;
+      }
 
       if (succeeded.length > 0) {
         setAttachments((prev) => [...prev, ...succeeded]);
@@ -169,18 +187,25 @@ export function FeedbackComposer({
         setErrorMessage(strings.feedbackComposer.someUploadsFailed(failed.length));
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
+      if (!isSubmittingRef.current && !isSubmitting) {
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.feedbackComposer.uploadFailed, strings.common)
+        );
+      }
     } finally {
       setIsUploadingAttachment(false);
     }
   };
 
   const handleRemoveAttachment = (indexToRemove: number) => {
+    if (isSubmittingRef.current || isSubmitting) return;
     setAttachments((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleSubmit = async () => {
-    if (isSubmittingRef.current) return;
+    if (isSubmittingRef.current || isSubmitting || isUploadingAttachment || !isTokenReady) {
+      return;
+    }
     if (title.trim().length < 3) {
       setErrorMessage(strings.feedbackComposer.titleMinLengthError);
       return;
@@ -191,21 +216,34 @@ export function FeedbackComposer({
     }
 
     isSubmittingRef.current = true;
-    setErrorMessage(null);
     setIsSubmitting(true);
+    setErrorMessage(null);
 
     try {
+      const candidatePlatform = initialDraft?.platform || client.config.defaultPlatform;
+      const resolvedPlatform = resolveAllowedPlatform(
+        candidatePlatform,
+        appConfig?.allowedPlatforms,
+        getRuntimePlatform()
+      );
+
       const draft: FeedbackDraft = {
         title: title.trim(),
         description: description.trim(),
         reporterName: reporterName.trim() || undefined,
         reporterEmail: reporterEmail.trim() || undefined,
+        platform: resolvedPlatform,
+        appVersion: initialDraft?.appVersion,
+        buildNumber: initialDraft?.buildNumber,
+        turnstileToken: initialDraft?.turnstileToken,
         attachments,
         metadata: initialDraft?.metadata,
       };
 
       const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
       const result = await client.submit(draft, effectiveToken);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
 
       if (onSubmitSuccess) {
         onSubmitSuccess(result);
@@ -214,12 +252,22 @@ export function FeedbackComposer({
         if (onClose) onClose();
       }
     } catch (err: any) {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
       if (err instanceof TurnstileRequiredException) {
         // The draft stays intact so the user can retry after the host's
         // verification flow resolves a fresh token.
         setErrorMessage(strings.common.verificationRequired);
+      } else if (err instanceof QuotaExceededException) {
+        setErrorMessage(strings.common.quotaExceeded || err.message);
+      } else if (err instanceof InactiveSubscriptionException) {
+        setErrorMessage(strings.common.subscriptionInactive || err.message);
+      } else if (err instanceof PaymentRequiredException) {
+        setErrorMessage(err.message || strings.feedbackComposer.submitFailed);
       } else {
-        setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
+        );
       }
     } finally {
       isSubmittingRef.current = false;
@@ -234,7 +282,12 @@ export function FeedbackComposer({
           {strings.feedbackComposer.title}
         </Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.close}
+          >
             <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -339,11 +392,16 @@ export function FeedbackComposer({
           {onPickAttachment && (
             <TouchableOpacity
               onPress={handlePickAttachment}
-              disabled={isUploadingAttachment}
+              disabled={isUploadingAttachment || isSubmitting}
               style={[
                 styles.addAttachmentBtn,
-                { borderColor: colors.primary, opacity: isUploadingAttachment ? 0.6 : 1 },
+                {
+                  borderColor: colors.primary,
+                  opacity: isUploadingAttachment || isSubmitting ? 0.6 : 1,
+                },
               ]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isUploadingAttachment }}
             >
               {isUploadingAttachment ? (
                 <View style={styles.uploadingRow}>
@@ -371,6 +429,7 @@ export function FeedbackComposer({
                 style={[
                   styles.attachmentItem,
                   { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                  idx === attachments.length - 1 && styles.attachmentItemLast,
                 ]}
               >
                 <View style={styles.attachmentInfo}>
@@ -391,8 +450,15 @@ export function FeedbackComposer({
                 </View>
                 <TouchableOpacity
                   onPress={() => handleRemoveAttachment(idx)}
-                  style={styles.removeAttachmentBtn}
+                  disabled={isSubmitting}
+                  style={[styles.removeAttachmentBtn, isSubmitting && { opacity: 0.5 }]}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    att.filename
+                      ? `${strings.feedbackComposer.removeAttachment}: ${att.filename}`
+                      : strings.feedbackComposer.removeAttachment
+                  }
                 >
                   <Text style={{ color: colors.textMuted, fontSize: 16 }}>✕</Text>
                 </TouchableOpacity>
@@ -413,6 +479,10 @@ export function FeedbackComposer({
             opacity: isSubmitting || isUploadingAttachment || !isTokenReady ? 0.6 : 1,
           },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: isSubmitting || isUploadingAttachment || !isTokenReady,
+        }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
@@ -427,7 +497,12 @@ export function FeedbackComposer({
 
   if (isModal) {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={onClose}
+        accessibilityViewIsModal={true}
+      >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {content}
         </SafeAreaView>
@@ -508,7 +583,6 @@ const styles = StyleSheet.create({
   },
   attachmentsList: {
     marginTop: 4,
-    gap: 8,
   },
   attachmentItem: {
     flexDirection: 'row',
@@ -517,6 +591,10 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+    marginBottom: 8,
+  },
+  attachmentItemLast: {
+    marginBottom: 0,
   },
   attachmentInfo: {
     flexDirection: 'row',
