@@ -19,7 +19,6 @@ import {
   useCupThreadStrings,
   useCupThreadContext,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
 import {
   InactiveSubscriptionException,
   PaymentRequiredException,
@@ -29,6 +28,7 @@ import {
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
 import { userFacingErrorMessage } from '../utils/errors';
 import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
@@ -172,7 +172,7 @@ export function FeedbackComposer({
           if (isSubmittingRef.current || isSubmitting) {
             throw new Error('Upload cancelled: submission in progress');
           }
-          const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+          const effectiveToken = await resolveEffectiveUserToken(userToken);
           return client.uploadAttachment({ ...options, userToken: effectiveToken });
         },
       });
@@ -255,7 +255,7 @@ export function FeedbackComposer({
         metadata: initialDraft?.metadata,
       };
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submit(draft, effectiveToken);
       isSubmittingRef.current = false;
       setIsSubmitting(false);

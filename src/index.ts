@@ -39,3 +39,4 @@ export * from './utils/errors';
 export * from './utils/formatters';
 export * from './utils/linkUrl';
 export * from './utils/platform';
+export * from './utils/userToken';

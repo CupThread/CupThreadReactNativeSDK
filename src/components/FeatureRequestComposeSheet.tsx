@@ -18,7 +18,6 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
 import {
   InactiveSubscriptionException,
   PaymentRequiredException,
@@ -27,6 +26,7 @@ import {
 } from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
 import { userFacingErrorMessage } from '../utils/errors';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
@@ -124,7 +124,7 @@ export function FeatureRequestComposeSheet({
         requesterName: requesterName.trim() || undefined,
       };
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submitFeatureRequest(draft, effectiveToken);
 
       // Surface the outcome even when a host provides `onSubmitSuccess`:

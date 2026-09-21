@@ -14,12 +14,12 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
-import { UserTokenStore } from '../client/UserTokenStore';
 import type { FeatureRequestComment, CommentDraft } from '../types';
 import { Avatar } from './Avatar';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 import { MarkdownText } from './MarkdownText';
 import { userFacingErrorMessage } from '../utils/errors';
 
@@ -103,7 +103,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
       setIsSubmitting(true);
       setError(null);
 
-      const effectiveToken = userToken || (await UserTokenStore.shared.getToken());
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const draft: CommentDraft = {
         body: commentText.trim(),
         authorName: authorName.trim() || undefined,

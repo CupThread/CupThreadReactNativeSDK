@@ -16,6 +16,7 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
 import type { ChangelogEntry } from '../types';
 import { Badge } from './Badge';
@@ -23,6 +24,7 @@ import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { resolveEffectiveUserToken } from '../utils/userToken';
 import { userFacingErrorMessage } from '../utils/errors';
 
 export interface WhatsNewScreenProps {
@@ -34,6 +36,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
@@ -62,11 +65,13 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
       Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
+    if (!isTokenReady) return;
 
     isSubscribingRef.current = true;
     try {
       setIsSubscribing(true);
-      await client.subscribeToChangelog(email.trim(), userToken);
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
+      await client.subscribeToChangelog(email.trim(), effectiveToken);
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
@@ -123,10 +128,16 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
           />
           <TouchableOpacity
             onPress={handleSubscribe}
-            disabled={isSubscribing}
-            style={[styles.subscribeButton, { backgroundColor: colors.primary }]}
+            disabled={isSubscribing || !isTokenReady}
+            style={[
+              styles.subscribeButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: isSubscribing || !isTokenReady ? 0.6 : 1,
+              },
+            ]}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isSubscribing }}
+            accessibilityState={{ disabled: isSubscribing || !isTokenReady }}
           >
             {isSubscribing ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
