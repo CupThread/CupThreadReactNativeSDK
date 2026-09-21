@@ -11,6 +11,8 @@ export const zhHantStrings: CupThreadStrings = {
     submitting: '提交中...',
     error: '錯誤',
     retry: '重試',
+    timeoutError: '請求逾時，請重試。',
+    networkError: '網路錯誤，請檢查網路連線後重試。',
     optional: '選填',
     required: '必填',
     anonymous: '匿名使用者',
@@ -20,6 +22,8 @@ export const zhHantStrings: CupThreadStrings = {
     hoursAgo: (h: number) => `${h} 小時前`,
     daysAgo: (d: number) => `${d} 天前`,
     verificationRequired: '提交前需要完成人機驗證，請在完成驗證後重試。',
+    quotaExceeded: '本月提交配額已達上限，暫時暫停提交。',
+    subscriptionInactive: '應用訂閱已停用，暫時暫停提交。',
   },
   feedbackComposer: {
     title: '提供意見回饋',
@@ -42,6 +46,7 @@ export const zhHantStrings: CupThreadStrings = {
     attachmentsHeader: '附件',
     uploadFailed: '上傳附件失敗。',
     someUploadsFailed: (count: number) => `${count} 個附件上傳失敗。`,
+    unsupportedAttachment: (count: number) => `${count} 個所選檔案格式不受支援，已略過。`,
     submitFailed: '提交意見回饋失敗，請重試。',
     sectionUnavailable: '意見反應功能暫時無法使用。',
   },
@@ -59,6 +64,7 @@ export const zhHantStrings: CupThreadStrings = {
     loadingMore: '載入更多...',
     rateLimited: '搜尋過於頻繁，請稍等片刻後重試。',
     sectionUnavailable: '功能需求暫時無法使用。',
+    voteFailed: '投票失敗，請稍後重試。',
   },
   featureRequestCompose: {
     modalTitle: '提出功能需求',

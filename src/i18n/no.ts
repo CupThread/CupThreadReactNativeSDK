@@ -11,6 +11,8 @@ export const noStrings: CupThreadStrings = {
     submitting: 'Sender inn...',
     error: 'Feil',
     retry: 'Prøv igjen',
+    timeoutError: 'Forespørselen tok for lang tid. Vennligst prøv igjen.',
+    networkError: 'Nettverksfeil. Vennligst sjekk internettforbindelsen din og prøv igjen.',
     optional: 'valgfritt',
     required: 'påkrevd',
     anonymous: 'Anonym bruker',
@@ -21,6 +23,8 @@ export const noStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 dag siden' : `${d} dager siden`),
     verificationRequired:
       'Menneskelig verifisering kreves for å sende. Prøv igjen etter å ha fullført verifiseringen.',
+    quotaExceeded: 'Månedlig innsendingskvote er nådd. Innsendinger er midlertidig satt på pause.',
+    subscriptionInactive: 'Innsendinger er satt på pause fordi app-abonnementet er inaktivt.',
   },
   feedbackComposer: {
     title: 'Send tilbakemelding',
@@ -44,6 +48,10 @@ export const noStrings: CupThreadStrings = {
     uploadFailed: 'Kunne ikke laste opp vedlegg.',
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Kunne ikke laste opp 1 vedlegg.' : `Kunne ikke laste opp ${count} vedlegg.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Hoppet over 1 fil: ustøttet vedleggsformat.'
+        : `Hoppet over ${count} filer: ustøttet vedleggsformat.`,
     submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
     sectionUnavailable: 'Tilbakemelding er for øyeblikket ikke tilgjengelig.',
   },
@@ -61,6 +69,7 @@ export const noStrings: CupThreadStrings = {
     loadingMore: 'Laster inn mer...',
     rateLimited: 'For mange søk. Vent litt og prøv igjen.',
     sectionUnavailable: 'Funksjonsforespørsler er for øyeblikket ikke tilgjengelig.',
+    voteFailed: 'Kunne ikke oppdatere stemme. Prøv igjen.',
   },
   featureRequestCompose: {
     modalTitle: 'Foreslå funksjon',

@@ -1,11 +1,139 @@
-import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react';
 import { useColorScheme } from 'react-native';
 import type { SdkTheme, PublicAppConfig } from '../types';
 import { FeedbackClient } from '../client/FeedbackClient';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { getThemeColors, ThemeColors } from './SdkTheme';
 import type { CupThreadStrings, DeepPartial } from '../i18n';
-import { getLocaleStrings, enStrings } from '../i18n';
+import { enStrings, getLocaleStrings, resolveLocale } from '../i18n';
+
+declare const __DEV__: boolean | undefined;
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      return reject(err);
+    }
+
+    const timer = setTimeout(() => {
+      if (signal?.removeEventListener) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      resolve();
+    }, ms);
+
+    function onAbort() {
+      clearTimeout(timer);
+      if (signal?.removeEventListener) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      reject(err);
+    }
+
+    if (signal?.addEventListener) {
+      signal.addEventListener('abort', onAbort);
+    }
+  });
+}
+
+function logDevConfigWarning(err: unknown) {
+  const isDev =
+    typeof __DEV__ !== 'undefined'
+      ? Boolean(__DEV__)
+      : typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  if (isDev) {
+    console.warn('[CupThread] Failed to load app config:', err);
+  }
+}
+
+/**
+ * State representing the remote app configuration fetch lifecycle.
+ */
+export interface ConfigFetchState {
+  /**
+   * Remote application settings and feature flags, or `null` while loading or after failure.
+   */
+  appConfig: PublicAppConfig | null;
+
+  /**
+   * True while remote configuration is actively being retrieved.
+   */
+  isLoadingConfig: boolean;
+
+  /**
+   * Last configuration fetch failure, or `null` when the last attempt succeeded (or is in flight).
+   */
+  configError: Error | null;
+}
+
+/**
+ * Lifecycle events for remote application configuration fetching.
+ */
+export type ConfigFetchEvent =
+  | { type: 'start' }
+  | { type: 'success'; config: PublicAppConfig }
+  | { type: 'failure'; error: Error }
+  | { type: 'abort' };
+
+/**
+ * Pure transition helper computing the next config fetch state given an event.
+ */
+export function nextConfigState(prev: ConfigFetchState, event: ConfigFetchEvent): ConfigFetchState {
+  switch (event.type) {
+    case 'start':
+      return {
+        ...prev,
+        isLoadingConfig: true,
+        configError: null,
+      };
+    case 'success':
+      return {
+        appConfig: event.config,
+        isLoadingConfig: false,
+        configError: null,
+      };
+    case 'failure':
+      return {
+        ...prev,
+        isLoadingConfig: false,
+        configError: event.error,
+      };
+    case 'abort':
+      return prev;
+  }
+}
+
+/**
+ * Determines whether a failed config fetch should be retried automatically.
+ *
+ * @param attempt - The zero-indexed attempt count (0 for initial failure).
+ * @param error - The error encountered during fetch.
+ * @returns True if the request should be retried (retries once for non-abort errors).
+ */
+export function shouldRetryAfterFailure(attempt: number, error: unknown): boolean {
+  if (attempt >= 1) {
+    return false;
+  }
+  if (error && typeof error === 'object' && (error as any).name === 'AbortError') {
+    return false;
+  }
+  return true;
+}
 
 /**
  * Context value provided by {@link CupThreadProvider} to descendant SDK components.
@@ -47,7 +175,7 @@ export interface CupThreadContextValue {
   colors: ThemeColors;
 
   /**
-   * Remote application settings and feature flags, or `null` while loading.
+   * Remote application settings and feature flags, or `null` while loading or after failure.
    */
   appConfig: PublicAppConfig | null;
 
@@ -57,7 +185,14 @@ export interface CupThreadContextValue {
   isLoadingConfig: boolean;
 
   /**
-   * Active locale string (e.g. `'en'`, `'zh-Hans'`).
+   * Last configuration fetch failure, or `null` when the last attempt succeeded (or is in flight).
+   */
+  configError: Error | null;
+
+  /**
+   * Active locale string (e.g. `'en'`, `'zh-Hans'`, `'pt-BR'`) — the resolved
+   * result of the provider's `locale` prop: `'auto'` resolves to the detected
+   * device locale, or `'en'` when none is detectable.
    */
   locale: string;
 
@@ -68,6 +203,10 @@ export interface CupThreadContextValue {
 
   /**
    * Re-fetches remote application configuration from the server.
+   *
+   * @remarks
+   * Clears any previous {@link configError}, resets loading state, and retrieves
+   * fresh application settings and branding from the server.
    */
   refreshConfig: () => Promise<void>;
 }
@@ -111,16 +250,33 @@ export interface CupThreadProviderProps {
   theme?: SdkTheme;
 
   /**
-   * Locale identifier for UI text localization (e.g. `'en'`, `'zh-Hans'`, `'zh'`, `'zh-CN'`).
+   * Locale identifier for UI text localization (e.g. `'en'`, `'zh-Hans'`, `'zh'`, `'zh-CN'`),
+   * or `'auto'` to follow the device language.
    *
-   * @defaultValue `'en'`
+   * @remarks
+   * With `'auto'` (the default), the device locale is detected through
+   * `expo-localization` or `react-native-localize` when the host app ships
+   * either, then React Native core (SettingsManager / I18nManager, or
+   * `navigator.language` on web), and falls back to `'en'` when nothing is
+   * detectable. An explicit tag always wins verbatim — pass one to force a
+   * language (e.g. for an in-app language picker). The resolved value is
+   * exposed as {@link CupThreadContextValue.locale}.
+   *
+   * @defaultValue `'auto'`
    */
-  locale?: string;
+  locale?: string | 'auto';
 
   /**
    * Custom string overrides deeply merged on top of the active locale dictionary.
    */
   strings?: DeepPartial<CupThreadStrings>;
+
+  /**
+   * Internal delay in milliseconds before retrying a failed initial config fetch at mount.
+   * Defaults to 2000ms.
+   * @internal
+   */
+  _retryDelayMs?: number;
 
   /**
    * React child elements wrapped by the SDK context provider.
@@ -133,7 +289,8 @@ export interface CupThreadProviderProps {
  *
  * @remarks
  * Wrap your root React Native app component or navigation container in `<CupThreadProvider>`
- * to supply the active {@link FeedbackClient}, theme tokens, and user credentials.
+ * to supply the active {@link FeedbackClient}, theme tokens, user credentials, and
+ * localized strings — UI text follows the device language by default (`locale="auto"`).
  *
  * @example
  * ```tsx
@@ -158,9 +315,10 @@ export function CupThreadProvider({
   client,
   userToken: explicitUserToken,
   theme: explicitTheme,
-  locale = 'en',
+  locale = 'auto',
   strings: customStrings,
   children,
+  _retryDelayMs,
 }: CupThreadProviderProps) {
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
@@ -171,8 +329,12 @@ export function CupThreadProvider({
   // attributed to a throwaway identity.
   const [resolvedUserToken, setResolvedUserToken] = useState<string>(explicitUserToken || '');
   const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(explicitUserToken));
-  const [appConfig, setAppConfig] = useState<PublicAppConfig | null>(null);
-  const [isLoadingConfig, setIsLoadingConfig] = useState<boolean>(true);
+  const [configState, setConfigState] = useState<ConfigFetchState>({
+    appConfig: null,
+    isLoadingConfig: true,
+    configError: null,
+  });
+  const activeRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (explicitUserToken) {
@@ -206,40 +368,103 @@ export function CupThreadProvider({
     };
   }, [explicitUserToken]);
 
-  const loadConfig = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setIsLoadingConfig(true);
-      const config = await client.fetchAppConfig({ signal });
-      if (signal?.aborted) return;
-      setAppConfig(config);
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      // Non-fatal
-    } finally {
-      if (!signal?.aborted) {
-        setIsLoadingConfig(false);
+  const loadConfig = useCallback(
+    async (signal?: AbortSignal, options?: { maxRetries?: number; retryDelayMs?: number }) => {
+      const requestId = ++activeRequestIdRef.current;
+      const maxRetries = options?.maxRetries ?? 0;
+      const retryDelayMs = options?.retryDelayMs ?? _retryDelayMs ?? 2000;
+
+      setConfigState((prev) => nextConfigState(prev, { type: 'start' }));
+
+      let attempt = 0;
+      while (true) {
+        try {
+          const config = await client.fetchAppConfig({ signal });
+          if (signal?.aborted || requestId !== activeRequestIdRef.current) {
+            if (signal?.aborted) {
+              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+            }
+            return;
+          }
+          setConfigState((prev) => nextConfigState(prev, { type: 'success', config }));
+          return;
+        } catch (rawErr: any) {
+          if (
+            rawErr?.name === 'AbortError' ||
+            signal?.aborted ||
+            requestId !== activeRequestIdRef.current
+          ) {
+            if (rawErr?.name === 'AbortError' || signal?.aborted) {
+              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+            }
+            return;
+          }
+
+          if (attempt < maxRetries && shouldRetryAfterFailure(attempt, rawErr)) {
+            attempt++;
+            try {
+              await delay(retryDelayMs, signal);
+            } catch (delayErr: any) {
+              if (
+                delayErr?.name === 'AbortError' ||
+                signal?.aborted ||
+                requestId !== activeRequestIdRef.current
+              ) {
+                if (delayErr?.name === 'AbortError' || signal?.aborted) {
+                  setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+                }
+                return;
+              }
+            }
+            if (signal?.aborted || requestId !== activeRequestIdRef.current) {
+              if (signal?.aborted) {
+                setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+              }
+              return;
+            }
+            continue;
+          }
+
+          const error = rawErr instanceof Error ? rawErr : new Error(String(rawErr));
+          logDevConfigWarning(rawErr);
+
+          setConfigState((prev) => nextConfigState(prev, { type: 'failure', error }));
+          return;
+        }
       }
-    }
-  }, [client]);
+    },
+    [client, _retryDelayMs]
+  );
+
+  const refreshConfig = useCallback(
+    async (signal?: AbortSignal) => {
+      await loadConfig(signal, { maxRetries: 0 });
+    },
+    [loadConfig]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    loadConfig(controller.signal);
+    loadConfig(controller.signal, { maxRetries: 1 });
     return () => {
       controller.abort();
     };
   }, [loadConfig]);
 
-  const effectiveTheme: SdkTheme =
-    explicitTheme || appConfig?.sdk?.theme || 'system';
+  const effectiveTheme: SdkTheme = explicitTheme || configState.appConfig?.sdk?.theme || 'system';
 
   const colors = useMemo(() => {
     return getThemeColors(effectiveTheme, isDarkMode);
   }, [effectiveTheme, isDarkMode]);
 
+  // 'auto' resolves to the detected device locale (or 'en'); an explicit tag
+  // is used verbatim. Re-evaluated when the locale input changes so flipping
+  // the prop between 'auto' and a fixed language takes effect immediately.
+  const resolvedLocale = useMemo(() => resolveLocale(locale), [locale]);
+
   const resolvedStrings = useMemo(() => {
-    return getLocaleStrings(locale, customStrings);
-  }, [locale, customStrings]);
+    return getLocaleStrings(resolvedLocale, customStrings);
+  }, [resolvedLocale, customStrings]);
 
   const value: CupThreadContextValue = useMemo(
     () => ({
@@ -248,13 +473,26 @@ export function CupThreadProvider({
       isTokenReady,
       themeName: effectiveTheme,
       colors,
-      appConfig,
-      isLoadingConfig,
-      locale,
+      appConfig: configState.appConfig,
+      isLoadingConfig: configState.isLoadingConfig,
+      configError: configState.configError,
+      locale: resolvedLocale,
       strings: resolvedStrings,
-      refreshConfig: loadConfig,
+      refreshConfig,
     }),
-    [client, resolvedUserToken, isTokenReady, effectiveTheme, colors, appConfig, isLoadingConfig, locale, resolvedStrings, loadConfig]
+    [
+      client,
+      resolvedUserToken,
+      isTokenReady,
+      effectiveTheme,
+      colors,
+      configState.appConfig,
+      configState.isLoadingConfig,
+      configState.configError,
+      resolvedLocale,
+      resolvedStrings,
+      refreshConfig,
+    ]
   );
 
   return <CupThreadContext.Provider value={value}>{children}</CupThreadContext.Provider>;
@@ -397,9 +635,16 @@ export function useCupThreadTokenReadiness(): boolean {
  * @example
  * ```tsx
  * function DiagnosticsBar() {
- *   const { appConfig, isLoadingConfig, refreshConfig } = useCupThreadContext();
+ *   const { appConfig, isLoadingConfig, configError, refreshConfig } = useCupThreadContext();
+ *   if (configError) {
+ *     return (
+ *       <TouchableOpacity onPress={() => refreshConfig()}>
+ *         <Text>Config failed: {configError.message}. Tap to retry.</Text>
+ *       </TouchableOpacity>
+ *     );
+ *   }
  *   return (
- *     <TouchableOpacity onPress={refreshConfig}>
+ *     <TouchableOpacity onPress={() => refreshConfig()}>
  *       <Text>{isLoadingConfig ? 'Updating...' : appConfig?.name}</Text>
  *     </TouchableOpacity>
  *   );

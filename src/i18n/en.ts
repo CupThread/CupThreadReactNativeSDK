@@ -11,6 +11,8 @@ export const enStrings: CupThreadStrings = {
     submitting: 'Submitting...',
     error: 'Error',
     retry: 'Retry',
+    timeoutError: 'The request took too long to complete. Please try again.',
+    networkError: 'Network error. Please check your connection and try again.',
     optional: 'optional',
     required: 'required',
     anonymous: 'Anonymous User',
@@ -21,6 +23,9 @@ export const enStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}d ago`,
     verificationRequired:
       'Human verification is required to submit. Please try again after completing verification.',
+    quotaExceeded: 'Monthly submission quota reached for this app.',
+    subscriptionInactive:
+      'Submissions are currently paused because the app subscription is inactive.',
   },
   feedbackComposer: {
     title: 'Send Feedback',
@@ -44,6 +49,8 @@ export const enStrings: CupThreadStrings = {
     uploadFailed: 'Failed to upload attachment.',
     someUploadsFailed: (count: number) =>
       `${count} attachment${count === 1 ? '' : 's'} failed to upload.`,
+    unsupportedAttachment: (count: number) =>
+      `${count} selected file${count === 1 ? '' : 's'} skipped: unsupported attachment format.`,
     submitFailed: 'Failed to submit feedback. Please try again.',
     sectionUnavailable: 'Feedback is currently unavailable.',
   },
@@ -61,6 +68,7 @@ export const enStrings: CupThreadStrings = {
     loadingMore: 'Loading more...',
     rateLimited: 'Too many searches. Please wait a moment and try again.',
     sectionUnavailable: 'Feature requests are currently unavailable.',
+    voteFailed: 'Failed to update vote. Please try again.',
   },
   featureRequestCompose: {
     modalTitle: 'Propose Feature',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import { FeatureRequestDetail } from './FeatureRequestDetail';
 import { FeatureRequestComposeSheet } from './FeatureRequestComposeSheet';
 import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
+import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
 
 /**
@@ -92,17 +93,31 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [versions, setVersions] = useState<AppVersion[]>([]);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
   const [showCompose, setShowCompose] = useState<boolean>(false);
 
+  const fetchVersions = useCallback(
+    (signal: AbortSignal) => client.fetchVersions({ signal }),
+    [client]
+  );
+  const {
+    data: versionsData,
+    isLoading: isVersionsLoading,
+    error: versionsError,
+    reload: reloadVersions,
+  } = useAsyncData(fetchVersions, { enabled: isTokenReady });
+
+  const versions: AppVersion[] = versionsData ?? [];
+
   const {
     items,
+    total,
     hasMore,
     isLoading,
     isRefreshing,
     isLoadingMore,
     error: loadError,
+    loadMoreError,
     isRateLimited,
     loadMore,
     refresh,
@@ -119,23 +134,15 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     enabled: isEnabled || isLoadingConfig,
   });
 
-  useEffect(() => {
-    if (!isTokenReady || (!isLoadingConfig && !isEnabled)) return;
-    const controller = new AbortController();
-    client
-      .fetchVersions({ signal: controller.signal })
-      .then((v) => {
-        if (!controller.signal.aborted) setVersions(v || []);
-      })
-      .catch((err) => {
-        if (err?.name === 'AbortError' || controller.signal.aborted) return;
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [client, isTokenReady, isEnabled, isLoadingConfig]);
+  const handleRefresh = useCallback(async () => {
+    const tasks: Promise<any>[] = [refresh()];
+    if (versionsError) {
+      tasks.push(reloadVersions());
+    }
+    await Promise.allSettled(tasks);
+  }, [refresh, versionsError, reloadVersions]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
     userToken,
     applyItemChange
@@ -167,6 +174,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           hasVoted={item.hasVoted}
           onPress={() => handleToggleVote(item)}
           disabled={item.isOwnRequest || isVoting(item.id)}
+          error={getVoteError(item.id)}
         />
       </View>
 
@@ -221,7 +229,12 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -230,6 +243,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           onPress={() => setShowCompose(true)}
           style={[styles.composeBtn, { backgroundColor: colors.primary }]}
           activeOpacity={0.8}
+          accessibilityRole="button"
         >
           <Text style={[styles.composeBtnText, { color: colors.primaryText }]}>
             {strings.featureRequests.newButton}
@@ -255,7 +269,17 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         />
       </View>
 
-      {versions.length > 0 && (
+      {versionsError ? (
+        <View style={styles.versionsErrorContainer}>
+          <ErrorState
+            compact
+            message={strings.common.error}
+            retryLabel={strings.common.retry}
+            isRetrying={isVersionsLoading}
+            onRetry={reloadVersions}
+          />
+        </View>
+      ) : versions.length > 0 ? (
         <View style={styles.chipsContainer}>
           <FlatList
             horizontal
@@ -275,6 +299,8 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                       backgroundColor: isSelected ? colors.primary : colors.chipBg,
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text
                     style={[
@@ -292,7 +318,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             }}
           />
         </View>
-      )}
+      ) : null}
 
       {isRateLimited && items.length > 0 && (
         <View
@@ -307,7 +333,47 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         </View>
       )}
 
-      {isLoading ? (
+      {voteError && (
+        <View
+          style={[
+            styles.rateLimitBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {strings.featureRequests.voteFailed}
+          </Text>
+        </View>
+      )}
+
+      {/* Non-blocking refresh failure: keep the stale list visible with an
+          inline retry, since the full-screen ErrorState only covers an empty
+          list. Rate-limit failures are handled by the banner above. */}
+      {!isLoading && items.length > 0 && loadError && !isRefreshing && !isRateLimited && (
+        <View
+          style={[
+            styles.refreshErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={[styles.refreshErrorBannerText, { color: colors.danger }]}>
+            {strings.common.error}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              refresh();
+            }}
+            style={styles.refreshErrorRetry}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isLoading && items.length === 0 ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -317,6 +383,9 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           retryLabel={strings.common.retry}
           onRetry={() => {
             reload();
+            if (versionsError) {
+              void reloadVersions();
+            }
           }}
         />
       ) : items.length === 0 ? (
@@ -330,6 +399,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           <TouchableOpacity
             onPress={() => setShowCompose(true)}
             style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
           >
             <Text style={[styles.emptyButtonText, { color: colors.primaryText }]}>
               {strings.featureRequests.proposeButton}
@@ -345,7 +415,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
-              onRefresh={refresh}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
             />
           }
@@ -362,6 +432,29 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                 <Text style={[styles.footerText, { color: colors.textMuted }]}>
                   {strings.common.loadingMore}
                 </Text>
+              </View>
+            ) : hasMore ? (
+              <View style={styles.footerAffordance}>
+                {loadMoreError ? (
+                  <Text style={[styles.footerAffordanceText, { color: colors.danger }]}>
+                    {strings.common.error}
+                  </Text>
+                ) : (
+                  <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
+                    {strings.roadmap.showingCount(items.length, total)}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  onPress={() => {
+                    loadMore();
+                  }}
+                  style={[styles.loadMoreBtn, { borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
+                    {loadMoreError ? strings.common.retry : strings.roadmap.loadMore}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : null
           }
@@ -436,6 +529,10 @@ const styles = StyleSheet.create({
     height: 44,
     marginBottom: 6,
   },
+  versionsErrorContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 6,
+  },
   chipsList: {
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -455,6 +552,25 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  refreshErrorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  refreshErrorRetry: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   listContent: {
     padding: 16,
@@ -538,9 +654,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 8,
   },
   footerText: {
     fontSize: 13,
+    marginLeft: 8,
+  },
+  footerAffordance: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  footerAffordanceText: {
+    fontSize: 13,
+    marginRight: 12,
+  },
+  loadMoreBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  loadMoreBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

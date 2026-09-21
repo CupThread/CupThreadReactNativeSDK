@@ -11,6 +11,8 @@ export const plStrings: CupThreadStrings = {
     submitting: 'Wysyłanie...',
     error: 'Błąd',
     retry: 'Spróbuj ponownie',
+    timeoutError: 'Żądanie trwało zbyt długo. Spróbuj ponownie.',
+    networkError: 'Błąd sieci. Sprawdź połączenie internetowe i spróbuj ponownie.',
     optional: 'opcjonalne',
     required: 'wymagane',
     anonymous: 'Anonimowy użytkownik',
@@ -21,6 +23,9 @@ export const plStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 dzień temu' : `${d} dni temu`),
     verificationRequired:
       'Wysłanie wymaga weryfikacji człowieka. Spróbuj ponownie po jej ukończeniu.',
+    quotaExceeded: 'Osiągnięto miesięczny limit zgłoszeń. Zgłoszenia są tymczasowo wstrzymane.',
+    subscriptionInactive:
+      'Zgłoszenia są wstrzymane, ponieważ subskrypcja aplikacji jest nieaktywna.',
   },
   feedbackComposer: {
     title: 'Wyślij opinię',
@@ -46,6 +51,10 @@ export const plStrings: CupThreadStrings = {
       count === 1
         ? 'Nie udało się przesłać 1 załącznika.'
         : `Nie udało się przesłać ${count} załączników.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Pominięto 1 plik: nieobsługiwany format załącznika.'
+        : `Pominięto ${count} plików: nieobsługiwany format załącznika.`,
     submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
     sectionUnavailable: 'Opinie są obecnie niedostępne.',
   },
@@ -63,6 +72,7 @@ export const plStrings: CupThreadStrings = {
     loadingMore: 'Ładowanie kolejnych...',
     rateLimited: 'Zbyt wiele wyszukiwań. Odczekaj chwilę i spróbuj ponownie.',
     sectionUnavailable: 'Sugestie funkcji są obecnie niedostępne.',
+    voteFailed: 'Nie udało się zaktualizować głosu. Spróbuj ponownie.',
   },
   featureRequestCompose: {
     modalTitle: 'Zaproponuj funkcję',

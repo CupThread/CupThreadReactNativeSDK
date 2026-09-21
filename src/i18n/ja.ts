@@ -11,6 +11,8 @@ export const jaStrings: CupThreadStrings = {
     submitting: '送信中...',
     error: 'エラー',
     retry: '再試行',
+    timeoutError: 'リクエストがタイムアウトしました。もう一度お試しください。',
+    networkError: 'ネットワークエラーが発生しました。接続を確認してもう一度お試しください。',
     optional: '任意',
     required: '必須',
     anonymous: '匿名ユーザー',
@@ -21,6 +23,8 @@ export const jaStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}日前`,
     verificationRequired:
       '送信には人間認証（Turnstile）が必要です。認証を完了してからもう一度お試しください。',
+    quotaExceeded: '今月の送信上限に達しました。送信は一時的に停止されています。',
+    subscriptionInactive: 'アプリのサブスクリプションが無効なため、送信は現在停止されています。',
   },
   feedbackComposer: {
     title: 'フィードバックを送る',
@@ -43,6 +47,8 @@ export const jaStrings: CupThreadStrings = {
     attachmentsHeader: '添付ファイル',
     uploadFailed: '添付ファイルのアップロードに失敗しました。',
     someUploadsFailed: (count: number) => `${count}件の添付ファイルのアップロードに失敗しました。`,
+    unsupportedAttachment: (count: number) =>
+      `${count}件のファイルはサポートされていない添付形式のため、スキップされました。`,
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
     sectionUnavailable: 'フィードバックは現在ご利用いただけません。',
   },
@@ -60,6 +66,7 @@ export const jaStrings: CupThreadStrings = {
     loadingMore: 'さらに読み込み中...',
     rateLimited: '検索が多すぎます。しばらく待ってからもう一度お試しください。',
     sectionUnavailable: '機能リクエストは現在ご利用いただけません。',
+    voteFailed: '投票に失敗しました。もう一度お試しください。',
   },
   featureRequestCompose: {
     modalTitle: '機能を提案',

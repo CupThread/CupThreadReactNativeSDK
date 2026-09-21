@@ -47,6 +47,12 @@ export interface ChangelogOverlayProps {
    * @defaultValue `false`
    */
   onlyIfUnseen?: boolean;
+
+  /**
+   * Optional custom {@link UserTokenStore} instance used for querying and marking seen status.
+   * Defaults to {@link UserTokenStore.shared}.
+   */
+  tokenStore?: UserTokenStore;
 }
 
 export function ChangelogOverlay({
@@ -54,6 +60,7 @@ export function ChangelogOverlay({
   onClose,
   autoMarkSeen = true,
   onlyIfUnseen = false,
+  tokenStore,
 }: ChangelogOverlayProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
@@ -86,7 +93,7 @@ export function ChangelogOverlay({
     setLoadFailed(false);
 
     client
-      .prepareChangelogOverlay({ onlyIfUnseen, signal: controller.signal })
+      .prepareChangelogOverlay({ onlyIfUnseen, tokenStore, signal: controller.signal })
       .then((res) => {
         if (!isMounted || controller.signal.aborted) return;
         if (!res) {
@@ -113,7 +120,7 @@ export function ChangelogOverlay({
       isMounted = false;
       controller.abort();
     };
-  }, [client, visible, onlyIfUnseen, retryToken]);
+  }, [client, visible, onlyIfUnseen, tokenStore, retryToken]);
 
   const handleRetry = () => {
     setRetryToken((token) => token + 1);
@@ -122,7 +129,8 @@ export function ChangelogOverlay({
   const handleDismiss = async () => {
     if (autoMarkSeen && latestKey) {
       try {
-        await UserTokenStore.shared.markChangelogSeen(latestKey);
+        const store = tokenStore || UserTokenStore.shared;
+        await store.markChangelogSeen(latestKey);
       } catch {
         // ignore
       }
@@ -133,11 +141,22 @@ export function ChangelogOverlay({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleDismiss}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={handleDismiss}
+      accessibilityViewIsModal={true}
+    >
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.sheet, { backgroundColor: colors.card }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleDismiss} style={styles.closeBtn}>
+            <TouchableOpacity
+              onPress={handleDismiss}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={strings.common.close}
+            >
               <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
             <Text style={[styles.title, { color: colors.textPrimary }]}>
@@ -164,10 +183,7 @@ export function ChangelogOverlay({
           ) : (
             <ScrollView contentContainerStyle={styles.content}>
               {entries.map((item) => (
-                <View
-                  key={item.id}
-                  style={[styles.entryCard, { borderColor: colors.border }]}
-                >
+                <View key={item.id} style={[styles.entryCard, { borderColor: colors.border }]}>
                   <View style={styles.entryHeader}>
                     <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
                       {item.title}
@@ -187,6 +203,7 @@ export function ChangelogOverlay({
               onPress={handleDismiss}
               style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.8}
+              accessibilityRole="button"
             >
               <Text style={[styles.primaryBtnText, { color: colors.primaryText }]}>
                 {config.primaryButton || strings.changelog.continueButton}

@@ -11,6 +11,8 @@ export interface CommonStrings {
   submitting: string;
   error: string;
   retry: string;
+  timeoutError: string;
+  networkError: string;
   optional: string;
   required: string;
   anonymous: string;
@@ -20,6 +22,8 @@ export interface CommonStrings {
   hoursAgo: (h: number) => string;
   daysAgo: (d: number) => string;
   verificationRequired: string;
+  quotaExceeded?: string;
+  subscriptionInactive?: string;
 }
 
 /**
@@ -46,6 +50,7 @@ export interface FeedbackComposerStrings {
   attachmentsHeader: string;
   uploadFailed: string;
   someUploadsFailed: (count: number) => string;
+  unsupportedAttachment: (count: number) => string;
   submitFailed: string;
   sectionUnavailable: string;
 }
@@ -67,6 +72,7 @@ export interface FeatureRequestsStrings {
   loadingMore: string;
   rateLimited: string;
   sectionUnavailable: string;
+  voteFailed: string;
 }
 
 /**

@@ -11,6 +11,8 @@ export const frStrings: CupThreadStrings = {
     submitting: 'Envoi...',
     error: 'Erreur',
     retry: 'Réessayer',
+    timeoutError: 'La demande a mis trop de temps à aboutir. Veuillez réessayer.',
+    networkError: 'Erreur réseau. Vérifiez votre connexion et réessayez.',
     optional: 'facultatif',
     required: 'obligatoire',
     anonymous: 'Utilisateur anonyme',
@@ -21,6 +23,10 @@ export const frStrings: CupThreadStrings = {
     daysAgo: (d: number) => `Il y a ${d} j`,
     verificationRequired:
       'Une vérification humaine est requise pour envoyer. Merci de réessayer après avoir terminé la vérification.',
+    quotaExceeded:
+      'Quota mensuel de soumissions atteint. Les soumissions sont temporairement suspendues.',
+    subscriptionInactive:
+      'Les soumissions sont suspendues car l’abonnement de l’application est inactif.',
   },
   feedbackComposer: {
     title: 'Envoyer un commentaire',
@@ -46,6 +52,10 @@ export const frStrings: CupThreadStrings = {
       count === 1
         ? 'Impossible de téléverser 1 pièce jointe.'
         : `Impossible de téléverser ${count} pièces jointes.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 fichier a été ignoré : format de pièce jointe non pris en charge.'
+        : `${count} fichiers ont été ignorés : format de pièce jointe non pris en charge.`,
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
     sectionUnavailable: 'Les commentaires sont actuellement indisponibles.',
   },
@@ -63,6 +73,7 @@ export const frStrings: CupThreadStrings = {
     loadingMore: 'Chargement de la suite...',
     rateLimited: 'Trop de recherches. Veuillez patienter un instant et réessayer.',
     sectionUnavailable: 'Les suggestions de fonctionnalités sont actuellement indisponibles.',
+    voteFailed: 'Échec de la mise à jour du vote. Veuillez réessayer.',
   },
   featureRequestCompose: {
     modalTitle: 'Proposer une fonctionnalité',

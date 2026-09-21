@@ -11,6 +11,8 @@ export const itStrings: CupThreadStrings = {
     submitting: 'Invio...',
     error: 'Errore',
     retry: 'Riprova',
+    timeoutError: 'La richiesta ha impiegato troppo tempo. Riprova.',
+    networkError: 'Errore di rete. Controlla la connessione e riprova.',
     optional: 'facoltativo',
     required: 'obbligatorio',
     anonymous: 'Utente anonimo',
@@ -21,6 +23,9 @@ export const itStrings: CupThreadStrings = {
     daysAgo: (d: number) => (d === 1 ? '1 giorno fa' : `${d} giorni fa`),
     verificationRequired:
       'È richiesta la verifica umana per inviare. Riprova dopo aver completato la verifica.',
+    quotaExceeded: 'Quota mensile di invii raggiunta. Gli invii sono temporaneamente sospesi.',
+    subscriptionInactive:
+      'Gli invii sono sospesi perché l’abbonamento dell’applicazione non è attivo.',
   },
   feedbackComposer: {
     title: 'Invia feedback',
@@ -44,6 +49,10 @@ export const itStrings: CupThreadStrings = {
     uploadFailed: "Caricamento dell'allegato non riuscito.",
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Impossibile caricare 1 allegato.' : `Impossibile caricare ${count} allegati.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 file è stato ignorato: formato di allegato non supportato.'
+        : `${count} file sono stati ignorati: formato di allegato non supportato.`,
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
     sectionUnavailable: 'Il feedback non è al momento disponibile.',
   },
@@ -61,6 +70,7 @@ export const itStrings: CupThreadStrings = {
     loadingMore: 'Caricamento altri...',
     rateLimited: 'Troppe ricerche. Attendere un momento e riprovare.',
     sectionUnavailable: 'Le richieste di funzionalità non sono al momento disponibili.',
+    voteFailed: 'Aggiornamento del voto non riuscito. Riprova.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponi una funzionalità',
