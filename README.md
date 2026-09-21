@@ -230,16 +230,18 @@ import { FeedbackComposer } from '@cupthread/react-native';
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       return {
-        kind: 'image',
+        file: { uri: asset.uri },
         filename: asset.fileName || 'screenshot.png',
         mimeType: asset.mimeType || 'image/png',
-        fileUri: asset.uri,
+        preferredKind: 'image',
       };
     }
     return null;
   }}
 />;
 ```
+
+The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachment` descriptors (`{ kind, key, url, ... }`, attached as-is), `UploadAttachmentOptions` payloads (`{ file, filename, mimeType, preferredKind? }`, uploaded automatically), and the legacy `{ fileUri, filename?, mimeType?, kind? }` alias, which is normalized into an upload automatically. Any item matching none of these shapes surfaces a visible, localized error instead of being silently dropped.
 
 #### Platform Allowlist Validation
 

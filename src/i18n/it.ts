@@ -49,6 +49,10 @@ export const itStrings: CupThreadStrings = {
     uploadFailed: "Caricamento dell'allegato non riuscito.",
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Impossibile caricare 1 allegato.' : `Impossibile caricare ${count} allegati.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? '1 file è stato ignorato: formato di allegato non supportato.'
+        : `${count} file sono stati ignorati: formato di allegato non supportato.`,
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
   },
   featureRequests: {

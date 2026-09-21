@@ -51,6 +51,10 @@ export const plStrings: CupThreadStrings = {
       count === 1
         ? 'Nie udało się przesłać 1 załącznika.'
         : `Nie udało się przesłać ${count} załączników.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Pominięto 1 plik: nieobsługiwany format załącznika.'
+        : `Pominięto ${count} plików: nieobsługiwany format załącznika.`,
     submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
   },
   featureRequests: {

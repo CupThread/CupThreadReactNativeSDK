@@ -48,6 +48,10 @@ export const noStrings: CupThreadStrings = {
     uploadFailed: 'Kunne ikke laste opp vedlegg.',
     someUploadsFailed: (count: number) =>
       count === 1 ? 'Kunne ikke laste opp 1 vedlegg.' : `Kunne ikke laste opp ${count} vedlegg.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Hoppet over 1 fil: ustøttet vedleggsformat.'
+        : `Hoppet over ${count} filer: ustøttet vedleggsformat.`,
     submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
   },
   featureRequests: {

@@ -27,11 +27,14 @@ import {
   TurnstileRequiredException,
 } from '../client/FeedbackException';
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
-import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import type { PickedAttachmentInput } from '../utils/attachments';
 import { userFacingErrorMessage } from '../utils/errors';
 import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
+
+/** React Native global; `undefined` outside dev bundles (tests, web previews). */
+declare const __DEV__: boolean | undefined;
 
 /**
  * Props for configuring the {@link FeedbackComposer} form sheet or embedded component.
@@ -80,16 +83,14 @@ export interface FeedbackComposerProps {
   /**
    * Custom attachment picker handler.
    * Allows host applications to trigger their preferred file/image picker (e.g. Expo ImagePicker,
-   * react-native-document-picker) and return either pre-uploaded {@link FeedbackAttachment} descriptors
-   * or raw {@link UploadAttachmentOptions} which will automatically be uploaded via `client.uploadAttachment()`.
+   * react-native-document-picker) and return either pre-uploaded {@link FeedbackAttachment} descriptors,
+   * raw {@link UploadAttachmentOptions} which will automatically be uploaded via `client.uploadAttachment()`,
+   * or the legacy `{ fileUri, filename?, mimeType?, kind? }` shape which is normalized into an upload
+   * automatically. Items matching no known shape surface a visible, localized error instead of being
+   * silently dropped.
    */
   onPickAttachment?: () => Promise<
-    | FeedbackAttachment
-    | FeedbackAttachment[]
-    | UploadAttachmentOptions
-    | UploadAttachmentOptions[]
-    | null
-    | undefined
+    PickedAttachmentInput | PickedAttachmentInput[] | null | undefined
   >;
 
   /**
@@ -166,7 +167,7 @@ export function FeedbackComposer({
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
-      const { succeeded, failed } = await processPickedAttachments(items, {
+      const { succeeded, failed, unsupported } = await processPickedAttachments(items, {
         upload: async (options) => {
           if (isSubmittingRef.current || isSubmitting) {
             throw new Error('Upload cancelled: submission in progress');
@@ -183,8 +184,22 @@ export function FeedbackComposer({
       if (succeeded.length > 0) {
         setAttachments((prev) => [...prev, ...succeeded]);
       }
+
+      const notices: string[] = [];
       if (failed.length > 0) {
-        setErrorMessage(strings.feedbackComposer.someUploadsFailed(failed.length));
+        notices.push(strings.feedbackComposer.someUploadsFailed(failed.length));
+      }
+      if (unsupported.length > 0) {
+        if (typeof __DEV__ === 'undefined' || __DEV__) {
+          console.warn(
+            `[CupThread] ${unsupported.length} picked attachment(s) matched no known shape and were skipped:`,
+            unsupported
+          );
+        }
+        notices.push(strings.feedbackComposer.unsupportedAttachment(unsupported.length));
+      }
+      if (notices.length > 0) {
+        setErrorMessage(notices.join(' '));
       }
     } catch (err: any) {
       if (!isSubmittingRef.current && !isSubmitting) {

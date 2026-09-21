@@ -46,6 +46,7 @@ export const zhHantStrings: CupThreadStrings = {
     attachmentsHeader: '附件',
     uploadFailed: '上傳附件失敗。',
     someUploadsFailed: (count: number) => `${count} 個附件上傳失敗。`,
+    unsupportedAttachment: (count: number) => `${count} 個所選檔案格式不受支援，已略過。`,
     submitFailed: '提交意見回饋失敗，請重試。',
   },
   featureRequests: {
