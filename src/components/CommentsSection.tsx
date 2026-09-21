@@ -180,6 +180,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
                 onPress={() => setReplyTo(item)}
                 style={styles.replyButton}
                 activeOpacity={0.7}
+                accessibilityRole="button"
               >
                 <Text style={[styles.replyButtonText, { color: colors.primary }]}>
                   {strings.comments.replyButton}
@@ -204,7 +205,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
             <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
               {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
             </Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)}>
+            <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
               <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
                 {strings.comments.cancelReply}
               </Text>
@@ -256,6 +257,10 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
             },
           ]}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityState={{
+            disabled: isSubmitting || !isTokenReady || commentText.trim().length === 0,
+          }}
         >
           {isSubmitting ? (
             <ActivityIndicator color={colors.primaryText} size="small" />

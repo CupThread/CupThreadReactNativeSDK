@@ -141,11 +141,22 @@ export function ChangelogOverlay({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleDismiss}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={handleDismiss}
+      accessibilityViewIsModal={true}
+    >
       <View style={styles.backdrop}>
         <SafeAreaView style={[styles.sheet, { backgroundColor: colors.card }]}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleDismiss} style={styles.closeBtn}>
+            <TouchableOpacity
+              onPress={handleDismiss}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={strings.common.close}
+            >
               <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
             <Text style={[styles.title, { color: colors.textPrimary }]}>
@@ -192,6 +203,7 @@ export function ChangelogOverlay({
               onPress={handleDismiss}
               style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.8}
+              accessibilityRole="button"
             >
               <Text style={[styles.primaryBtnText, { color: colors.primaryText }]}>
                 {config.primaryButton || strings.changelog.continueButton}

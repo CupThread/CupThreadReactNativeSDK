@@ -202,7 +202,12 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -211,6 +216,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           onPress={() => setShowCompose(true)}
           style={[styles.composeBtn, { backgroundColor: colors.primary }]}
           activeOpacity={0.8}
+          accessibilityRole="button"
         >
           <Text style={[styles.composeBtnText, { color: colors.primaryText }]}>
             {strings.featureRequests.newButton}
@@ -266,6 +272,8 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                       backgroundColor: isSelected ? colors.primary : colors.chipBg,
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text
                     style={[
@@ -337,6 +345,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           <TouchableOpacity
             onPress={() => setShowCompose(true)}
             style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
           >
             <Text style={[styles.emptyButtonText, { color: colors.primaryText }]}>
               {strings.featureRequests.proposeButton}

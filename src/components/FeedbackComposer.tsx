@@ -274,7 +274,12 @@ export function FeedbackComposer({
           {strings.feedbackComposer.title}
         </Text>
         {onClose && (
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.close}
+          >
             <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
           </TouchableOpacity>
         )}
@@ -387,6 +392,8 @@ export function FeedbackComposer({
                   opacity: isUploadingAttachment || isSubmitting ? 0.6 : 1,
                 },
               ]}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isUploadingAttachment }}
             >
               {isUploadingAttachment ? (
                 <View style={styles.uploadingRow}>
@@ -438,6 +445,12 @@ export function FeedbackComposer({
                   disabled={isSubmitting}
                   style={[styles.removeAttachmentBtn, isSubmitting && { opacity: 0.5 }]}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    att.filename
+                      ? `${strings.feedbackComposer.removeAttachment}: ${att.filename}`
+                      : strings.feedbackComposer.removeAttachment
+                  }
                 >
                   <Text style={{ color: colors.textMuted, fontSize: 16 }}>✕</Text>
                 </TouchableOpacity>
@@ -458,6 +471,10 @@ export function FeedbackComposer({
             opacity: isSubmitting || isUploadingAttachment || !isTokenReady ? 0.6 : 1,
           },
         ]}
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: isSubmitting || isUploadingAttachment || !isTokenReady,
+        }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
@@ -472,7 +489,12 @@ export function FeedbackComposer({
 
   if (isModal) {
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={onClose}
+        accessibilityViewIsModal={true}
+      >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {content}
         </SafeAreaView>
