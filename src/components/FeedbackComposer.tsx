@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import {
 import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { createFeedbackComposerState, resetFeedbackComposerState } from '../utils/composer-state';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
 import { userFacingErrorMessage } from '../utils/errors';
@@ -100,6 +101,14 @@ export interface FeedbackComposerProps {
    * @defaultValue `true`
    */
   isModal?: boolean;
+
+  /**
+   * Whether to preserve entered draft state when the modal is closed without submitting.
+   * When `false` (default), dismissing or reopening the composer resets the form to `initialDraft`.
+   *
+   * @defaultValue `false`
+   */
+  preserveDraftOnClose?: boolean;
 }
 
 /**
@@ -135,6 +144,7 @@ export function FeedbackComposer({
   initialDraft,
   onPickAttachment,
   isModal = true,
+  preserveDraftOnClose = false,
 }: FeedbackComposerProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
@@ -143,17 +153,59 @@ export function FeedbackComposer({
   const strings = useCupThreadStrings();
   const { appConfig } = useCupThreadContext();
 
-  const [title, setTitle] = useState(initialDraft?.title || '');
-  const [description, setDescription] = useState(initialDraft?.description || '');
-  const [reporterName, setReporterName] = useState(initialDraft?.reporterName || '');
-  const [reporterEmail, setReporterEmail] = useState(initialDraft?.reporterEmail || '');
-  const [attachments, setAttachments] = useState<FeedbackAttachment[]>(
-    initialDraft?.attachments || []
+  const initialState = createFeedbackComposerState(initialDraft);
+  const [title, setTitle] = useState(initialState.title);
+  const [description, setDescription] = useState(initialState.description);
+  const [reporterName, setReporterName] = useState(initialState.reporterName);
+  const [reporterEmail, setReporterEmail] = useState(initialState.reporterEmail);
+  const [attachments, setAttachments] = useState<FeedbackAttachment[]>(initialState.attachments);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(
+    initialState.isUploadingAttachment
   );
-  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(initialState.isSubmitting);
   const isSubmittingRef = useRef(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialState.errorMessage);
+
+  const resetForm = useCallback((draft?: Partial<FeedbackDraft>) => {
+    const fresh = resetFeedbackComposerState(draft);
+    setTitle(fresh.title);
+    setDescription(fresh.description);
+    setReporterName(fresh.reporterName);
+    setReporterEmail(fresh.reporterEmail);
+    setAttachments(fresh.attachments);
+    setIsUploadingAttachment(fresh.isUploadingAttachment);
+    setIsSubmitting(fresh.isSubmitting);
+    setErrorMessage(fresh.errorMessage);
+  }, []);
+
+  const prevVisibleRef = useRef(visible);
+  const prevInitialDraftRef = useRef(initialDraft);
+  const hasSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    const wasVisible = prevVisibleRef.current;
+    if (!wasVisible && visible) {
+      const draftChanged = initialDraft !== prevInitialDraftRef.current;
+      const shouldReset = !preserveDraftOnClose || hasSubmittedRef.current || draftChanged;
+      if (shouldReset) {
+        resetForm(initialDraft);
+        hasSubmittedRef.current = false;
+      } else {
+        setErrorMessage(null);
+        setIsUploadingAttachment(false);
+        setIsSubmitting(false);
+      }
+      prevInitialDraftRef.current = initialDraft;
+    }
+    prevVisibleRef.current = visible;
+  }, [visible, preserveDraftOnClose, initialDraft, resetForm]);
+
+  const handleClose = useCallback(() => {
+    if (!preserveDraftOnClose) {
+      resetForm(initialDraft);
+    }
+    if (onClose) onClose();
+  }, [preserveDraftOnClose, initialDraft, resetForm, onClose]);
 
   const handlePickAttachment = async () => {
     if (!onPickAttachment || isSubmittingRef.current || isSubmitting || isUploadingAttachment) {
@@ -259,6 +311,8 @@ export function FeedbackComposer({
       const result = await client.submit(draft, effectiveToken);
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      hasSubmittedRef.current = true;
+      resetForm(initialDraft);
 
       if (onSubmitSuccess) {
         onSubmitSuccess(result);
@@ -298,7 +352,7 @@ export function FeedbackComposer({
         </Text>
         {onClose && (
           <TouchableOpacity
-            onPress={onClose}
+            onPress={handleClose}
             style={styles.closeBtn}
             accessibilityRole="button"
             accessibilityLabel={strings.common.close}
@@ -515,7 +569,7 @@ export function FeedbackComposer({
       <Modal
         visible={visible}
         animationType="slide"
-        onRequestClose={onClose}
+        onRequestClose={handleClose}
         accessibilityViewIsModal={true}
       >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
