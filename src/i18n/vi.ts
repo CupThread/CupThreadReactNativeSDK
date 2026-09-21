@@ -11,6 +11,8 @@ export const viStrings: CupThreadStrings = {
     submitting: 'Đang gửi...',
     error: 'Lỗi',
     retry: 'Thử lại',
+    timeoutError: 'Yêu cầu mất quá nhiều thời gian. Vui lòng thử lại.',
+    networkError: 'Lỗi mạng. Vui lòng kiểm tra kết nối và thử lại.',
     optional: 'không bắt buộc',
     required: 'bắt buộc',
     anonymous: 'Người dùng ẩn danh',
@@ -21,6 +23,8 @@ export const viStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d} ngày trước`,
     verificationRequired:
       'Cần xác minh con người để gửi. Vui lòng thử lại sau khi hoàn tất xác minh.',
+    quotaExceeded: 'Đã đạt hạn mức gửi hàng tháng. Việc gửi tạm thời bị tạm dừng.',
+    subscriptionInactive: 'Việc gửi tạm dừng do đăng ký của ứng dụng không hoạt động.',
   },
   feedbackComposer: {
     title: 'Gửi phản hồi',
@@ -43,6 +47,8 @@ export const viStrings: CupThreadStrings = {
     attachmentsHeader: 'Tệp đính kèm',
     uploadFailed: 'Tải lên tệp đính kèm thất bại.',
     someUploadsFailed: (count: number) => `Không thể tải lên ${count} tệp đính kèm.`,
+    unsupportedAttachment: (count: number) =>
+      `${count} tệp đã chọn bị bỏ qua vì định dạng tệp đính kèm không được hỗ trợ.`,
     submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
   },
   featureRequests: {
@@ -58,6 +64,7 @@ export const viStrings: CupThreadStrings = {
     upvote: 'Bình chọn',
     loadingMore: 'Đang tải thêm...',
     rateLimited: 'Quá nhiều lần tìm kiếm. Vui lòng đợi một lúc rồi thử lại.',
+    voteFailed: 'Không thể cập nhật bình chọn. Vui lòng thử lại.',
   },
   featureRequestCompose: {
     modalTitle: 'Đề xuất tính năng',

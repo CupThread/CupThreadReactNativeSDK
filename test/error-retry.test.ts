@@ -246,7 +246,11 @@ test('useAsyncData keeps stale data when a refresh fails', async () => {
   await harness.result.refresh();
   await flush();
 
-  assert.deepEqual(harness.result.data, ['v1'], 'stale data must not be blanked on refresh failure');
+  assert.deepEqual(
+    harness.result.data,
+    ['v1'],
+    'stale data must not be blanked on refresh failure'
+  );
   assert.equal(harness.result.isRefreshing, false);
   assert.ok(harness.result.error instanceof Error);
 });
@@ -336,6 +340,121 @@ test('useFeatureRequests keeps loaded items when a pull-to-refresh fails', async
   assert.equal(harness.result.items.length, 1, 'refresh failure must keep existing items');
   assert.equal(harness.result.items[0].id, 'fr_stale');
   assert.ok(harness.result.error instanceof Error);
+});
+
+// ---------------------------------------------------------------------------
+// useFeatureRequests: split error surfaces (#54) — loadMoreError vs page-0
+// error, so screens can attribute an inline refresh banner and a load-more
+// footer retry independently once items are on screen
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests attributes loadMore failures to loadMoreError, not the page-0 error', async () => {
+  let failLoadMore = true;
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      if ((opts?.offset ?? 0) > 0) {
+        if (failLoadMore) throw new Error('page 2 offline');
+        return { requests: [makeMockItem('fr_p2', 2)], total: 4 };
+      }
+      return { requests: [makeMockItem('fr_p1', 1)], total: 4 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client: mockClient, userToken: 'test_token', pageSize: 2 })
+  );
+  await flush();
+  let snap = harness.result;
+  assert.equal(snap.items.length, 1);
+  assert.ok(snap.error === null);
+  assert.ok(snap.loadMoreError === null);
+
+  await harness.result.loadMore();
+  await flush();
+
+  snap = harness.result;
+  assert.equal(snap.items.length, 1, 'failed loadMore must not change items');
+  assert.ok(snap.error === null, 'page-0 error must stay clean');
+  assert.ok(snap.loadMoreError instanceof Error, 'loadMore failure must be surfaced');
+  assert.equal((snap.loadMoreError as Error).message, 'page 2 offline');
+
+  failLoadMore = false;
+  await harness.result.loadMore();
+  await flush();
+
+  snap = harness.result;
+  assert.equal(snap.items.length, 2, 'successful retry must append the next page');
+  assert.ok(snap.loadMoreError === null, 'successful retry must clear loadMoreError');
+  assert.ok(snap.error === null);
+});
+
+test('useFeatureRequests keeps a refresh failure in error even after a successful loadMore', async () => {
+  let shouldFail = false;
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      if ((opts?.offset ?? 0) > 0) {
+        return { requests: [makeMockItem('fr_p2', 2)], total: 3 };
+      }
+      if (shouldFail) throw new Error('refresh offline');
+      return { requests: [makeMockItem('fr_p1', 1)], total: 3 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client: mockClient, userToken: 'test_token', pageSize: 50 })
+  );
+  await flush();
+  assert.equal(harness.result.items.length, 1);
+
+  shouldFail = true;
+  await harness.result.refresh();
+  await flush();
+  assert.ok(harness.result.error instanceof Error);
+  assert.equal(harness.result.loadMoreError, null);
+
+  await harness.result.loadMore();
+  await flush();
+
+  assert.equal(harness.result.items.length, 2);
+  assert.ok(
+    harness.result.error instanceof Error,
+    'refresh error must stay attributed until the next refresh succeeds'
+  );
+  assert.equal(harness.result.loadMoreError, null);
+});
+
+test('useFeatureRequests clears a stale loadMoreError on the next successful page-0 load', async () => {
+  let failLoadMore = true;
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      if ((opts?.offset ?? 0) > 0) {
+        if (failLoadMore) throw new Error('pagination offline');
+        return { requests: [makeMockItem('fr_p2', 2)], total: 4 };
+      }
+      return { requests: [makeMockItem('fr_p1', 1)], total: 4 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client: mockClient, userToken: 'test_token', pageSize: 2 })
+  );
+  await flush();
+
+  await harness.result.loadMore();
+  await flush();
+  assert.ok(harness.result.loadMoreError instanceof Error);
+
+  failLoadMore = false;
+  await harness.result.refresh();
+  await flush();
+
+  assert.equal(
+    harness.result.loadMoreError,
+    null,
+    'a successful page-0 load must clear the stale loadMoreError'
+  );
+  assert.equal(harness.result.error, null);
+  assert.equal(harness.result.items.length, 1, 'refresh shows the fresh page-0 list');
 });
 
 // ---------------------------------------------------------------------------

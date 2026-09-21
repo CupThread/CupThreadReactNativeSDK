@@ -214,10 +214,13 @@ test(
     const store = UserTokenStore.configure(makeAsyncAdapter());
     const requestedTokens: string[] = [];
 
-    globalThis.fetch = (async (url: string | URL | Request) => {
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const target = url.toString();
       if (target.includes('/api/v1/feature-requests')) {
-        requestedTokens.push(new URL(target).searchParams.get('userToken') ?? '');
+        const headers = (init?.headers || {}) as Record<string, string>;
+        const token =
+          headers['X-User-Token'] ?? new URL(target).searchParams.get('userToken') ?? '';
+        requestedTokens.push(token);
         return new Response(JSON.stringify({ requests: [], total: 0 }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },

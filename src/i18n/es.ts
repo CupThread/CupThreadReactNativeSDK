@@ -11,6 +11,8 @@ export const esStrings: CupThreadStrings = {
     submitting: 'Enviando...',
     error: 'Error',
     retry: 'Reintentar',
+    timeoutError: 'La solicitud tardó demasiado tiempo. Inténtalo de nuevo.',
+    networkError: 'Error de red. Comprueba tu conexión e inténtalo de nuevo.',
     optional: 'opcional',
     required: 'obligatorio',
     anonymous: 'Usuario anónimo',
@@ -21,6 +23,10 @@ export const esStrings: CupThreadStrings = {
     daysAgo: (d: number) => `Hace ${d} d`,
     verificationRequired:
       'Se requiere verificación humana para enviar. Inténtalo de nuevo después de completar la verificación.',
+    quotaExceeded:
+      'Se ha alcanzado la cuota mensual de envíos. Los envíos están temporalmente en pausa.',
+    subscriptionInactive:
+      'Los envíos están en pausa porque la suscripción de la aplicación está inactiva.',
   },
   feedbackComposer: {
     title: 'Enviar comentarios',
@@ -44,6 +50,10 @@ export const esStrings: CupThreadStrings = {
     uploadFailed: 'Error al subir el archivo adjunto.',
     someUploadsFailed: (count: number) =>
       count === 1 ? 'No se pudo subir 1 adjunto.' : `No se pudieron subir ${count} adjuntos.`,
+    unsupportedAttachment: (count: number) =>
+      count === 1
+        ? 'Se omitió 1 archivo: formato de adjunto no compatible.'
+        : `Se omitieron ${count} archivos: formato de adjunto no compatible.`,
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
   },
   featureRequests: {
@@ -59,6 +69,7 @@ export const esStrings: CupThreadStrings = {
     upvote: 'Votar',
     loadingMore: 'Cargando más...',
     rateLimited: 'Demasiadas búsquedas. Espere un momento e inténtelo de nuevo.',
+    voteFailed: 'Error al actualizar el voto. Inténtalo de nuevo.',
   },
   featureRequestCompose: {
     modalTitle: 'Proponer una función',
