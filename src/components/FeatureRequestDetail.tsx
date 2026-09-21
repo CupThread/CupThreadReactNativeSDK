@@ -66,18 +66,25 @@ export interface FeatureRequestDetailProps {
  * @example
  * ```tsx
  * import React from 'react';
- * import { FeatureRequestDetail } from '@cupthread/react-native';
+ * import { FeatureRequestDetail, type FeatureRequestItem } from '@cupthread/react-native';
  *
- * export function RequestViewer({ activeRequest, onClose }) {
- *   return (
- *     <FeatureRequestDetail
- *       item={activeRequest}
- *       visible={!!activeRequest}
- *       onClose={onClose}
- *     />
- *   );
+ * export function RequestViewer({
+ *   activeRequest,
+ *   onClose,
+ * }: {
+ *   activeRequest: FeatureRequestItem | null;
+ *   onClose: () => void;
+ * }) {
+ *   if (!activeRequest) return null;
+ *   return <FeatureRequestDetail item={activeRequest} visible onClose={onClose} />;
  * }
  * ```
+ *
+ * @remarks
+ * Keeping the detail mounted while a different request is passed as `item` is
+ * supported: internal vote and comment state resets and the new request's
+ * content renders immediately, so votes and comments always target the
+ * request currently displayed.
  */
 export function FeatureRequestDetail({
   item: initialItem,
@@ -92,17 +99,33 @@ export function FeatureRequestDetail({
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
 
+  // The documented host pattern keeps this component mounted and swaps the
+  // `item` prop (<Modal> hides children without unmounting them), so internal
+  // state must follow the prop's identity. Render-phase derived-state
+  // adjustment, same semantics as key={item.id}: a different id resets the
+  // whole screen, while a same-id prop refresh (fresh object from host data)
+  // keeps the current state, including optimistic vote changes.
+  const lastInitialIdRef = useRef(initialItem.id);
+  if (lastInitialIdRef.current !== initialItem.id) {
+    lastInitialIdRef.current = initialItem.id;
+    setItem(initialItem);
+  }
+
   // State updaters must stay pure (React may run them during render and twice
   // under StrictMode), so vote changes are staged here and the host
   // `onVoteChange` notification is flushed in an effect after commit.
   const pendingVoteNotifyRef = useRef<FeatureRequestItem | null>(null);
 
   const applyVoteChange = useCallback<VoteChangeApplier>(
-    (_itemId, transform) => {
+    (itemId, transform) => {
       // Use functional state updater like list/board so transforms always land
       // on the freshest state and rollback reconciles against current item
       // instead of closing over a stale snapshot or the initialItem prop.
       setItem((prev) => {
+        // Only apply transforms issued for the request on screen; a late
+        // success or rollback for a previously displayed item must not
+        // mutate the newly shown one.
+        if (prev.id !== itemId) return prev;
         const next = transform(prev);
         pendingVoteNotifyRef.current = next;
         return next;
@@ -118,13 +141,27 @@ export function FeatureRequestDetail({
       onVoteChange?.(pending);
     }
   }, [item, onVoteChange]);
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(client, userToken, applyVoteChange);
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
+    client,
+    userToken,
+    applyVoteChange
+  );
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+      accessibilityViewIsModal={true}
+    >
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.backButton}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={[styles.backText, { color: colors.primary }]}>← {strings.common.back}</Text>
           </TouchableOpacity>
         </View>
@@ -147,8 +184,22 @@ export function FeatureRequestDetail({
               hasVoted={item.hasVoted}
               onPress={() => handleToggleVote(item)}
               disabled={item.isOwnRequest || isVoting(item.id)}
+              error={getVoteError(item.id)}
             />
           </View>
+
+          {voteError && (
+            <View
+              style={[
+                styles.voteErrorBanner,
+                { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+              ]}
+            >
+              <Text style={{ color: colors.danger, fontSize: 13 }}>
+                {strings.featureRequests.voteFailed}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.authorRow}>
             <Avatar url={item.requesterAvatarUrl} name={item.requesterName} size={24} />
@@ -233,5 +284,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     marginBottom: 12,
+  },
+  voteErrorBanner: {
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });

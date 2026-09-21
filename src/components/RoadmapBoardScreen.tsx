@@ -24,7 +24,11 @@ import { useToggleVote } from '../hooks/useToggleVote';
 import { useFeatureRequests } from '../hooks/useFeatureRequests';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { ErrorState } from './ErrorState';
-import { ROADMAP_OTHER_COLUMN_ID, groupRoadmapRequests } from '../utils/roadmapColumns';
+import {
+  ROADMAP_OTHER_COLUMN_ID,
+  formatColumnTabCount,
+  groupRoadmapRequests,
+} from '../utils/roadmapColumns';
 
 /**
  * Render model for a column tab: either a server column or the synthetic
@@ -105,6 +109,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     isRefreshing,
     isLoadingMore,
     error: requestsError,
+    loadMoreError: requestsLoadMoreError,
     loadMore,
     refresh: refreshRequests,
     reload: reloadRequests,
@@ -176,7 +181,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     return tabs;
   }, [visibleColumns, orphanRequests, strings.roadmap.otherColumn]);
 
-  const { toggleVote: handleToggleVote, isVoting } = useToggleVote(
+  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
     userToken,
     applyItemChange
@@ -191,7 +196,12 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}
@@ -227,6 +237,8 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                       borderBottomColor: isSelected ? col.color || colors.primary : 'transparent',
                     },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text
                     style={[
@@ -237,12 +249,51 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                       },
                     ]}
                   >
-                    {col.name} ({count})
+                    {col.name} ({formatColumnTabCount(count, hasMore)})
                   </Text>
                 </TouchableOpacity>
               );
             }}
           />
+        </View>
+      )}
+
+      {voteError && (
+        <View
+          style={[
+            styles.voteErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={{ color: colors.danger, fontSize: 13 }}>
+            {strings.featureRequests.voteFailed}
+          </Text>
+        </View>
+      )}
+
+      {/* Non-blocking refresh failure: keep the loaded board visible with an
+          inline retry, since the full-screen ErrorState only covers an empty
+          board. Covers both a failed requests refresh and a failed columns
+          refresh. */}
+      {!isRequestsLoading && requests.length > 0 && loadError && !isRefreshing && (
+        <View
+          style={[
+            styles.refreshErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={[styles.refreshErrorBannerText, { color: colors.danger }]}>
+            {strings.common.error}
+          </Text>
+          <TouchableOpacity
+            onPress={handleRefresh}
+            style={styles.refreshErrorRetry}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -271,6 +322,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 activeOpacity={0.8}
                 disabled={isLoadingMore}
+                accessibilityRole="button"
               >
                 {isLoadingMore ? (
                   <ActivityIndicator size="small" color={colors.primaryText} />
@@ -311,16 +363,23 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               </View>
             ) : hasMore ? (
               <View style={styles.footerAffordance}>
-                <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
-                  {strings.roadmap.showingCount(requests.length, total)}
-                </Text>
+                {requestsLoadMoreError ? (
+                  <Text style={[styles.footerAffordanceText, { color: colors.danger }]}>
+                    {strings.common.error}
+                  </Text>
+                ) : (
+                  <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
+                    {strings.roadmap.showingCount(requests.length, total)}
+                  </Text>
+                )}
                 <TouchableOpacity
                   onPress={() => loadMore()}
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
-                    {strings.roadmap.loadMore}
+                    {requestsLoadMoreError ? strings.common.retry : strings.roadmap.loadMore}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -354,6 +413,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   hasVoted={item.hasVoted}
                   onPress={() => handleToggleVote(item)}
                   disabled={item.isOwnRequest || isVoting(item.id)}
+                  error={getVoteError(item.id)}
                 />
               </View>
 
@@ -413,6 +473,25 @@ const styles = StyleSheet.create({
   },
   columnTabText: {
     fontSize: 14,
+  },
+  refreshErrorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  refreshErrorRetry: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   listContent: {
     padding: 16,
@@ -480,20 +559,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 8,
   },
   footerText: {
     fontSize: 13,
+    marginLeft: 8,
   },
   footerAffordance: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 16,
-    gap: 12,
   },
   footerAffordanceText: {
     fontSize: 13,
+    marginRight: 12,
   },
   loadMoreBtn: {
     paddingHorizontal: 12,
@@ -504,5 +583,13 @@ const styles = StyleSheet.create({
   loadMoreBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  voteErrorBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });
