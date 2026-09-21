@@ -21,6 +21,9 @@ export const enStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}d ago`,
     verificationRequired:
       'Human verification is required to submit. Please try again after completing verification.',
+    quotaExceeded: 'Monthly submission quota reached for this app.',
+    subscriptionInactive:
+      'Submissions are currently paused because the app subscription is inactive.',
   },
   feedbackComposer: {
     title: 'Send Feedback',
@@ -59,6 +62,7 @@ export const enStrings: CupThreadStrings = {
     upvote: 'Upvote',
     loadingMore: 'Loading more...',
     rateLimited: 'Too many searches. Please wait a moment and try again.',
+    voteFailed: 'Failed to update vote. Please try again.',
   },
   featureRequestCompose: {
     modalTitle: 'Propose Feature',

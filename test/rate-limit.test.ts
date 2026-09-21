@@ -273,6 +273,7 @@ test('SearchRateLimiter uses production defaults', () => {
 interface SearchCall {
   q: string | null;
   offset: string | null;
+  userToken?: string | null;
 }
 
 function makeSearchClient(responder: (call: SearchCall, index: number) => Response) {
@@ -283,6 +284,7 @@ function makeSearchClient(responder: (call: SearchCall, index: number) => Respon
     const call: SearchCall = {
       q: parsed.searchParams.get('q'),
       offset: parsed.searchParams.get('offset'),
+      userToken: parsed.searchParams.get('userToken'),
     };
     const index = calls.length;
     calls.push(call);
@@ -376,6 +378,112 @@ test('useFeatureRequests does not refetch for the same trimmed query', async () 
     await flush();
     assert.equal(stub.calls.length, 2);
     assert.equal(stub.calls[1].q, 'gadget');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests invalidates dedupe key after plain listing load so re-pasting query refetches', async () => {
+  const stub = makeSearchClient((call) => {
+    if (call.q === 'widget') {
+      return page([{ id: 'fr_search_1', title: 'Search Result' }]);
+    }
+    return page([
+      { id: 'fr_all_1', title: 'All 1' },
+      { id: 'fr_all_2', title: 'All 2' },
+    ]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    // 1. Initial search for 'widget'
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].q, 'widget');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_search_1');
+
+    // 2. Clear query ('') -> loads plain listing and resets search dedupe key
+    options = { ...options, query: '' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, null);
+    assert.equal(latest.current!.items.length, 2);
+    assert.equal(latest.current!.items[0].id, 'fr_all_1');
+
+    // 3. Paste 'widget' again -> must refetch search results instead of suppressing
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, 'widget');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_search_1');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests invalidates search dedupe key when userToken changes', async () => {
+  const stub = makeSearchClient((call) => {
+    const hasVoted = call.userToken === 'user_a';
+    return page([{ id: 'fr_1', title: 'Widget Feature', hasVoted } as any]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'user_a',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].q, 'widget');
+    assert.equal(stub.calls[0].userToken, 'user_a');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].hasVoted, true);
+
+    // Switch user token while query remains 'widget' -> must refetch for user_b
+    options = { ...options, userToken: 'user_b' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, 'widget');
+    assert.equal(stub.calls[1].userToken, 'user_b');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].hasVoted, false);
     renderer.unmount();
   } finally {
     stub.restore();
@@ -495,4 +603,281 @@ test('localized rate-limit notice exists for the feature requests screen', () =>
     enStrings.featureRequests.rateLimited,
     'Too many searches. Please wait a moment and try again.'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #73: query-bearing loadMore search rate limiting & cooldown
+// ---------------------------------------------------------------------------
+
+test('cooldown suppresses pagination when page-0 search 429s first', async () => {
+  const stub = makeSearchClient((call, index) => {
+    // Initial search succeeds with partial results (total: 10) so hasMore is true.
+    if (index === 0) {
+      return page(
+        [
+          { id: 'fr_1', title: 'First' },
+          { id: 'fr_2', title: 'Second' },
+        ],
+        10
+      );
+    }
+    // Subsequent page-0 search 429s and engages cooldown.
+    if (index === 1) {
+      return new Response('{"error":"rate limited"}', { status: 429 });
+    }
+    return page([]);
+  });
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(latest.current!.items.length, 2);
+    assert.equal(latest.current!.total, 10);
+    assert.equal(latest.current!.hasMore, true);
+    assert.equal(stub.calls.length, 1);
+
+    // Re-search with another query trips 429
+    options = { ...options, query: 'widget-429' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(latest.current!.items.length, 2); // prior items retained
+    assert.equal(latest.current!.hasMore, true);
+
+    // While cooldown is active, loadMore() must not fire a request; isLoadingMore must return to false
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2, 'loadMore must not fire during active cooldown');
+    assert.equal(latest.current!.isLoadingMore, false);
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('429 from loadMore engages the cooldown and suppresses subsequent page-0 search', async () => {
+  const stub = makeSearchClient((call, index) => {
+    // Initial search succeeds with 2 items out of 10
+    if (index === 0) {
+      return page(
+        [
+          { id: 'fr_1', title: 'First' },
+          { id: 'fr_2', title: 'Second' },
+        ],
+        10
+      );
+    }
+    // loadMore 429s
+    if (index === 1) {
+      return new Response('{"error":"rate limited"}', { status: 429 });
+    }
+    return page([{ id: 'fr_3', title: 'Third' }]);
+  });
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      query: 'widget',
+      searchRateLimiterOptions: FAST_LIMITER,
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(latest.current!.items.length, 2);
+    assert.equal(latest.current!.isRateLimited, false);
+    assert.equal(stub.calls.length, 1);
+
+    // Call loadMore(), which encounters 429
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, 'widget');
+    assert.equal(stub.calls[1].offset, '2');
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(latest.current!.isLoadingMore, false);
+    assert.ok(latest.current!.error instanceof RateLimitedException);
+    assert.equal(latest.current!.items.length, 2); // retains prior items
+
+    // Subsequent page-0 search with a new query must be suppressed during the active cooldown
+    options = { ...options, query: 'gadget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(
+      stub.calls.length,
+      2,
+      'cooldown engaged by loadMore must suppress subsequent search'
+    );
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test(
+  'pagination counts toward pacing: page-0 search within minSpacingMs is delayed',
+  { timeout: 5000 },
+  async () => {
+    const stub = makeSearchClient((call, index) => {
+      if (index === 0) {
+        return page(
+          [
+            { id: 'fr_1', title: 'First' },
+            { id: 'fr_2', title: 'Second' },
+          ],
+          10
+        );
+      }
+      if (index === 1) {
+        return page([{ id: 'fr_3', title: 'Third' }], 10);
+      }
+      return page([{ id: 'fr_4', title: 'New Search Result' }]);
+    });
+
+    try {
+      const client = new FeedbackClient({
+        baseUrl: 'https://api.cupthread.com',
+        appKey: 'app_key',
+      });
+      const latest: { current: LatestResult } = { current: null };
+      let options: any = {
+        client,
+        userToken: 'tok',
+        query: 'widget',
+        searchRateLimiterOptions: { minSpacingMs: 300, cooldownMs: 80 },
+      };
+
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+      });
+      await flush();
+
+      assert.equal(stub.calls.length, 1);
+
+      // Paginate via loadMore()
+      await act(async () => {
+        await latest.current!.loadMore();
+      });
+      await flush();
+
+      assert.equal(stub.calls.length, 2);
+      assert.equal(latest.current!.items.length, 3);
+
+      // Immediately trigger a page-0 search with a different query inside the 300ms spacing window
+      options = { ...options, query: 'gadget' };
+      await act(async () => {
+        renderer.update(React.createElement(HookProbe, { options, latest }));
+      });
+      await flush(4, 8); // ~32ms — inside spacing window
+
+      assert.equal(
+        stub.calls.length,
+        2,
+        'search must be delayed by spacing window started by loadMore'
+      );
+
+      // Wait for the spacing window to elapse
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await flush();
+
+      assert.equal(stub.calls.length, 3);
+      assert.equal(stub.calls[2].q, 'gadget');
+      renderer.unmount();
+    } finally {
+      stub.restore();
+    }
+  }
+);
+
+test('plain loadMore without query stays unpaced and un-cooldowned', async () => {
+  const stub = makeSearchClient((call, index) => {
+    if (index === 0) {
+      return page(
+        [
+          { id: 'fr_1', title: 'First' },
+          { id: 'fr_2', title: 'Second' },
+        ],
+        10
+      );
+    }
+    if (index === 1) {
+      return page([{ id: 'fr_3', title: 'Third' }], 10);
+    }
+    return page([{ id: 'fr_4', title: 'Fourth' }], 10);
+  });
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    const options: any = {
+      client,
+      userToken: 'tok',
+      pageSize: 1,
+      searchRateLimiterOptions: { minSpacingMs: 1000, cooldownMs: 1000 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].q, null);
+
+    // Rapid consecutive loadMore calls for plain listings are not paced
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, null);
+
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, null);
+    assert.equal(latest.current!.items.length, 4);
+    assert.equal(latest.current!.isRateLimited, false);
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
 });

@@ -120,6 +120,8 @@ export function WhatsNewScreen({
             onPress={handleSubscribe}
             disabled={isSubscribing}
             style={[styles.subscribeButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubscribing }}
           >
             {isSubscribing ? (
               <ActivityIndicator color={colors.primaryText} size="small" />
@@ -138,7 +140,12 @@ export function WhatsNewScreen({
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+          <TouchableOpacity
+            onPress={onBack}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.back}
+          >
             <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
           </TouchableOpacity>
         )}

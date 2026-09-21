@@ -184,9 +184,11 @@ function makeMockItem(
 
 test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionId', async () => {
   let interceptedUrl = '';
+  let interceptedHeaders: Record<string, string> = {};
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     interceptedUrl = url.toString();
+    interceptedHeaders = (init?.headers || {}) as Record<string, string>;
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -210,7 +212,8 @@ test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionI
     const parsed = new URL(interceptedUrl);
     assert.equal(parsed.pathname, '/api/v1/feature-requests');
     assert.equal(parsed.searchParams.get('appKey'), 'app_pagination_test');
-    assert.equal(parsed.searchParams.get('userToken'), 'usr_tok_page');
+    assert.equal(parsed.searchParams.get('userToken'), null);
+    assert.equal(interceptedHeaders['X-User-Token'], 'usr_tok_page');
     assert.equal(parsed.searchParams.get('limit'), '25');
     assert.equal(parsed.searchParams.get('offset'), '50');
     assert.equal(parsed.searchParams.get('versionId'), 'v2.0');

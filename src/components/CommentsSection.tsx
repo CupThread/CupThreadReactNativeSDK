@@ -63,13 +63,27 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
     (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
     [client, featureRequestId]
   );
+  const mergeComments = useCallback(
+    (
+      local: FeatureRequestComment[] | null,
+      incoming: FeatureRequestComment[]
+    ): FeatureRequestComment[] => {
+      if (!local || local.length === 0) return incoming;
+      const incomingIds = new Set(incoming.map((c) => c.id));
+      const localOnly = local.filter((c) => !incomingIds.has(c.id));
+      if (localOnly.length === 0) return incoming;
+      return [...incoming, ...localOnly];
+    },
+    []
+  );
+
   const {
     data: commentsData,
     isLoading: isLoadingComments,
     error: loadError,
     reload: reloadComments,
     setData: setCommentsData,
-  } = useAsyncData(fetchComments);
+  } = useAsyncData(fetchComments, { mergeStale: mergeComments });
   const comments: FeatureRequestComment[] = commentsData ?? [];
 
   const [commentText, setCommentText] = useState<string>('');
@@ -166,6 +180,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
                 onPress={() => setReplyTo(item)}
                 style={styles.replyButton}
                 activeOpacity={0.7}
+                accessibilityRole="button"
               >
                 <Text style={[styles.replyButtonText, { color: colors.primary }]}>
                   {strings.comments.replyButton}
@@ -190,7 +205,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
             <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
               {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
             </Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)}>
+            <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
               <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
                 {strings.comments.cancelReply}
               </Text>
@@ -242,6 +257,10 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
             },
           ]}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityState={{
+            disabled: isSubmitting || !isTokenReady || commentText.trim().length === 0,
+          }}
         >
           {isSubmitting ? (
             <ActivityIndicator color={colors.primaryText} size="small" />

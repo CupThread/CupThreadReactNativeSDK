@@ -31,6 +31,14 @@ Integrate the CupThread SDK (feedback, roadmap, and feature requests screens) in
 
 ---
 
+## Requirements
+
+- **React Native**: `>= 0.70.0`
+- **React**: `>= 18.0.0`
+- **Expo**: Compatible with Expo SDK 47+ (bare or managed workflow, zero native binary dependencies)
+
+---
+
 ## Installation
 
 ### Option A: Install from GitHub Release / Tag (Recommended for latest updates)
@@ -157,9 +165,20 @@ The SDK includes built-in localization for **English (`en`)**, **French (`fr`)**
 
 `ChangelogOverlay` and `client.prepareChangelogOverlay()` automatically remember which release notes the user has already seen, avoiding annoying duplicate popups:
 
+> **Storage Requirement:** To persist seen status across app restarts, configure a storage adapter (such as `@react-native-async-storage/async-storage`) via `UserTokenStore.configure(AsyncStorage)` at application startup, or pass an adapter-backed `tokenStore` prop (`<ChangelogOverlay tokenStore={customStore} />`). Without a configured adapter, seen tracking degrades to in-memory only (`store.isPersistent === false`) and the sheet will re-appear on every app launch.
+
 ```tsx
 import React, { useEffect, useState } from 'react';
-import { CupThreadProvider, ChangelogOverlay, FeedbackClient } from '@cupthread/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  CupThreadProvider,
+  ChangelogOverlay,
+  FeedbackClient,
+  UserTokenStore,
+} from '@cupthread/react-native';
+
+// Enable persistence for changelog seen status and anonymous user tokens
+UserTokenStore.configure(AsyncStorage);
 
 const client = new FeedbackClient({
   baseUrl: 'https://api.cupthread.com',
@@ -222,15 +241,20 @@ import { FeedbackComposer } from '@cupthread/react-native';
 />;
 ```
 
+#### Platform Allowlist Validation
+
+When `<CupThreadProvider>` loads your application configuration (`PublicAppConfig`), `FeedbackComposer` automatically validates the outgoing feedback platform against `allowedPlatforms` via `resolveAllowedPlatform()`. If the candidate platform (from `initialDraft.platform`, `client.config.defaultPlatform`, or the runtime OS) is excluded from the app's configured allowlist, it falls back to the first allowed platform and emits a diagnostic warning in development mode (`__DEV__`).
+
 ### 4. Persistent Anonymous User Token
 
-The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts. Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
+The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts, as well as persisting changelog seen status (`cupthread_seen_changelogs_v1`). Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
 
 ```tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserTokenStore } from '@cupthread/react-native';
 
 UserTokenStore.configure(AsyncStorage);
+console.log('Storage is persistent:', UserTokenStore.shared.isPersistent); // true
 ```
 
 #### Login / Logout Identity Switching
@@ -251,6 +275,35 @@ Notes:
 - An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
 - Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
 
+### 5. Remote Configuration & Error Recovery
+
+`<CupThreadProvider>` fetches remote application settings and theme branding at mount. If the initial fetch fails (e.g. offline launch or flaky connection), the provider automatically retries once after a short 2-second delay. If the retry also fails, the error is surfaced via `useCupThreadContext().configError` while falling back safely to the `'system'` theme:
+
+```tsx
+import { useCupThreadContext } from '@cupthread/react-native';
+
+function AppHeader() {
+  const { appConfig, isLoadingConfig, configError, refreshConfig } = useCupThreadContext();
+
+  if (configError) {
+    return (
+      <View style={styles.errorBanner}>
+        <Text>Failed to load configuration: {configError.message}</Text>
+        <TouchableOpacity onPress={() => refreshConfig()}>
+          <Text>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return <Text>{isLoadingConfig ? 'Loading...' : appConfig?.name}</Text>;
+}
+```
+
+- **Distinguishable states**: Hosts can inspect `configError`, `isLoadingConfig`, and `appConfig` to distinguish loading, error, and loaded states instead of silently falling back without explanation.
+- **Manual escape hatch**: Call `refreshConfig()` at any time to re-fetch configuration from the server; on success, `configError` is cleared and remote branding is applied.
+- **Development visibility**: In development (`__DEV__`), persistent config fetch failures log a warning to the console (`[CupThread] Failed to load app config:`).
+
 ---
 
 ## API Client Surface
@@ -265,29 +318,30 @@ Notes:
 | `timeoutMs`              | `number`                                                    | `15000`       | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout                                                                                            |
 | `uploadTimeoutMs`        | `number`                                                    | `60000`       | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })`                     |
 | `turnstileTokenProvider` | `() => string \| undefined \| Promise<string \| undefined>` | `undefined`   | Optional async provider resolving a Cloudflare Turnstile token before intake submissions (`submit`, `submitFeatureRequest`); see [Human Verification (Turnstile)](#human-verification-turnstile) |
+| `tokenTransport`         | `'query' \| 'header' \| 'both'`                             | `'header'`    | Strategy for user token transport on `fetchFeatureRequests` (`'header'` prevents query string leakage per CWE-598)                                                                               |
 
 All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
 
 ### Methods
 
-| Method                                                      | Endpoint                                                  | Description                                                                                            |
-| ----------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments                                                    |
-| `uploadAttachment(options)`                                 | `POST /api/v1/uploads/{images,r2}`                        | Upload screenshot or log attachment (supports `signal`, `timeoutMs`)                                   |
-| `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings                                                    |
-| `fetchColumns(options?)`                                    | `GET /api/v1/public/columns/{appKey}`                     | Fetch Kanban board columns for roadmap                                                                 |
-| `fetchVersions(options?)`                                   | `GET /api/v1/public/versions/{appKey}`                    | Fetch release versions                                                                                 |
-| `fetchFeatureRequests(options)`                             | `GET /api/v1/feature-requests`                            | List, search, and paginate public feature requests (supports `limit`, `offset`, `signal`, `timeoutMs`) |
-| `submitFeatureRequest(draft, userToken, options?)`          | `POST /api/v1/feature-requests`                           | Propose a new feature request proposal                                                                 |
-| `toggleVote(featureRequestId, userToken, options?)`         | `POST /api/v1/feature-requests/{id}/vote`                 | Upvote or remove upvote                                                                                |
-| `fetchComments(featureRequestId, options?)`                 | `GET /api/v1/feature-requests/{id}/comments`              | Fetch discussion comments                                                                              |
-| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments`             | Post a comment or reply                                                                                |
-| `fetchChangelog(options?)`                                  | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch published release notes                                                                          |
-| `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                    |
-| `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                           |
-| `unsubscribeFromChangelog(email, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog                                                                       |
-| `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                |
-| `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                              |
+| Method                                                      | Endpoint                                                  | Description                                                                                                                                                               |
+| ----------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments                                                                                                                       |
+| `uploadAttachment(options)`                                 | `POST /api/v1/uploads/{images,r2}`                        | Upload screenshot or log attachment (supports `signal`, `timeoutMs`)                                                                                                      |
+| `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings (returns 404 for private or unknown apps)                                                                            |
+| `fetchColumns(options?)`                                    | `GET /api/v1/public/columns/{appKey}`                     | Fetch Kanban board columns for roadmap                                                                                                                                    |
+| `fetchVersions(options?)`                                   | `GET /api/v1/public/versions/{appKey}`                    | Fetch release versions                                                                                                                                                    |
+| `fetchFeatureRequests(options)`                             | `GET /api/v1/feature-requests`                            | List, search, and paginate public feature requests (transmits `userToken` via `X-User-Token` header; supports `limit`, `offset`, `signal`, `timeoutMs`, `tokenTransport`) |
+| `submitFeatureRequest(draft, userToken, options?)`          | `POST /api/v1/feature-requests`                           | Propose a new feature request proposal                                                                                                                                    |
+| `toggleVote(featureRequestId, userToken, options?)`         | `POST /api/v1/feature-requests/{id}/vote`                 | Upvote or remove upvote                                                                                                                                                   |
+| `fetchComments(featureRequestId, options?)`                 | `GET /api/v1/feature-requests/{id}/comments`              | Fetch discussion comments                                                                                                                                                 |
+| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments`             | Post a comment or reply                                                                                                                                                   |
+| `fetchChangelog(options?)`                                  | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch published release notes                                                                                                                                             |
+| `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                                                                                       |
+| `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                                                                                              |
+| `unsubscribeFromChangelog(email, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog                                                                                                                                          |
+| `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                                                                                   |
+| `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                                                                                                 |
 
 ---
 
@@ -314,6 +368,28 @@ Supply a token in one of two ways:
 2. **Per-draft token.** Set `turnstileToken` on `FeedbackDraft` / `FeatureRequestDraft` to force a specific token; it takes precedence over the provider.
 
 If neither is configured, submissions against Turnstile-gated backends cannot succeed until the host supplies a token (or the app key is exempted server-side).
+
+---
+
+### Submission Quotas & Plan Limits
+
+Public intake endpoints (`POST /api/v1/feedback`, `POST /api/v1/feature-requests`) enforce monthly submission limits and active subscription checks. When a workspace reaches its monthly submission quota or its subscription is inactive, the server responds with HTTP 402, which the SDK surfaces as typed exceptions:
+
+- `QuotaExceededException` (`code: 'tier_limit_submissions'`): The workspace has reached its monthly submission quota.
+- `InactiveSubscriptionException` (`code: 'subscription_inactive'`): The workspace subscription is inactive or canceled.
+- `PaymentRequiredException`: Base class for HTTP 402 errors.
+
+The bundled composers (`<FeedbackComposer />` and `<FeatureRequestComposeSheet />`) catch these exceptions, display localized error messages, and preserve draft title, details, and attachments so users do not lose their input.
+
+---
+
+### Private Applications & Config Resolution (HTTP 404)
+
+As of the September 2026 API sync, public config endpoints (`GET /api/v1/public/config/{appKey}`) answer private applications (`allowPublic = false`) with HTTP 404 `{"error": "App not found"}`, matching the response for unknown app keys.
+
+- `fetchAppConfig()` rejects with `UnexpectedStatusException` (status: `404`, responseBody: `'{"error": "App not found"}'`).
+- Successfully returned `PublicAppConfig` payloads always carry `allowPublic: true`.
+- Components such as `<CupThreadProvider />` fail closed on non-200 config responses, ensuring private application metadata is never leaked or rendered as public.
 
 ---
 

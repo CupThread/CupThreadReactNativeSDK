@@ -21,6 +21,8 @@ export const jaStrings: CupThreadStrings = {
     daysAgo: (d: number) => `${d}日前`,
     verificationRequired:
       '送信には人間認証（Turnstile）が必要です。認証を完了してからもう一度お試しください。',
+    quotaExceeded: '今月の送信上限に達しました。送信は一時的に停止されています。',
+    subscriptionInactive: 'アプリのサブスクリプションが無効なため、送信は現在停止されています。',
   },
   feedbackComposer: {
     title: 'フィードバックを送る',
@@ -58,6 +60,7 @@ export const jaStrings: CupThreadStrings = {
     upvote: '投票',
     loadingMore: 'さらに読み込み中...',
     rateLimited: '検索が多すぎます。しばらく待ってからもう一度お試しください。',
+    voteFailed: '投票に失敗しました。もう一度お試しください。',
   },
   featureRequestCompose: {
     modalTitle: '機能を提案',
