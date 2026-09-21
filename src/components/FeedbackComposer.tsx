@@ -215,9 +215,9 @@ export function FeedbackComposer({
       return;
     }
 
-    setErrorMessage(null);
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+    setErrorMessage(null);
 
     try {
       const candidatePlatform = initialDraft?.platform || client.config.defaultPlatform;
@@ -269,6 +269,9 @@ export function FeedbackComposer({
           userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
         );
       }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 

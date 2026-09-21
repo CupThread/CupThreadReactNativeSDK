@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -30,10 +30,7 @@ export interface WhatsNewScreenProps {
   headerTitle?: string;
 }
 
-export function WhatsNewScreen({
-  onBack,
-  headerTitle,
-}: WhatsNewScreenProps) {
+export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
@@ -56,14 +53,17 @@ export function WhatsNewScreen({
 
   const [email, setEmail] = useState<string>('');
   const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
+  const isSubscribingRef = useRef<boolean>(false);
   const [isSubscribed, setIsSubscribed] = useState<boolean>(false);
 
   const handleSubscribe = async () => {
+    if (isSubscribingRef.current) return;
     if (!email.trim() || !email.includes('@')) {
       Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
 
+    isSubscribingRef.current = true;
     try {
       setIsSubscribing(true);
       await client.subscribeToChangelog(email.trim(), userToken);
@@ -75,6 +75,7 @@ export function WhatsNewScreen({
         userFacingErrorMessage(err, strings.changelog.subscribeFailed, strings.common)
       );
     } finally {
+      isSubscribingRef.current = false;
       setIsSubscribing(false);
     }
   };
@@ -192,12 +193,8 @@ export function WhatsNewScreen({
               ]}
             >
               <View style={styles.cardHeader}>
-                <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
-                  {item.title}
-                </Text>
-                {item.versionLabel && (
-                  <Badge label={`v${item.versionLabel}`} variant="outline" />
-                )}
+                <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+                {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
               </View>
 
               <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
