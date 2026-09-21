@@ -728,7 +728,10 @@ test('429 from loadMore engages the cooldown and suppresses subsequent page-0 se
     assert.equal(stub.calls[1].offset, '2');
     assert.equal(latest.current!.isRateLimited, true);
     assert.equal(latest.current!.isLoadingMore, false);
-    assert.ok(latest.current!.error instanceof RateLimitedException);
+    // Pagination failures surface via the dedicated loadMoreError, not the
+    // page-0 error that would replace the list.
+    assert.ok(latest.current!.loadMoreError instanceof RateLimitedException);
+    assert.equal(latest.current!.error, null);
     assert.equal(latest.current!.items.length, 2); // retains prior items
 
     // Subsequent page-0 search with a new query must be suppressed during the active cooldown

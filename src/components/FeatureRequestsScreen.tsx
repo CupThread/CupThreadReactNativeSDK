@@ -107,11 +107,13 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
 
   const {
     items,
+    total,
     hasMore,
     isLoading,
     isRefreshing,
     isLoadingMore,
     error: loadError,
+    loadMoreError,
     isRateLimited,
     loadMore,
     refresh,
@@ -319,6 +321,33 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         </View>
       )}
 
+      {/* Non-blocking refresh failure: keep the stale list visible with an
+          inline retry, since the full-screen ErrorState only covers an empty
+          list. Rate-limit failures are handled by the banner above. */}
+      {!isLoading && items.length > 0 && loadError && !isRefreshing && !isRateLimited && (
+        <View
+          style={[
+            styles.refreshErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={[styles.refreshErrorBannerText, { color: colors.danger }]}>
+            {strings.common.error}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              refresh();
+            }}
+            style={styles.refreshErrorRetry}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {isLoading && items.length === 0 ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
@@ -378,6 +407,29 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                 <Text style={[styles.footerText, { color: colors.textMuted }]}>
                   {strings.common.loadingMore}
                 </Text>
+              </View>
+            ) : hasMore ? (
+              <View style={styles.footerAffordance}>
+                {loadMoreError ? (
+                  <Text style={[styles.footerAffordanceText, { color: colors.danger }]}>
+                    {strings.common.error}
+                  </Text>
+                ) : (
+                  <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
+                    {strings.roadmap.showingCount(items.length, total)}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  onPress={() => {
+                    loadMore();
+                  }}
+                  style={[styles.loadMoreBtn, { borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
+                    {loadMoreError ? strings.common.retry : strings.roadmap.loadMore}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : null
           }
@@ -476,6 +528,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
+  refreshErrorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  refreshErrorRetry: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   listContent: {
     padding: 16,
     paddingTop: 8,
@@ -562,5 +633,25 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 13,
     marginLeft: 8,
+  },
+  footerAffordance: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  footerAffordanceText: {
+    fontSize: 13,
+    marginRight: 12,
+  },
+  loadMoreBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  loadMoreBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

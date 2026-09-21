@@ -109,6 +109,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     isRefreshing,
     isLoadingMore,
     error: requestsError,
+    loadMoreError: requestsLoadMoreError,
     loadMore,
     refresh: refreshRequests,
     reload: reloadRequests,
@@ -270,6 +271,32 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
         </View>
       )}
 
+      {/* Non-blocking refresh failure: keep the loaded board visible with an
+          inline retry, since the full-screen ErrorState only covers an empty
+          board. Covers both a failed requests refresh and a failed columns
+          refresh. */}
+      {!isRequestsLoading && requests.length > 0 && loadError && !isRefreshing && (
+        <View
+          style={[
+            styles.refreshErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={[styles.refreshErrorBannerText, { color: colors.danger }]}>
+            {strings.common.error}
+          </Text>
+          <TouchableOpacity
+            onPress={handleRefresh}
+            style={styles.refreshErrorRetry}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {isLoading ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
@@ -336,9 +363,15 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               </View>
             ) : hasMore ? (
               <View style={styles.footerAffordance}>
-                <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
-                  {strings.roadmap.showingCount(requests.length, total)}
-                </Text>
+                {requestsLoadMoreError ? (
+                  <Text style={[styles.footerAffordanceText, { color: colors.danger }]}>
+                    {strings.common.error}
+                  </Text>
+                ) : (
+                  <Text style={[styles.footerAffordanceText, { color: colors.textMuted }]}>
+                    {strings.roadmap.showingCount(requests.length, total)}
+                  </Text>
+                )}
                 <TouchableOpacity
                   onPress={() => loadMore()}
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
@@ -346,7 +379,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   accessibilityRole="button"
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
-                    {strings.roadmap.loadMore}
+                    {requestsLoadMoreError ? strings.common.retry : strings.roadmap.loadMore}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -440,6 +473,25 @@ const styles = StyleSheet.create({
   },
   columnTabText: {
     fontSize: 14,
+  },
+  refreshErrorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  refreshErrorRetry: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   listContent: {
     padding: 16,
