@@ -11,6 +11,8 @@ export const jaStrings: CupThreadStrings = {
     submitting: '送信中...',
     error: 'エラー',
     retry: '再試行',
+    timeoutError: 'リクエストがタイムアウトしました。もう一度お試しください。',
+    networkError: 'ネットワークエラーが発生しました。接続を確認してもう一度お試しください。',
     optional: '任意',
     required: '必須',
     anonymous: '匿名ユーザー',

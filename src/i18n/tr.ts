@@ -11,6 +11,8 @@ export const trStrings: CupThreadStrings = {
     submitting: 'Gönderiliyor...',
     error: 'Hata',
     retry: 'Tekrar dene',
+    timeoutError: 'İstek çok uzun sürdü. Lütfen tekrar deneyin.',
+    networkError: 'Ağ hatası. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.',
     optional: 'isteğe bağlı',
     required: 'gerekli',
     anonymous: 'Anonim kullanıcı',

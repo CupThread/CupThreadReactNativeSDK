@@ -11,6 +11,8 @@ export const enStrings: CupThreadStrings = {
     submitting: 'Submitting...',
     error: 'Error',
     retry: 'Retry',
+    timeoutError: 'The request took too long to complete. Please try again.',
+    networkError: 'Network error. Please check your connection and try again.',
     optional: 'optional',
     required: 'required',
     anonymous: 'Anonymous User',

@@ -30,6 +30,7 @@ import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
+import { userFacingErrorMessage } from '../utils/errors';
 import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
 
 /**
@@ -187,7 +188,9 @@ export function FeedbackComposer({
       }
     } catch (err: any) {
       if (!isSubmittingRef.current && !isSubmitting) {
-        setErrorMessage(err?.message || strings.feedbackComposer.uploadFailed);
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.feedbackComposer.uploadFailed, strings.common)
+        );
       }
     } finally {
       setIsUploadingAttachment(false);
@@ -262,7 +265,9 @@ export function FeedbackComposer({
       } else if (err instanceof PaymentRequiredException) {
         setErrorMessage(err.message || strings.feedbackComposer.submitFailed);
       } else {
-        setErrorMessage(err?.message || strings.feedbackComposer.submitFailed);
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
+        );
       }
     }
   };

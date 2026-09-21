@@ -23,6 +23,7 @@ import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
+import { userFacingErrorMessage } from '../utils/errors';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
@@ -69,7 +70,10 @@ export function WhatsNewScreen({
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {
-      Alert.alert(strings.common.error, err?.message || strings.changelog.subscribeFailed);
+      Alert.alert(
+        strings.common.error,
+        userFacingErrorMessage(err, strings.changelog.subscribeFailed, strings.common)
+      );
     } finally {
       setIsSubscribing(false);
     }

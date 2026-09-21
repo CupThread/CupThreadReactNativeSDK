@@ -26,6 +26,7 @@ import {
   TurnstileRequiredException,
 } from '../client/FeedbackException';
 import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
+import { userFacingErrorMessage } from '../utils/errors';
 
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
@@ -153,7 +154,9 @@ export function FeatureRequestComposeSheet({
       } else if (err instanceof PaymentRequiredException) {
         setErrorMessage(err.message || strings.featureRequestCompose.submitFailed);
       } else {
-        setErrorMessage(err?.message || strings.featureRequestCompose.submitFailed);
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
+        );
       }
     }
   };

@@ -446,7 +446,10 @@ test('uploadAttachment maps error statuses through the shared pipeline', async (
       (err: any) => {
         assert.ok(err instanceof UnexpectedStatusException);
         assert.equal(err.status, 500);
-        assert.equal(err.message.includes('server exploded'), true);
+        // The raw body must stay off `message` (it can reach end-user UI);
+        // it remains available on `responseBody` for host diagnostics.
+        assert.equal(err.message.includes('server exploded'), false);
+        assert.equal(err.responseBody, 'server exploded');
         return true;
       }
     );

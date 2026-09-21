@@ -29,7 +29,9 @@ export class UnexpectedStatusException extends FeedbackException {
   readonly responseBody: string;
 
   constructor(status: number, responseBody: string) {
-    super(`CupThread API responded with unexpected status HTTP ${status}: ${responseBody}`);
+    // Keep the raw body off `message` — it must never reach end-user UI. The
+    // full payload stays available on `responseBody` for host diagnostics.
+    super(`CupThread API responded with unexpected status HTTP ${status}`);
     this.name = 'UnexpectedStatusException';
     this.status = status;
     this.responseBody = responseBody;

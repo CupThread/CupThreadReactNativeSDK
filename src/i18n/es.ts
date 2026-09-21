@@ -11,6 +11,8 @@ export const esStrings: CupThreadStrings = {
     submitting: 'Enviando...',
     error: 'Error',
     retry: 'Reintentar',
+    timeoutError: 'La solicitud tardó demasiado tiempo. Inténtalo de nuevo.',
+    networkError: 'Error de red. Comprueba tu conexión e inténtalo de nuevo.',
     optional: 'opcional',
     required: 'obligatorio',
     anonymous: 'Usuario anónimo',
