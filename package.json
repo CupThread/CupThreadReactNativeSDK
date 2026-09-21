@@ -57,8 +57,18 @@
   },
   "homepage": "https://cupthread.com",
   "peerDependencies": {
+    "expo-localization": ">=10.0.0",
     "react": ">=18.0.0",
-    "react-native": ">=0.70.0"
+    "react-native": ">=0.70.0",
+    "react-native-localize": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "expo-localization": {
+      "optional": true
+    },
+    "react-native-localize": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

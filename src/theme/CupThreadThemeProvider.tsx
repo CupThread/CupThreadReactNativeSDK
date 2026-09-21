@@ -13,7 +13,7 @@ import { FeedbackClient } from '../client/FeedbackClient';
 import { UserTokenStore } from '../client/UserTokenStore';
 import { getThemeColors, ThemeColors } from './SdkTheme';
 import type { CupThreadStrings, DeepPartial } from '../i18n';
-import { getLocaleStrings, enStrings } from '../i18n';
+import { enStrings, getLocaleStrings, resolveLocale } from '../i18n';
 
 declare const __DEV__: boolean | undefined;
 
@@ -190,7 +190,9 @@ export interface CupThreadContextValue {
   configError: Error | null;
 
   /**
-   * Active locale string (e.g. `'en'`, `'zh-Hans'`).
+   * Active locale string (e.g. `'en'`, `'zh-Hans'`, `'pt-BR'`) — the resolved
+   * result of the provider's `locale` prop: `'auto'` resolves to the detected
+   * device locale, or `'en'` when none is detectable.
    */
   locale: string;
 
@@ -248,11 +250,21 @@ export interface CupThreadProviderProps {
   theme?: SdkTheme;
 
   /**
-   * Locale identifier for UI text localization (e.g. `'en'`, `'zh-Hans'`, `'zh'`, `'zh-CN'`).
+   * Locale identifier for UI text localization (e.g. `'en'`, `'zh-Hans'`, `'zh'`, `'zh-CN'`),
+   * or `'auto'` to follow the device language.
    *
-   * @defaultValue `'en'`
+   * @remarks
+   * With `'auto'` (the default), the device locale is detected through
+   * `expo-localization` or `react-native-localize` when the host app ships
+   * either, then React Native core (SettingsManager / I18nManager, or
+   * `navigator.language` on web), and falls back to `'en'` when nothing is
+   * detectable. An explicit tag always wins verbatim — pass one to force a
+   * language (e.g. for an in-app language picker). The resolved value is
+   * exposed as {@link CupThreadContextValue.locale}.
+   *
+   * @defaultValue `'auto'`
    */
-  locale?: string;
+  locale?: string | 'auto';
 
   /**
    * Custom string overrides deeply merged on top of the active locale dictionary.
@@ -277,7 +289,8 @@ export interface CupThreadProviderProps {
  *
  * @remarks
  * Wrap your root React Native app component or navigation container in `<CupThreadProvider>`
- * to supply the active {@link FeedbackClient}, theme tokens, and user credentials.
+ * to supply the active {@link FeedbackClient}, theme tokens, user credentials, and
+ * localized strings — UI text follows the device language by default (`locale="auto"`).
  *
  * @example
  * ```tsx
@@ -302,7 +315,7 @@ export function CupThreadProvider({
   client,
   userToken: explicitUserToken,
   theme: explicitTheme,
-  locale = 'en',
+  locale = 'auto',
   strings: customStrings,
   children,
   _retryDelayMs,
@@ -444,9 +457,14 @@ export function CupThreadProvider({
     return getThemeColors(effectiveTheme, isDarkMode);
   }, [effectiveTheme, isDarkMode]);
 
+  // 'auto' resolves to the detected device locale (or 'en'); an explicit tag
+  // is used verbatim. Re-evaluated when the locale input changes so flipping
+  // the prop between 'auto' and a fixed language takes effect immediately.
+  const resolvedLocale = useMemo(() => resolveLocale(locale), [locale]);
+
   const resolvedStrings = useMemo(() => {
-    return getLocaleStrings(locale, customStrings);
-  }, [locale, customStrings]);
+    return getLocaleStrings(resolvedLocale, customStrings);
+  }, [resolvedLocale, customStrings]);
 
   const value: CupThreadContextValue = useMemo(
     () => ({
@@ -458,7 +476,7 @@ export function CupThreadProvider({
       appConfig: configState.appConfig,
       isLoadingConfig: configState.isLoadingConfig,
       configError: configState.configError,
-      locale,
+      locale: resolvedLocale,
       strings: resolvedStrings,
       refreshConfig,
     }),
@@ -471,7 +489,7 @@ export function CupThreadProvider({
       configState.appConfig,
       configState.isLoadingConfig,
       configState.configError,
-      locale,
+      resolvedLocale,
       resolvedStrings,
       refreshConfig,
     ]
