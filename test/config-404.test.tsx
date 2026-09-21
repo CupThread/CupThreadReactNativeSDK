@@ -61,9 +61,11 @@ test('fetchAppConfig throws UnexpectedStatusException when API responds with 404
       caught.message.includes('404'),
       `Expected message to mention status 404: ${caught.message}`
     );
+    // The raw body stays off `message` (it can reach end-user UI); the full
+    // payload remains available on `responseBody` for host diagnostics.
     assert.ok(
-      caught.message.includes('App not found'),
-      `Expected message to contain error text: ${caught.message}`
+      !caught.message.includes('App not found'),
+      `Expected message to keep the server body out: ${caught.message}`
     );
   } finally {
     globalThis.fetch = originalFetch;
