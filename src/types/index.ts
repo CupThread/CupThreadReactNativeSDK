@@ -285,6 +285,11 @@ export interface FeedbackSubmissionResult {
    * Non-fatal warning message from the server if processing encountered partial issues.
    */
   warning?: string;
+
+  /**
+   * Machine-readable warning code from the server, when present.
+   */
+  warningCode?: string;
 }
 
 /**

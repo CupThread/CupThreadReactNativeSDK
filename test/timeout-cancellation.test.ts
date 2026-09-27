@@ -461,6 +461,35 @@ test('FeedbackClient.submit supports options with signal and userToken', async (
   }
 });
 
+test('FeedbackClient.submit preserves the optional warningCode', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        submissionId: 'sub_warning',
+        forwardedToGithub: false,
+        warning: 'Attachments unavailable',
+        warningCode: 'attachment_signing_unconfigured',
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    )) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_test',
+    });
+    const result = await client.submit({
+      title: 'Attachment warning',
+      description: 'The submission completed with a warning',
+    });
+
+    assert.equal(result.warningCode, 'attachment_signing_unconfigured');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('FeedbackClient methods thread signal through to fetch', async () => {
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
@@ -988,4 +1017,3 @@ test('JSON endpoints still time out with config.timeoutMs after the upload-budge
     globalThis.fetch = originalFetch;
   }
 });
-
