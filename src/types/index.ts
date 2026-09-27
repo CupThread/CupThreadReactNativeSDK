@@ -786,6 +786,11 @@ export interface FeatureRequestItem {
   voteCount: number;
 
   /**
+   * Historical votes imported from the source provider, when available.
+   */
+  importedVotes?: number;
+
+  /**
    * Whether the currently active user/token has voted for this item.
    */
   hasVoted: boolean;
