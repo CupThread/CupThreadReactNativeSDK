@@ -127,6 +127,7 @@ export const zhHantStrings: CupThreadStrings = {
     unsubscribeButton: '取消訂閱',
     subscribeFailed: '訂閱更新紀錄失敗。',
     sectionUnavailable: '更新日誌暫時無法使用。',
+    loadMore: '載入更多',
   },
   userProfile: {
     screenTitle: '使用者個人檔案',

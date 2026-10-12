@@ -139,6 +139,7 @@ export const deStrings: CupThreadStrings = {
     unsubscribeButton: 'Abbestellen',
     subscribeFailed: 'Abonnieren des Changelogs fehlgeschlagen.',
     sectionUnavailable: 'Das Änderungsprotokoll ist derzeit nicht verfügbar.',
+    loadMore: 'Mehr laden',
   },
   userProfile: {
     screenTitle: 'Benutzerprofil',

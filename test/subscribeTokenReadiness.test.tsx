@@ -48,7 +48,11 @@ if (supportsModuleMocks) {
       // render it (and any rows) for the button to appear in the tree.
       FlatList: ({ ListHeaderComponent, data, renderItem }: any) => (
         <>
-          {typeof ListHeaderComponent === 'function' ? <ListHeaderComponent /> : ListHeaderComponent ?? null}
+          {typeof ListHeaderComponent === 'function' ? (
+            <ListHeaderComponent />
+          ) : (
+            (ListHeaderComponent ?? null)
+          )}
           {(data ?? []).map((item: any, index: number) => (
             <React.Fragment key={item?.id ?? index}>
               {renderItem ? renderItem({ item, index }) : null}
@@ -117,7 +121,7 @@ function installFetch(): { subscribeCalls: Array<{ headers: any; body: any }> } 
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    if (target.endsWith('/changelog')) {
+    if (target.includes('/changelog')) {
       return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

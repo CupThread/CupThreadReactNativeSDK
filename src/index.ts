@@ -11,6 +11,7 @@ export * from './client/UserTokenStore';
 // Export Hooks
 export * from './hooks/useToggleVote';
 export * from './hooks/useFeatureRequests';
+export * from './hooks/useChangelogEntries';
 export * from './hooks/useAsyncData';
 
 // Export Theme & i18n

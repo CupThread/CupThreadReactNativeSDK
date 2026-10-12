@@ -155,6 +155,7 @@ export interface ChangelogStrings {
   unsubscribeButton: string;
   subscribeFailed: string;
   sectionUnavailable: string;
+  loadMore: string;
 }
 
 /**

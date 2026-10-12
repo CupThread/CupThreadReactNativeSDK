@@ -13,6 +13,7 @@ import type {
   FeedbackDraft,
   FeedbackSubmissionResult,
   ListFeatureRequestsResult,
+  ListPublicChangelogResult,
   PublicAppConfig,
   PublicUserProfileResult,
   RequestOptions,
@@ -47,6 +48,17 @@ export const DEFAULT_TIMEOUT_MS = 15000;
  * budget on mobile uplinks, so they get their own, larger default.
  */
 export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
+
+/**
+ * Server-side default (and maximum) page size for the public changelog endpoint.
+ */
+export const DEFAULT_CHANGELOG_PAGE_SIZE = 100;
+
+/**
+ * Upper bound on pages {@link FeedbackClient.fetchChangelog} will follow before
+ * returning, guarding against a server that never clears `hasMore`.
+ */
+export const MAX_CHANGELOG_PAGES = 100;
 
 /**
  * Converts a `Retry-After` response header into milliseconds. Accepts both the
@@ -868,7 +880,70 @@ export class FeedbackClient {
   }
 
   /**
+   * Retrieves one page of published changelog entries with cursor pagination.
+   *
+   * The page cursor is opaque: pass a previous response's `nextCursor` back as
+   * `cursor` to read the following page. Servers that predate pagination do not
+   * return `hasMore`, which resolves to a single page of at most 100 entries.
+   *
+   * @param options - Page size (`limit`, clamped to 1–100), opaque `cursor`, and request options.
+   * @returns Page entries sorted newest first, plus pagination metadata.
+   *
+   * @example
+   * ```ts
+   * const page = await client.listChangelog({ limit: 20 });
+   * if (page.hasMore && page.nextCursor) {
+   *   const next = await client.listChangelog({ limit: 20, cursor: page.nextCursor });
+   * }
+   * ```
+   */
+  public async listChangelog(options?: {
+    /**
+     * Maximum number of entries to return per page (default: 100, clamped to 1–100).
+     */
+    limit?: number;
+    /**
+     * Opaque keyset cursor from a previous response's `nextCursor`.
+     */
+    cursor?: string;
+    /**
+     * Optional abort signal to cancel the request.
+     */
+    signal?: AbortSignal;
+    /**
+     * Optional timeout in milliseconds for this request.
+     */
+    timeoutMs?: number;
+  }): Promise<ListPublicChangelogResult> {
+    const limit = Math.min(Math.max(options?.limit ?? DEFAULT_CHANGELOG_PAGE_SIZE, 1), 100);
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (options?.cursor) params.append('cursor', options.cursor);
+
+    const res = await this.request<Partial<ListPublicChangelogResult>>({
+      method: 'GET',
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(
+        this.config.appKey
+      )}/changelog?${params.toString()}`,
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
+
+    const entries = (res.entries || []).sort(
+      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    );
+    return {
+      entries,
+      hasMore: res.hasMore === true,
+      nextCursor: typeof res.nextCursor === 'string' ? res.nextCursor : null,
+    };
+  }
+
+  /**
    * Retrieves published changelog entries and release notes sorted by publication date descending.
+   *
+   * Follows the endpoint's cursor pagination until every page has been read, so
+   * apps with more entries than one page's worth still resolve their full history
+   * (older deployments silently capped the result at the server's page size).
    *
    * @returns Chronological list of release notes.
    *
@@ -879,13 +954,20 @@ export class FeedbackClient {
    * ```
    */
   public async fetchChangelog(options?: RequestOptions | AbortSignal): Promise<ChangelogEntry[]> {
-    const res = await this.request<{ entries: ChangelogEntry[] }>({
-      method: 'GET',
-      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog`,
-      signal: extractSignal(options),
-      timeoutMs: extractTimeoutMs(options),
-    });
-    return (res.entries || []).sort(
+    const signal = extractSignal(options);
+    const timeoutMs = extractTimeoutMs(options);
+
+    const all: ChangelogEntry[] = [];
+    let cursor: string | undefined;
+    // Defensive page cap: a misbehaving server that always reports `hasMore`
+    // must not turn this into an unbounded request loop.
+    for (let page = 0; page < MAX_CHANGELOG_PAGES; page += 1) {
+      const res = await this.listChangelog({ cursor, signal, timeoutMs });
+      all.push(...res.entries);
+      if (!res.hasMore || !res.nextCursor) break;
+      cursor = res.nextCursor;
+    }
+    return all.sort(
       (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
     );
   }
@@ -914,8 +996,10 @@ export class FeedbackClient {
     const config = await this.fetchAppConfig({ signal, timeoutMs });
     if (!config.sdk?.features?.changelog) return null;
     const limit = Math.min(Math.max(config.sdk.changelogOverlay?.entryCount || 3, 1), 10);
-    const all = await this.fetchChangelog({ signal, timeoutMs });
-    const entries = all.slice(0, limit);
+    // The overlay only ever displays `limit` entries, so request exactly that
+    // page instead of pulling the full history.
+    const page = await this.listChangelog({ limit, signal, timeoutMs });
+    const entries = page.entries.slice(0, limit);
     if (entries.length === 0) return null;
 
     const latest = entries[0];

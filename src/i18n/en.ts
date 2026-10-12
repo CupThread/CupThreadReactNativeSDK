@@ -131,6 +131,7 @@ export const enStrings: CupThreadStrings = {
     unsubscribeButton: 'Unsubscribe',
     subscribeFailed: 'Failed to subscribe to changelog.',
     sectionUnavailable: 'Changelog is currently unavailable.',
+    loadMore: 'Load more',
   },
   userProfile: {
     screenTitle: 'User Profile',

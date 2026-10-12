@@ -33,10 +33,10 @@ test('FeedbackClient.submitFeatureRequest dispatches POST /api/v1/feature-reques
     interceptedUrl = url.toString();
     interceptedMethod = init?.method || 'GET';
     interceptedBody = init?.body ? JSON.parse(init.body as string) : null;
-    return new Response(
-      JSON.stringify({ featureRequestId: 'fr_test_999', pending: false }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ featureRequestId: 'fr_test_999', pending: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }) as any;
 
   try {
@@ -120,7 +120,10 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     });
 
     // 1. First check when unseen: returns overlay data
-    const overlay1 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: testStore });
+    const overlay1 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: true,
+      tokenStore: testStore,
+    });
     assert.ok(overlay1);
     assert.equal(overlay1?.latestKey, '1.5.0');
     assert.equal(overlay1?.entries.length, 1);
@@ -129,11 +132,21 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     await testStore.markChangelogSeen('1.5.0');
 
     // 3. Query with onlyIfUnseen: true: should now be null
-    const overlay2 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: testStore });
-    assert.equal(overlay2, null, 'Should return null when latest changelog version was already seen');
+    const overlay2 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: true,
+      tokenStore: testStore,
+    });
+    assert.equal(
+      overlay2,
+      null,
+      'Should return null when latest changelog version was already seen'
+    );
 
     // 4. Query without onlyIfUnseen: returns data
-    const overlay3 = await client.prepareChangelogOverlay({ onlyIfUnseen: false, tokenStore: testStore });
+    const overlay3 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: false,
+      tokenStore: testStore,
+    });
     assert.ok(overlay3);
   } finally {
     globalThis.fetch = originalFetch;
@@ -161,7 +174,12 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       appKey: HOSTILE_SEGMENT,
     });
 
-    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+    const cases: Array<{
+      label: string;
+      run: () => Promise<unknown>;
+      expected: string;
+      expectedQuery?: string;
+    }> = [
       {
         label: 'fetchAppConfig',
         run: () => client.fetchAppConfig(),
@@ -195,7 +213,8 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       {
         label: 'fetchChangelog',
         run: () => client.fetchChangelog(),
-        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog`,
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog?limit=100`,
+        expectedQuery: '?limit=100',
       },
       {
         label: 'subscribeToChangelog',
@@ -227,8 +246,14 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       assert.equal(url, testCase.expected, testCase.label);
       // Segment containment: reserved characters must never escape into the
       // URL structure (no stray query, fragment, or unencoded separators).
-      assert.ok(!url.includes('?'), `${testCase.label}: no raw "?" in URL`);
-      assert.ok(!url.includes('#'), `${testCase.label}: no raw "#" in URL`);
+      // The changelog list is the one method allowed a query string (cursor
+      // pagination parameters), so its declared query is stripped first.
+      const withoutQuery =
+        testCase.expectedQuery && url.endsWith(testCase.expectedQuery)
+          ? url.slice(0, url.length - testCase.expectedQuery.length)
+          : url;
+      assert.ok(!withoutQuery.includes('?'), `${testCase.label}: no raw "?" in URL`);
+      assert.ok(!withoutQuery.includes('#'), `${testCase.label}: no raw "#" in URL`);
       assert.ok(!url.includes(' '), `${testCase.label}: no raw space in URL`);
     }
   } finally {
@@ -254,7 +279,12 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       appKey: 'app_key_abc',
     });
 
-    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+    const cases: Array<{
+      label: string;
+      run: () => Promise<unknown>;
+      expected: string;
+      expectedQuery?: string;
+    }> = [
       {
         label: 'fetchAppConfig',
         run: () => client.fetchAppConfig(),
@@ -288,7 +318,7 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       {
         label: 'fetchChangelog',
         run: () => client.fetchChangelog(),
-        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog',
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog?limit=100',
       },
       {
         label: 'subscribeToChangelog',

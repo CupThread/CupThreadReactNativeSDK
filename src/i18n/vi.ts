@@ -129,6 +129,7 @@ export const viStrings: CupThreadStrings = {
     unsubscribeButton: 'Hủy đăng ký',
     subscribeFailed: 'Đăng ký nhận nhật ký thay đổi thất bại.',
     sectionUnavailable: 'Nhật ký thay đổi hiện không khả dụng.',
+    loadMore: 'Tải thêm',
   },
   userProfile: {
     screenTitle: 'Hồ sơ người dùng',

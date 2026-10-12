@@ -143,6 +143,7 @@ export const plStrings: CupThreadStrings = {
     unsubscribeButton: 'Anuluj subskrypcję',
     subscribeFailed: 'Nie udało się zasubskrybować dziennika zmian.',
     sectionUnavailable: 'Dziennik zmian jest obecnie niedostępny.',
+    loadMore: 'Załaduj więcej',
   },
   userProfile: {
     screenTitle: 'Profil użytkownika',

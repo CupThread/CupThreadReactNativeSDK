@@ -136,6 +136,7 @@ export const frStrings: CupThreadStrings = {
     unsubscribeButton: 'Se désabonner',
     subscribeFailed: "Échec de l'abonnement au journal des modifications.",
     sectionUnavailable: 'Le journal des modifications est actuellement indisponible.',
+    loadMore: 'Charger plus',
   },
   userProfile: {
     screenTitle: 'Profil utilisateur',
