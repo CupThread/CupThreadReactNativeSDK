@@ -122,6 +122,24 @@ export interface RequestOptions {
 }
 
 /**
+ * Options for customizing a feature request vote request ({@link FeedbackClient.castVote}).
+ */
+export interface CastVoteOptions extends RequestOptions {
+  /**
+   * Optional email address (max 254 characters) to enroll in double-opt-in
+   * ship notifications when the feature request ships. Trimmed before sending;
+   * omitted from the JSON body when empty or undefined.
+   */
+  shipNotifyEmail?: string;
+
+  /**
+   * Optional Cloudflare Turnstile token for human verification on anonymous
+   * votes or ship-notification opt-ins.
+   */
+  turnstileToken?: string;
+}
+
+/**
  * Metadata describing an uploaded media or log file attachment.
  *
  * @remarks
@@ -871,7 +889,8 @@ export interface FeatureRequestSubmissionResult {
 }
 
 /**
- * Result returned after toggling an upvote on a feature request.
+ * Result returned after casting ({@link FeedbackClient.castVote}) or removing
+ * ({@link FeedbackClient.removeVote}) an upvote on a feature request.
  *
  * @example
  * ```ts
@@ -883,7 +902,7 @@ export interface FeatureRequestSubmissionResult {
  */
 export interface VoteResult {
   /**
-   * True if the vote was added; false if previously active vote was removed.
+   * True if the user has an active vote after the operation; false if the vote was removed.
    */
   voted: boolean;
 

@@ -1,6 +1,7 @@
 import type {
   AppVersion,
   BoardColumn,
+  CastVoteOptions,
   ChangelogEntry,
   ChangelogSubscriptionResult,
   ChangelogUnsubscribeResult,
@@ -771,25 +772,77 @@ export class FeedbackClient {
   }
 
   /**
-   * Toggles an upvote on a specified feature request for the given user token.
+   * Casts an upvote on a specified feature request for the given user token.
+   *
+   * The endpoint (`POST /api/v1/feature-requests/{id}/vote`) is insert-only and
+   * idempotent: repeating the request leaves an existing vote in place and
+   * returns `{ voted: true, voteCount }`. To remove an existing vote, call
+   * {@link FeedbackClient.removeVote}.
    *
    * @param featureRequestId - ID of the target feature request.
    * @param userToken - User token performing the vote.
-   * @returns Updated vote status and total vote count.
+   * @param options - Optional request options (including `shipNotifyEmail`, `turnstileToken`, `signal`, and `timeoutMs`) or an `AbortSignal`.
+   * @returns Updated vote status (`voted: true`) and total vote count.
    *
    * @example
    * ```ts
-   * const vote = await client.toggleVote('fr_123', userToken);
+   * const vote = await client.castVote('fr_123', userToken);
    * console.log(`Voted: ${vote.voted}, New count: ${vote.voteCount}`);
    * ```
    */
-  public async toggleVote(
+  public async castVote(
+    featureRequestId: string,
+    userToken: string,
+    options?: CastVoteOptions | AbortSignal
+  ): Promise<VoteResult> {
+    const isOptionsObject =
+      options &&
+      typeof options === 'object' &&
+      !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
+    const castOpts = isOptionsObject ? (options as CastVoteOptions) : undefined;
+    const shipNotifyEmail = castOpts?.shipNotifyEmail?.trim() || undefined;
+    const turnstileToken = castOpts?.turnstileToken?.trim() || undefined;
+
+    return this.request<VoteResult>({
+      method: 'POST',
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/vote`,
+      body: {
+        appKey: this.config.appKey,
+        userToken,
+        ...(shipNotifyEmail ? { shipNotifyEmail } : {}),
+        ...(turnstileToken ? { turnstileToken } : {}),
+      },
+      accepted: [200],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
+    });
+  }
+
+  /**
+   * Removes the given user token's upvote from a specified feature request.
+   *
+   * The endpoint (`DELETE /api/v1/feature-requests/{id}/vote`) is idempotent:
+   * removing a vote that is not present returns `{ voted: false, voteCount }`
+   * with HTTP 200 rather than an error.
+   *
+   * @param featureRequestId - ID of the target feature request.
+   * @param userToken - User token removing the vote.
+   * @param options - Optional request options or an `AbortSignal`.
+   * @returns Updated vote status (`voted: false`) and total vote count.
+   *
+   * @example
+   * ```ts
+   * const vote = await client.removeVote('fr_123', userToken);
+   * console.log(`Voted: ${vote.voted}, New count: ${vote.voteCount}`);
+   * ```
+   */
+  public async removeVote(
     featureRequestId: string,
     userToken: string,
     options?: RequestOptions | AbortSignal
   ): Promise<VoteResult> {
     return this.request<VoteResult>({
-      method: 'POST',
+      method: 'DELETE',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/vote`,
       body: {
         appKey: this.config.appKey,
@@ -799,6 +852,28 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+  }
+
+  /**
+   * Casts an upvote on a specified feature request (legacy compatibility wrapper).
+   *
+   * The backend `POST /api/v1/feature-requests/{id}/vote` endpoint is insert-only
+   * and no longer toggles. Use {@link FeedbackClient.castVote} to cast a vote
+   * and {@link FeedbackClient.removeVote} to remove a vote.
+   *
+   * @deprecated Use {@link FeedbackClient.castVote} or {@link FeedbackClient.removeVote} instead.
+   * `POST /api/v1/feature-requests/{id}/vote` is insert-only and no longer toggles.
+   * @param featureRequestId - ID of the target feature request.
+   * @param userToken - User token performing the vote.
+   * @param options - Optional request options or an `AbortSignal`.
+   * @returns Updated vote status and total vote count.
+   */
+  public async toggleVote(
+    featureRequestId: string,
+    userToken: string,
+    options?: CastVoteOptions | AbortSignal
+  ): Promise<VoteResult> {
+    return this.castVote(featureRequestId, userToken, options);
   }
 
   /**

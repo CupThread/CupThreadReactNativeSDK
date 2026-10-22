@@ -29,7 +29,8 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
   - `PUT /api/v1/public/apps/:appKey/user` — Report user attributes (paying status, MRR).
   - `GET /api/v1/feature-requests` — Feature requests list, search (`q`), and pagination (`limit`, `offset`, `versionId`); caller identity via `X-User-Token` header.
   - `POST /api/v1/feature-requests` — Submit new feature request.
-  - `POST /api/v1/feature-requests/:id/vote` — Toggle vote on a feature request.
+  - `POST /api/v1/feature-requests/:id/vote` — Cast a vote on a feature request (insert-only, idempotent).
+  - `DELETE /api/v1/feature-requests/:id/vote` — Remove a vote from a feature request (idempotent).
   - `GET /api/v1/feature-requests/:id/comments` — List discussion comments on a feature request.
   - `POST /api/v1/feature-requests/:id/comments` — Post a comment or reply on a feature request.
   - `GET /api/v1/users/:userId/profile` — Public developer profile, authored apps, and recent comments.
