@@ -51,6 +51,8 @@ export const jaStrings: CupThreadStrings = {
       `${count}件のファイルはサポートされていない添付形式のため、スキップされました。`,
     uploadSizeMissing: 'このファイルはサイズが報告されていないため、アップロードできません。',
     uploadTooLarge: 'このファイルは大きすぎるためアップロードできません。',
+    attachmentTooLarge: (maxSize: string) =>
+      `このファイルは大きすぎます。添付ファイルの最大サイズ: ${maxSize}。`,
     uploadUnsupportedType: 'このファイル形式は添付ファイルとしてサポートされていません。',
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
     sectionUnavailable: 'フィードバックは現在ご利用いただけません。',

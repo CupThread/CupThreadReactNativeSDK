@@ -49,6 +49,7 @@ export const zhHansStrings: CupThreadStrings = {
     unsupportedAttachment: (count: number) => `${count} 个所选文件格式不受支持，已跳过。`,
     uploadSizeMissing: '该文件未提供大小，无法上传。',
     uploadTooLarge: '该文件过大，无法上传。',
+    attachmentTooLarge: (maxSize: string) => `文件过大。附件大小上限：${maxSize}。`,
     uploadUnsupportedType: '不支持将该文件类型作为附件。',
     submitFailed: '提交反馈失败，请重试。',
     sectionUnavailable: '反馈功能暂不可用。',

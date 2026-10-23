@@ -51,6 +51,8 @@ export const koStrings: CupThreadStrings = {
       `${count}개의 파일은 지원되지 않는 첨부 형식이라 건너뛰었습니다.`,
     uploadSizeMissing: '이 파일은 크기가 보고되지 않아 업로드할 수 없습니다.',
     uploadTooLarge: '이 파일은 너무 커서 업로드할 수 없습니다.',
+    attachmentTooLarge: (maxSize: string) =>
+      `이 파일은 너무 큽니다. 최대 첨부 파일 크기: ${maxSize}.`,
     uploadUnsupportedType: '이 파일 형식은 첨부 파일로 지원되지 않습니다.',
     submitFailed: '피드백 제출에 실패했습니다. 다시 시도해 주세요.',
     sectionUnavailable: '피드백 기능을 현재 사용할 수 없습니다.',

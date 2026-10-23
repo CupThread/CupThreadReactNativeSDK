@@ -168,6 +168,9 @@ export function FeedbackComposer({
   const [isSubmitting, setIsSubmitting] = useState(initialState.isSubmitting);
   const isSubmittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(initialState.errorMessage);
+  // Attachment notices live apart from validation and submission errors so a
+  // later successful pick clears only its own stale warning.
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
 
   const resetForm = useCallback((draft?: Partial<FeedbackDraft>) => {
     const fresh = resetFeedbackComposerState(draft);
@@ -179,6 +182,7 @@ export function FeedbackComposer({
     setIsUploadingAttachment(fresh.isUploadingAttachment);
     setIsSubmitting(fresh.isSubmitting);
     setErrorMessage(fresh.errorMessage);
+    setAttachmentNotice(null);
   }, []);
 
   const prevVisibleRef = useRef(visible);
@@ -229,7 +233,10 @@ export function FeedbackComposer({
 
       const items = Array.isArray(picked) ? picked : [picked];
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      const { succeeded, failed, unsupported } = await processPickedAttachments(items, {
+      const { succeeded, failed, unsupported, rejected } = await processPickedAttachments(items, {
+        // Reject known-oversized picks before an upload session is reserved, so
+        // a doomed file never spends the upload timeout budget or user data.
+        maxBytes: appConfig?.maxAttachmentBytes,
         upload: async (options) => {
           if (isSubmittingRef.current || isSubmitting) {
             throw new Error('Upload cancelled: submission in progress');
@@ -256,6 +263,13 @@ export function FeedbackComposer({
       }
 
       const notices: string[] = [];
+      if (rejected.length > 0) {
+        // The configured limit applies to the whole pick, so one message with
+        // the formatted ceiling explains every rejected item.
+        notices.push(
+          strings.feedbackComposer.attachmentTooLarge(formatFileSize(rejected[0].maxBytes))
+        );
+      }
       if (failed.length > 0) {
         // A single failure has an actionable cause (missing size, unsupported
         // type, oversized file); only aggregate several into a count.
@@ -275,11 +289,13 @@ export function FeedbackComposer({
         notices.push(strings.feedbackComposer.unsupportedAttachment(unsupported.length));
       }
       if (notices.length > 0) {
-        setErrorMessage(notices.join(' '));
+        setAttachmentNotice(notices.join(' '));
+      } else {
+        setAttachmentNotice(null);
       }
     } catch (err: any) {
       if (!isSubmittingRef.current && !isSubmitting) {
-        setErrorMessage(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
+        setAttachmentNotice(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
       }
     } finally {
       setIsUploadingAttachment(false);
@@ -370,6 +386,8 @@ export function FeedbackComposer({
     }
   };
 
+  const displayedError = [errorMessage, attachmentNotice].filter(Boolean).join(' ');
+
   const content = (
     <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
@@ -388,7 +406,7 @@ export function FeedbackComposer({
         )}
       </View>
 
-      {(errorMessage || isFeedbackDisabled) && (
+      {(displayedError || isFeedbackDisabled) && (
         <View
           style={[
             styles.errorBox,
@@ -396,7 +414,7 @@ export function FeedbackComposer({
           ]}
         >
           <Text style={{ color: colors.danger, fontSize: 13 }}>
-            {errorMessage || strings.feedbackComposer.sectionUnavailable}
+            {displayedError || strings.feedbackComposer.sectionUnavailable}
           </Text>
         </View>
       )}

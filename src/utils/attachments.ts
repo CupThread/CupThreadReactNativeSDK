@@ -59,6 +59,24 @@ export interface AttachmentBatchFailure {
 }
 
 /**
+ * One picker item rejected during the local pre-flight, before any network
+ * call. Kept separate from {@link AttachmentBatchFailure} so callers can
+ * explain the configured limit instead of reporting a transport failure.
+ */
+export interface AttachmentBatchRejection {
+  item: unknown;
+
+  /** Why the item was rejected locally. */
+  reason: 'too-large';
+
+  /** Picker-reported byte size that exceeded the limit. */
+  size: number;
+
+  /** Configured limit, normally `PublicAppConfig.maxAttachmentBytes`. */
+  maxBytes: number;
+}
+
+/**
  * Outcome of processing a batch of picked attachments. Successes and failures
  * are independent: a batch that partially fails still reports every attachment
  * that made it through, so callers can commit those instead of discarding them.
@@ -73,6 +91,32 @@ export interface AttachmentBatchResult {
    * an accurate message instead of blaming the upload pipeline.
    */
   unsupported: unknown[];
+
+  /**
+   * Items whose declared size exceeded {@link ProcessPickedAttachmentsOptions.maxBytes}.
+   * They never reach an upload seam, so no bandwidth or upload budget is spent.
+   */
+  rejected: AttachmentBatchRejection[];
+}
+
+/**
+ * Resolves the byte size a picker declared for an upload payload.
+ *
+ * Prefers an explicit `size` and falls back to a `File`/`Blob` payload's own
+ * `size`. Invalid or non-positive values count as undeclared. The upload
+ * session reserves quota from this number, so both the pre-flight check here
+ * and {@link FeedbackClient.uploadAttachment} use the same ceiling.
+ */
+export function resolveDeclaredAttachmentSize(option: UploadAttachmentOptions): number | undefined {
+  const explicit = option.size;
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
+    return Math.ceil(explicit);
+  }
+  const payloadSize = option.file?.size;
+  if (typeof payloadSize === 'number' && Number.isFinite(payloadSize) && payloadSize > 0) {
+    return Math.ceil(payloadSize);
+  }
+  return undefined;
 }
 
 /**
@@ -82,6 +126,18 @@ export interface AttachmentBatchResult {
  */
 export interface ProcessPickedAttachmentsOptions {
   upload: (options: UploadAttachmentOptions) => Promise<FeedbackAttachment>;
+
+  /**
+   * Maximum accepted attachment size in bytes, normally
+   * `PublicAppConfig.maxAttachmentBytes`. A pending item whose picker-reported
+   * size is above the limit is rejected locally, before any upload request.
+   *
+   * Items that report no size skip this pre-flight and reach the upload seam,
+   * where `uploadAttachment` still rejects a bare `{ uri }` payload with
+   * `file_size_required` before a request. Hosts should forward the picker's
+   * `fileSize` so both checks can run.
+   */
+  maxBytes?: number;
 
   /**
    * Optional batch upload seam. When provided, every pending item is handed to
@@ -197,7 +253,10 @@ export function classifyPickedAttachment(item: unknown): PickedAttachmentClassif
  *
  * Pre-uploaded descriptors pass through untouched; raw payloads (including the
  * legacy `fileUri` alias) are uploaded in pick order. When
- * {@link ProcessPickedAttachmentsOptions.uploadBatch} is supplied, every
+ * {@link ProcessPickedAttachmentsOptions.maxBytes} is set, a pending item whose
+ * declared size exceeds it is rejected before any upload call.
+ *
+ * When {@link ProcessPickedAttachmentsOptions.uploadBatch} is supplied, every
  * pending item goes through one batched call so a multi-file pick reserves a
  * single upload session; otherwise items fall back to the single-item
  * {@link ProcessPickedAttachmentsOptions.upload} seam.
@@ -205,8 +264,9 @@ export function classifyPickedAttachment(item: unknown): PickedAttachmentClassif
  * A failure only affects its own item — the batch never throws, and everything
  * that succeeded (including descriptors collected before a failing item) is
  * returned in {@link AttachmentBatchResult.succeeded}. Items matching no known
- * shape are reported in {@link AttachmentBatchResult.unsupported} so callers
- * can warn.
+ * shape are reported in {@link AttachmentBatchResult.unsupported}, and items
+ * rejected by the size pre-flight in
+ * {@link AttachmentBatchResult.rejected}, so callers can warn.
  */
 export async function processPickedAttachments(
   items: readonly unknown[],
@@ -214,6 +274,13 @@ export async function processPickedAttachments(
 ): Promise<AttachmentBatchResult> {
   const failed: AttachmentBatchFailure[] = [];
   const unsupported: unknown[] = [];
+  const rejected: AttachmentBatchRejection[] = [];
+  const limit =
+    typeof options.maxBytes === 'number' &&
+    Number.isFinite(options.maxBytes) &&
+    options.maxBytes > 0
+      ? Math.ceil(options.maxBytes)
+      : undefined;
 
   // One slot per picked item, so uploads run batch-first while `succeeded`
   // still reports descriptors in pick order.
@@ -236,6 +303,13 @@ export async function processPickedAttachments(
     if (classification.type === 'uploaded') {
       results[index] = classification.attachment;
       return;
+    }
+    if (limit !== undefined) {
+      const size = resolveDeclaredAttachmentSize(classification.options);
+      if (size !== undefined && size > limit) {
+        rejected.push({ item, reason: 'too-large', size, maxBytes: limit });
+        return;
+      }
     }
     pending.push({ item, options: classification.options, index });
   });
@@ -276,5 +350,5 @@ export async function processPickedAttachments(
     (attachment): attachment is FeedbackAttachment => attachment !== undefined
   );
 
-  return { succeeded, failed, unsupported };
+  return { succeeded, failed, unsupported, rejected };
 }

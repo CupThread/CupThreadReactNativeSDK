@@ -28,6 +28,10 @@ function makeUploadOptions(name: string): UploadAttachmentOptions {
   };
 }
 
+function makeSizedUploadOptions(name: string, size: number): UploadAttachmentOptions {
+  return { ...makeUploadOptions(name), size };
+}
+
 function makeUploadFn(failOn: (name: string) => boolean = () => false) {
   const uploadedNames: string[] = [];
   return {
@@ -384,4 +388,120 @@ test('uploadBatch is skipped when nothing pending remains', async () => {
 
   assert.equal(batchCalls, 0, 'a pick of only pre-uploaded descriptors opens no session');
   assert.deepEqual(result.succeeded, [makeDescriptor('only')]);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #77 — maxAttachmentBytes pre-flight
+// ---------------------------------------------------------------------------
+
+test('maxBytes rejects a sized item before the upload seam and uploads the rest', async () => {
+  const oversized = makeSizedUploadOptions('oversized', 100);
+  const accepted = makeSizedUploadOptions('accepted', 10);
+  const { uploadedNames, upload } = makeUploadFn();
+
+  const result = await processPickedAttachments([oversized, accepted], { upload, maxBytes: 50 });
+
+  assert.deepEqual(uploadedNames, ['accepted.png'], 'the oversized item never reaches upload');
+  assert.deepEqual(result.rejected, [
+    { item: oversized, reason: 'too-large', size: 100, maxBytes: 50 },
+  ]);
+  assert.deepEqual(result.succeeded, [makeDescriptor('accepted')]);
+  assert.equal(result.failed.length, 0);
+});
+
+test('maxBytes accepts an item exactly at the limit', async () => {
+  const { uploadedNames, upload } = makeUploadFn();
+
+  const result = await processPickedAttachments([makeSizedUploadOptions('exact', 50)], {
+    upload,
+    maxBytes: 50,
+  });
+
+  assert.deepEqual(uploadedNames, ['exact.png']);
+  assert.equal(result.rejected.length, 0);
+  assert.deepEqual(result.succeeded, [makeDescriptor('exact')]);
+});
+
+test('maxBytes leaves items without a declared size to the upload seam', async () => {
+  const { uploadedNames, upload } = makeUploadFn();
+
+  const result = await processPickedAttachments([makeUploadOptions('unknown-size')], {
+    upload,
+    maxBytes: 1,
+  });
+
+  assert.deepEqual(uploadedNames, ['unknown-size.png'], 'the seam owns size validation for unsized items');
+  assert.equal(result.rejected.length, 0);
+});
+
+test('maxBytes reads the payload file size when size is absent', async () => {
+  const options: UploadAttachmentOptions = {
+    ...makeUploadOptions('blob'),
+    file: { uri: 'file:///tmp/blob.png', size: 4096 },
+  };
+  const { uploadedNames, upload } = makeUploadFn();
+
+  const result = await processPickedAttachments([options], { upload, maxBytes: 2048 });
+
+  assert.deepEqual(uploadedNames, []);
+  assert.deepEqual(result.rejected, [
+    { item: options, reason: 'too-large', size: 4096, maxBytes: 2048 },
+  ]);
+});
+
+test('maxBytes enforces the legacy fileUri size before normalization uploads', async () => {
+  const legacy = {
+    kind: 'image' as const,
+    filename: 'legacy-big.png',
+    mimeType: 'image/png',
+    fileUri: 'file:///tmp/legacy-big.png',
+    size: 500,
+  };
+  const { uploadedNames, upload } = makeUploadFn();
+
+  const result = await processPickedAttachments([legacy], { upload, maxBytes: 50 });
+
+  assert.deepEqual(uploadedNames, []);
+  assert.equal(result.rejected.length, 1);
+  assert.equal(result.rejected[0].item, legacy, 'the raw picker item is preserved');
+  assert.equal(result.rejected[0].size, 500);
+});
+
+test('maxBytes filters oversized items out of the batch and still uses one session', async () => {
+  const oversized = makeSizedUploadOptions('oversized', 500);
+  const small = makeSizedUploadOptions('small', 10);
+  const batches: string[][] = [];
+
+  const result = await processPickedAttachments([oversized, small], {
+    maxBytes: 50,
+    upload: async () => {
+      throw new Error('the single-item seam must not run when uploadBatch is provided');
+    },
+    uploadBatch: async (batch) => {
+      batches.push(batch.map((options) => options.filename));
+      return batch.map((options) => ({
+        ok: true as const,
+        attachment: makeDescriptor(options.filename.replace('.png', '')),
+      }));
+    },
+  });
+
+  assert.deepEqual(batches, [['small.png']], 'the rejected item never consumes a session slot');
+  assert.equal(result.rejected.length, 1);
+  assert.equal(result.rejected[0].item, oversized);
+  assert.deepEqual(result.succeeded, [makeDescriptor('small')]);
+});
+
+test('maxBytes ignores non-positive and non-finite limits', async () => {
+  const { uploadedNames, upload } = makeUploadFn();
+
+  for (const maxBytes of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    uploadedNames.length = 0;
+    const result = await processPickedAttachments([makeSizedUploadOptions('huge', 1_000_000)], {
+      upload,
+      maxBytes,
+    });
+    assert.deepEqual(uploadedNames, ['huge.png'], `maxBytes=${String(maxBytes)} is not a limit`);
+    assert.equal(result.rejected.length, 0);
+  }
 });
