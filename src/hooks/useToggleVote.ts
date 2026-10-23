@@ -1,16 +1,20 @@
 import { useCallback, useRef, useState } from 'react';
 import { FeedbackClient } from '../client/FeedbackClient';
-import type { FeatureRequestItem, VoteResult } from '../types';
+import type { FeatureRequestItem, VoteResult, VoteWarning } from '../types';
 
 function dispatchVoteRequest(
   client: FeedbackClient,
   featureRequestId: string,
   userToken: string,
-  wasVoted: boolean
+  wasVoted: boolean,
+  shipNotifyEmail?: string
 ): Promise<VoteResult> {
   const proto = FeedbackClient?.prototype;
   const hasCustomToggleVote =
     typeof client.toggleVote === 'function' && client.toggleVote !== proto?.toggleVote;
+  // Only the cast path carries the opt-in; removing a vote never requests
+  // ship notifications.
+  const castOptions = shipNotifyEmail ? { shipNotifyEmail } : undefined;
 
   if (wasVoted) {
     if (
@@ -26,9 +30,9 @@ function dispatchVoteRequest(
     typeof client.castVote === 'function' &&
     (!hasCustomToggleVote || client.castVote !== proto?.castVote)
   ) {
-    return client.castVote(featureRequestId, userToken);
+    return client.castVote(featureRequestId, userToken, castOptions);
   }
-  return client.toggleVote(featureRequestId, userToken);
+  return client.toggleVote(featureRequestId, userToken, castOptions);
 }
 
 /**
@@ -88,6 +92,21 @@ export interface UseToggleVoteOptions {
    * Optional callback invoked whenever a vote toggle request rejects.
    */
   onVoteError?: (error: unknown, item: FeatureRequestItem) => void;
+
+  /**
+   * Optional callback invoked when a vote succeeds but the server reports a
+   * non-fatal warning, such as a refused ship-notification opt-in
+   * (`warning.code === 'email_not_verified'`). The vote itself is saved.
+   */
+  onVoteWarning?: (warning: VoteWarning, item: FeatureRequestItem) => void;
+
+  /**
+   * Optional ship-notification email sent with a cast vote. On a board that
+   * requires sign-in the address must belong to the session, otherwise the
+   * server records the vote and returns `email_not_verified` in
+   * {@link VoteResult.warning}.
+   */
+  shipNotifyEmail?: string;
 }
 
 /**
@@ -133,6 +152,8 @@ export interface UseToggleVoteResult {
  * - Failure reverts only the optimistic delta relative to current state, never a
  *   stale whole-item snapshot.
  * - Surfaces vote errors via `voteError`, `getVoteError`, and `options.onVoteError`.
+ * - Delivers non-fatal server warnings (a refused ship-notification opt-in) via
+ *   `options.onVoteWarning`; the vote itself still applies.
  *
  * @param client - {@link FeedbackClient} used to dispatch the toggle request.
  * @param userToken - Current user token; toggles are ignored while empty.
@@ -158,6 +179,11 @@ export function useToggleVote(
 
   const onVoteErrorRef = useRef(options?.onVoteError);
   onVoteErrorRef.current = options?.onVoteError;
+
+  const onVoteWarningRef = useRef(options?.onVoteWarning);
+  onVoteWarningRef.current = options?.onVoteWarning;
+
+  const shipNotifyEmail = options?.shipNotifyEmail?.trim() || undefined;
 
   const pendingIdsRef = useRef<Set<string>>(new Set());
   const [pendingIds, setPendingIds] = useState<string[]>([]);
@@ -208,7 +234,7 @@ export function useToggleVote(
       };
       applyChangeRef.current(item.id, withOptimisticVote);
 
-      dispatchVoteRequest(client, item.id, userToken, preVoteSnapshot.hasVoted)
+      dispatchVoteRequest(client, item.id, userToken, preVoteSnapshot.hasVoted, shipNotifyEmail)
         .then((res) => {
           applyChangeRef.current(item.id, (current) => withServerVote(current, res));
           setErrorsByItemId((prev) => {
@@ -218,6 +244,11 @@ export function useToggleVote(
             return next;
           });
           setVoteError(null);
+          // A warning means the vote was saved but an optional opt-in was
+          // refused, so it must not be routed through the error path.
+          if (res.warning) {
+            onVoteWarningRef.current?.(res.warning, item);
+          }
         })
         .catch((err: unknown) => {
           applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot));
@@ -231,7 +262,7 @@ export function useToggleVote(
           setPendingIds(Array.from(pendingIdsRef.current));
         });
     },
-    [client, userToken]
+    [client, userToken, shipNotifyEmail]
   );
 
   const isVoting = useCallback(

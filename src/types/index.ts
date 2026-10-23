@@ -129,6 +129,11 @@ export interface CastVoteOptions extends RequestOptions {
    * Optional email address (max 254 characters) to enroll in double-opt-in
    * ship notifications when the feature request ships. Trimmed before sending;
    * omitted from the JSON body when empty or undefined.
+   *
+   * On a board that requires sign-in, the address must be one of the signed-in
+   * session's verified addresses. Otherwise the vote is still recorded and
+   * {@link VoteResult.warning} carries `code: 'email_not_verified'` — no
+   * consent is stored and no confirmation email is sent.
    */
   shipNotifyEmail?: string;
 
@@ -920,6 +925,44 @@ export interface VoteResult {
    * Updated total vote count for the feature request.
    */
   voteCount: number;
+
+  /**
+   * Present when the vote was recorded but the optional ship-notification
+   * opt-in was refused.
+   *
+   * On a board that requires sign-in, a `shipNotifyEmail` that is not one of
+   * the session's verified addresses is discarded: the vote still counts, no
+   * consent is stored, and no confirmation email is sent. Branch on
+   * {@link VoteWarning.code} rather than the prose in `error`, and treat the
+   * vote as saved.
+   */
+  warning?: VoteWarning;
+}
+
+/**
+ * Non-fatal warning attached to a successful vote.
+ *
+ * @example
+ * ```ts
+ * if (vote.warning?.code === 'email_not_verified') {
+ *   // The vote counted; ship notifications were not requested.
+ * }
+ * ```
+ */
+export interface VoteWarning {
+  /**
+   * Stable machine-readable reason.
+   *
+   * - `'email_not_verified'`: the supplied `shipNotifyEmail` is not one of the
+   *   signed-in session's verified addresses, so ship notifications were not
+   *   requested for it.
+   */
+  code: 'email_not_verified';
+
+  /**
+   * Human-readable explanation from the server.
+   */
+  error: string;
 }
 
 /**
