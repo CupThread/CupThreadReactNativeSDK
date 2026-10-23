@@ -281,3 +281,35 @@ export class RateLimitedException extends FeedbackException {
     this.responseBody = responseBody;
   }
 }
+
+/**
+ * Thrown when a user-attributes report cannot be canonicalized locally —
+ * for example an `mrr` that is `NaN` or infinite, or a signature timestamp
+ * that is not a nonnegative integer.
+ *
+ * JSON cannot carry a non-finite number, so sending one would desynchronize
+ * the signed canonical string from the payload the server receives. Failing
+ * before the request keeps the signature and the wire body in agreement.
+ */
+export class InvalidUserAttributesException extends FeedbackException {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidUserAttributesException';
+  }
+}
+
+/**
+ * Thrown when a {@link UserAttributesSigner} provider returns signing material
+ * the API cannot accept: a signature outside the `^[0-9a-fA-F]{64}$` grammar,
+ * a non-integer timestamp, or a timestamp that differs from the one embedded
+ * in the canonical string the provider signed.
+ *
+ * A misbehaving backend signer fails locally instead of spending a request
+ * the server must reject with `invalid_signature`.
+ */
+export class InvalidUserAttributesSignatureException extends FeedbackException {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidUserAttributesSignatureException';
+  }
+}

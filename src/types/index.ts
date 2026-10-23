@@ -59,6 +59,36 @@ export interface FeedbackClientConfig {
   appKey: string;
 
   /**
+   * Per-app SDK signing secret generated in the CupThread Developer Console
+   * (*App Access → App Credentials → SDK signing secret*).
+   *
+   * @remarks
+   * Required to sign payment-attribute reports (`isPaying`, `plan`, `mrr`,
+   * `currency`) on `PUT /api/v1/public/apps/{appKey}/user`; the server rejects
+   * unsigned payment attributes. Requests without payment attributes are
+   * unaffected.
+   *
+   * An embedded secret is not tamper-resistant: anyone who installs the app
+   * can extract it and forge verified payment attributes for arbitrary end
+   * users. Prefer {@link FeedbackClientConfig.userAttributesSigner}, which
+   * keeps the secret on your backend. When neither is configured, the report
+   * is sent unsigned and rejected by the server with HTTP 422.
+   */
+  signingSecret?: string;
+
+  /**
+   * Backend-delegated signer for payment-attribute reports.
+   *
+   * @remarks
+   * The SDK builds the canonical string (including a device-clock timestamp)
+   * and hands it to this provider. Send it to your backend, HMAC-SHA256 it
+   * with the app's SDK signing secret there, and return the signature and the
+   * timestamp embedded in the string. This provider takes precedence over
+   * {@link FeedbackClientConfig.signingSecret}.
+   */
+  userAttributesSigner?: UserAttributesSigner;
+
+  /**
    * Default platform reported on feedback submissions and requests when
    * not explicitly overridden by the caller.
    *
@@ -141,6 +171,138 @@ export interface RequestOptions {
    * Optional request timeout override in milliseconds for this operation.
    */
   timeoutMs?: number;
+}
+
+/**
+ * The values that produced a payment-attribute canonical string.
+ *
+ * @remarks
+ * `undefined` means the field is absent and signs as `unset`; an explicit
+ * `null` clears the stored value and signs as `null`. String fields are
+ * signed exactly as they are sent in the request body.
+ */
+export interface UserAttributesCanonicalArguments {
+  /** Public app key that scopes the report. */
+  appKey: string;
+
+  /** Resolved end-user token (the `X-User-Token` identity of the request). */
+  userToken: string;
+
+  /** Paying-user status. */
+  isPaying?: boolean | null;
+
+  /** Host-app plan name, signed as sent. */
+  plan?: string | null;
+
+  /** Monthly recurring revenue, signed with `toFixed(2)` canonicalization. */
+  mrr?: number | null;
+
+  /** ISO 4217 currency code, signed as sent. */
+  currency?: string | null;
+
+  /** Unix epoch seconds embedded in the canonical string. */
+  timestamp: number;
+}
+
+/**
+ * The signing material passed to a {@link UserAttributesSigner} provider.
+ *
+ * @remarks
+ * `canonicalString` is the exact UTF-8 byte sequence to HMAC-SHA256 with the
+ * app's SDK signing secret. The last line is the signature timestamp; the HMAC
+ * must cover it as-is, and the returned
+ * {@link UserAttributesSignature.timestamp} must be that same value.
+ */
+export interface UserAttributesSigningRequest {
+  /** Exact canonical string to HMAC-SHA256. */
+  canonicalString: string;
+
+  /** Structured values that produced `canonicalString`. */
+  arguments: UserAttributesCanonicalArguments;
+
+  /**
+   * Signal aborted when the caller cancels the report or its timeout expires.
+   *
+   * Forward it to the backend request that produces the signature so signing
+   * is cancelled with the rest of the operation. The client settles the
+   * operation even if the signer ignores this signal, but in-flight work is
+   * only released when the signer observes it.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * A signature over a {@link UserAttributesSigningRequest.canonicalString}.
+ */
+export interface UserAttributesSignature {
+  /** HMAC-SHA256 digest as exactly 64 hexadecimal characters. */
+  signature: string;
+
+  /** The epoch-seconds value embedded in the signed canonical string. */
+  timestamp: number;
+}
+
+/**
+ * Backend-delegated signer for payment-attribute reports.
+ *
+ * @remarks
+ * Keeping the SDK signing secret on your own backend is the recommended
+ * integration: HMAC-SHA256 the exact `canonicalString` bytes there, where
+ * entitlement truth already lives (StoreKit server notifications, RevenueCat
+ * webhooks, and similar), and return the signature and its timestamp. The
+ * secret never ships inside the app binary.
+ *
+ * A provider takes precedence over {@link FeedbackClientConfig.signingSecret}.
+ * Return `null` or `undefined` to decline and fall back to the embedded
+ * secret. A returned signature must match `^[0-9a-fA-F]{64}$` and its
+ * timestamp must equal the timestamp embedded in the canonical string, or the
+ * client throws {@link InvalidUserAttributesSignatureException} before sending.
+ */
+export type UserAttributesSigner = (
+  request: UserAttributesSigningRequest
+) =>
+  UserAttributesSignature | null | undefined | Promise<UserAttributesSignature | null | undefined>;
+
+/**
+ * Options for reporting end-user attributes
+ * ({@link FeedbackClient.updateUserAttributes}).
+ *
+ * @remarks
+ * Reports that include any of `isPaying`, `plan`, `mrr`, or `currency` are
+ * payment attributes and are HMAC-SHA256 signed. Identity-only reports are
+ * sent unsigned.
+ */
+export interface UpdateUserAttributesOptions extends RequestOptions {
+  /** End-user token sent as `X-User-Token`. */
+  userToken: string;
+
+  /** Paying-user status. `null` clears the stored value. */
+  isPaying?: boolean | null;
+
+  /** Host-app plan name. Trimmed before sending; `null` clears the stored value. */
+  plan?: string | null;
+
+  /** Monthly recurring revenue (0…1,000,000). `null` clears the stored value. */
+  mrr?: number | null;
+
+  /** ISO 4217 currency code. Trimmed before sending; `null` clears the stored value. */
+  currency?: string | null;
+
+  /**
+   * Per-call SDK signing secret override.
+   *
+   * Consulted only when no {@link FeedbackClientConfig.userAttributesSigner}
+   * provider is configured. An embedded secret is not tamper-resistant;
+   * prefer the backend-delegated signer.
+   */
+  signingSecret?: string;
+
+  /**
+   * Unix epoch seconds for this signature. Defaults to the current device
+   * clock. Primarily useful for deterministic tests; the server rejects
+   * signatures outside a ±300-second freshness window.
+   */
+  timestamp?: number;
 }
 
 /**

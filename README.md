@@ -386,6 +386,8 @@ function AppHeader() {
 | `baseUrl`                | `string`                                                    | _(required)_  | Root API URL of the CupThread backend instance; must be `https://` unless `allowInsecureBaseUrl` is enabled    |
 | `allowInsecureBaseUrl`   | `boolean`                                                   | `false`       | Permit an `http://` `baseUrl` for a local backend you control. While disabled (the default), a cleartext URL throws `InsecureBaseUrlException` at construction; enabling it allows that local-backend configuration |
 | `appKey`                 | `string`                                                    | _(required)_  | Unique application key from Developer Console                                                                                                                                                    |
+| `signingSecret`          | `string`                                                    | `undefined`   | Per-app SDK signing secret used to sign payment-attribute reports locally. Prefer `userAttributesSigner`; an embedded secret is not tamper-resistant. See [Reporting paying users securely](#reporting-paying-users-securely) |
+| `userAttributesSigner`   | `(request) => UserAttributesSignature \| Promise<...>`      | `undefined`   | Backend-delegated signer for payment-attribute reports; receives the exact canonical string and returns `{ signature, timestamp }`                                                               |
 | `defaultPlatform`        | `FeedbackPlatform`                                          | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.)                                                                                                                       |
 | `timeoutMs`              | `number`                                                    | `15000`       | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout                                                                                            |
 | `uploadTimeoutMs`        | `number`                                                    | `60000`       | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); covers session creation plus every file in a batch, independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })` |
@@ -420,7 +422,7 @@ Every outgoing request carries `X-SDK-Version: <version>`, and `submit()` record
 | `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                                                                                              |
 | `unsubscribeFromChangelog(token, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe with the per-subscriber token from the email link (blank tokens throw `MissingUnsubscribeTokenException`)                                                      |
 | `unsubscribeFromDigest(token, options?)`                    | `POST /api/v1/public/digest/unsubscribe`                  | Unsubscribe the workspace from the weekly digest email with the token from the email footer (blank tokens throw `MissingUnsubscribeTokenException`)                        |
-| `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                                                                                   |
+| `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes; payment attributes (`isPaying`, `plan`, `mrr`, `currency`) are HMAC-signed (supports `signal`, `timeoutMs`)                                        |
 | `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                                                                                                 |
 
 #### Vote counts and imported history
@@ -430,6 +432,50 @@ Every outgoing request carries `X-SDK-Version: <version>`, and `submit()` record
 Render `voteCount` as-is and never add `importedVotes` on top of it. To label the historical share, read `importedVotes` directly (for example `<voteCount> votes · <importedVotes> imported`) rather than recomputing a total.
 
 Vote toggles answer with the same summed definition: `castVote` / `removeVote` / `toggleVote` results carry the new total, so removing a vote takes away only that ballot and leaves the imported votes in place. The `useToggleVote` transforms treat the number as a total — an optimistic ±1, then the server value — and carry `importedVotes` through untouched.
+
+#### Reporting paying users securely
+
+`updateUserAttributes()` reports `isPaying`, `plan`, `mrr`, and `currency` to `PUT /api/v1/public/apps/{appKey}/user`. Those fields assert payment state, so the API accepts them only when the request carries an HMAC-SHA256 signature over the `cpt-user-attrs-v1` canonical string. Identity-only reports stay unsigned.
+
+The SDK resolves signing material in this order:
+
+1. **`userAttributesSigner` provider (recommended).** The SDK builds the canonical string, including the device-clock timestamp, and hands it to your provider. HMAC it on your backend with the app's SDK signing secret (*App Access → App Credentials → SDK signing secret*) and return the signature and its timestamp. The secret never ships inside the app binary.
+
+   ```ts
+   const client = new FeedbackClient({
+     baseUrl: 'https://api.cupthread.com',
+     appKey: 'app_live_abc123',
+     userAttributesSigner: async ({ canonicalString, signal }) => {
+       const signed = await myBackend.signUserAttributes(canonicalString, { signal });
+       return { signature: signed.signature, timestamp: signed.timestamp };
+     },
+   });
+   ```
+
+   The provider receives an optional `signal`; forward it to the backend call so cancelling the report also cancels signing. Signing shares the report's `timeoutMs` budget, and the client settles the operation on abort or timeout even when the signer ignores the signal.
+
+2. **`signingSecret`.** Configure it on the client or per call to sign locally with the bundled pure-TypeScript HMAC-SHA256 implementation. This is convenient for development and internal builds; anyone who installs the app can extract an embedded secret and forge payment attributes, so keep it out of production builds.
+
+3. **No signing material.** The report is sent unsigned and the server rejects it with HTTP 422 `payment_attributes_require_signature` (or `sdk_signing_secret_not_configured` when the app has no secret yet).
+
+The canonical string is newline-joined with no trailing newline:
+
+```
+cpt-user-attrs-v1
+<appKey>
+<userToken>
+<true|false|unset>
+<value|null|unset>
+<canonicalNumber|null|unset>
+<valueAsSent|unset>
+<epochSeconds>
+```
+
+Each line holds the bare value; the angle-bracket labels describe the expected value and are not part of the bytes.
+
+Absent fields sign as `unset`, explicit `null` signs as `null`, and strings are signed exactly as sent (plan and currency are trimmed before sending). `mrr` is rendered with `toFixed(2)` and trailing zeros stripped (`1200`, `99.5`). Timestamps are device-clock epoch seconds and must fall within ±300 seconds of server time.
+
+`buildUserAttributesCanonicalString()` and `hmacSha256Hex()` are exported from the package root for hosts that need to reproduce or verify the exact signed bytes.
 
 ---
 

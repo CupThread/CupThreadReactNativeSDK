@@ -39,6 +39,13 @@ export * from './components/UserProfileScreen';
 export * from './components/ErrorState';
 
 // Export Utils
+export {
+  USER_ATTRIBUTES_SIGNATURE_VERSION,
+  buildUserAttributesCanonicalString,
+  canonicalNumber as canonicalUserAttributesNumber,
+  hmacSha256Hex,
+  signUserAttributes,
+} from './utils/userAttributesSigning';
 export * from './utils/errors';
 export * from './utils/formatters';
 export * from './utils/linkUrl';
