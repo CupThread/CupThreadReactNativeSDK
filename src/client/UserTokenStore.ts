@@ -187,6 +187,12 @@ export class UserTokenStore {
   private pendingSeenChangelogLoads: Map<string, Promise<Set<string>>> = new Map();
 
   /**
+   * Serializes seen-set loads across scopes so the legacy read, the scoped write,
+   * and the legacy-key removal cannot interleave between two apps.
+   */
+  private seenChangelogLoadLock: Promise<unknown> = Promise.resolve();
+
+  /**
    * Storage key that older SDK versions used to persist seen changelog versions
    * without an app scope.
    */
@@ -701,6 +707,18 @@ export class UserTokenStore {
    */
   public async clearSeenChangelogs(appKey?: string | null): Promise<void> {
     const storageKey = this.resolveSeenStorageKey(appKey);
+
+    // A load that is already running would otherwise repopulate the cache after
+    // this clear. Wait for it, then clear; a failed load still clears.
+    const pending = this.pendingSeenChangelogLoads.get(storageKey);
+    if (pending) {
+      try {
+        await pending;
+      } catch {
+        // ignore
+      }
+    }
+
     this.seenChangelogsCache.set(storageKey, new Set<string>());
     if (this.storage) {
       try {
@@ -730,16 +748,31 @@ export class UserTokenStore {
       return pending;
     }
 
-    const load = this.loadSeenChangelogs(storageKey).then((set) => {
-      this.seenChangelogsCache.set(storageKey, set);
-      return set;
-    });
+    const load = this.runWithSeenChangelogLock(() => this.loadSeenChangelogs(storageKey)).then(
+      (set) => {
+        this.seenChangelogsCache.set(storageKey, set);
+        return set;
+      }
+    );
     this.pendingSeenChangelogLoads.set(storageKey, load);
     try {
       return await load;
     } finally {
       this.pendingSeenChangelogLoads.delete(storageKey);
     }
+  }
+
+  /**
+   * Queues one seen-set load behind the previously queued one. Every load can
+   * touch the shared legacy key, so they run one at a time.
+   */
+  private runWithSeenChangelogLock<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.seenChangelogLoadLock.then(task, task);
+    this.seenChangelogLoadLock = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 
   /**
@@ -762,17 +795,19 @@ export class UserTokenStore {
     const shouldRewrite = set.size > UserTokenStore.MAX_SEEN_CHANGELOGS;
     this.trimSeenChangelogs(set);
 
-    if (migratedFromLegacy || shouldRewrite) {
-      await this.persistSeenChangelogs(storageKey, set);
-    }
+    const persisted =
+      migratedFromLegacy || shouldRewrite
+        ? await this.persistSeenChangelogs(storageKey, set)
+        : false;
 
-    if (migratedFromLegacy && this.storage) {
+    if (migratedFromLegacy && persisted) {
       // Entries cannot be attributed to an app after the fact, so the first app
       // that reads adopts them and the legacy blob is dropped to prevent bleed.
+      // Keep the blob when the scoped write failed, so the data is not lost.
       try {
-        if (this.storage.removeItem) {
+        if (this.storage?.removeItem) {
           await this.storage.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
-        } else {
+        } else if (this.storage) {
           await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
         }
       } catch {
@@ -799,16 +834,17 @@ export class UserTokenStore {
   }
 
   /**
-   * Persists a seen set, keeping storage failures from breaking the caller.
+   * Persists a seen set, reporting whether the write landed.
    */
-  private async persistSeenChangelogs(storageKey: string, seenSet: Set<string>): Promise<void> {
+  private async persistSeenChangelogs(storageKey: string, seenSet: Set<string>): Promise<boolean> {
     if (!this.storage) {
-      return;
+      return false;
     }
     try {
       await this.storage.setItem(storageKey, JSON.stringify(Array.from(seenSet)));
+      return true;
     } catch {
-      // ignore
+      return false;
     }
   }
 

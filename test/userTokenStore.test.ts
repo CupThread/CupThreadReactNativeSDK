@@ -826,3 +826,78 @@ test('UserTokenStore: setAppKey switches the default scope and null unscopes', a
   assert.equal(store.getAppKey(), null);
   assert.equal(await store.hasSeenChangelog('9.0.0'), false);
 });
+
+test('UserTokenStore: keeps the legacy blob when the scoped migration write fails', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const failingAdapter = {
+    ...adapter,
+    setItem: async (key: string, value: string) => {
+      if (key.includes(':')) throw new Error('storage full');
+      mem[key] = value;
+    },
+  };
+  mem['cupthread_seen_changelogs_v1'] = JSON.stringify(['7.0.0']);
+
+  const store = new UserTokenStore(failingAdapter, { appKey: 'app_a' });
+
+  assert.equal(await store.hasSeenChangelog('7.0.0'), true, 'the read still adopts the entries');
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1'],
+    JSON.stringify(['7.0.0']),
+    'a failed scoped write must not delete the only persisted copy'
+  );
+});
+
+test('UserTokenStore: concurrent scoped loads adopt the legacy blob only once', async () => {
+  const { adapter, mem } = memoryAdapter();
+  mem['cupthread_seen_changelogs_v1'] = JSON.stringify(['5.0.0']);
+  const store = new UserTokenStore(adapter);
+
+  const [appA, appB] = await Promise.all([
+    store.hasSeenChangelog('5.0.0', 'app_a'),
+    store.hasSeenChangelog('5.0.0', 'app_b'),
+  ]);
+
+  assert.equal(
+    [appA, appB].filter(Boolean).length,
+    1,
+    'exactly one app may inherit the unattributable legacy entries'
+  );
+  assert.equal(mem['cupthread_seen_changelogs_v1'], undefined);
+});
+
+test('UserTokenStore: clearing a scope waits for an in-flight load before emptying the cache', async () => {
+  const mem: Record<string, string> = {
+    'cupthread_seen_changelogs_v1:app_a': JSON.stringify(['1.0.0']),
+  };
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const adapter = {
+    getItem: async (key: string) => {
+      const value = mem[key] ?? null;
+      if (key.includes(':app_a')) await gate;
+      return value;
+    },
+    setItem: async (key: string, value: string) => {
+      mem[key] = value;
+    },
+    removeItem: async (key: string) => {
+      delete mem[key];
+    },
+  };
+  const store = new UserTokenStore(adapter, { appKey: 'app_a' });
+
+  const seenPromise = store.hasSeenChangelog('1.0.0');
+  const clearPromise = store.clearSeenChangelogs();
+  release();
+
+  assert.equal(await seenPromise, true);
+  await clearPromise;
+  assert.equal(
+    await store.hasSeenChangelog('1.0.0'),
+    false,
+    'the load that finished after the clear request must not repopulate the cache'
+  );
+});
