@@ -209,6 +209,11 @@ export class UploadRejectedException extends FeedbackException {
    */
   readonly code?: string;
 
+  /**
+   * Raw API error body. A rejection this client decided locally (an oversize
+   * pre-flight against the reserved slot limit) synthesizes the API's
+   * `{ error, code }` shape here so hosts parse one format.
+   */
   readonly responseBody: string;
 
   constructor(status: number, code?: string, responseBody: string = '') {

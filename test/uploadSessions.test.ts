@@ -642,11 +642,143 @@ test('uploadAttachments rejects a file larger than its reserved slot before send
         assert.ok(err instanceof UploadRejectedException);
         assert.equal(err.code, 'file_too_large');
         assert.equal(err.status, 413);
+        // A locally decided rejection still mirrors the API's error body shape.
+        const body = JSON.parse(err.responseBody);
+        assert.equal(body.code, 'file_too_large');
+        assert.match(body.error, /slot limit/);
         return true;
       }
     );
 
     assert.equal(slotCalls, 0, 'an oversized file must not be sent at all');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Completion budget
+// ---------------------------------------------------------------------------
+
+test('uploadAttachments bills session creation and every slot against one budget', async () => {
+  const originalFetch = globalThis.fetch;
+  const budgetMs = 500;
+  let slotRequests = 0;
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const target = url.toString();
+    if (target.endsWith('/api/v1/uploads/sessions')) {
+      // Session creation eats most of the budget before any bytes move.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return new Response(
+        JSON.stringify({
+          session: {
+            sessionId: 'ups_1',
+            sessionToken: SESSION_TOKEN,
+            expiresAt: '2026-10-23T13:00:00.000Z',
+            maxFileSizeBytes: 10485760,
+            maxFiles: 8,
+          },
+          files: ['upl_1', 'upl_2'].map((uploadId, index) => ({
+            clientFileId: `file-${index}`,
+            uploadId,
+            uploadUrl: `/api/v1/uploads/${uploadId}`,
+            maxSizeBytes: 10485760,
+          })),
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    slotRequests += 1;
+    if (slotRequests === 1) {
+      const uploadId = target.split('/').pop() || '';
+      return new Response(
+        JSON.stringify({
+          uploadId,
+          filename: 'first.png',
+          contentType: 'image/png',
+          sizeBytes: 10,
+          stored: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // The second slot stalls; the shared deadline must end it, not a fresh budget.
+    return new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal)?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
+    });
+  }) as any;
+
+  try {
+    const start = Date.now();
+    await assert.rejects(
+      makeClient({ uploadTimeoutMs: budgetMs }).uploadAttachments(
+        [makeBlobOptions('first.png'), makeBlobOptions('second.png')],
+        { userToken: USER_TOKEN }
+      ),
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException, `Expected a timeout, got ${err?.name}`);
+        // The configured budget stays the reported value.
+        assert.equal(err.timeoutMs, budgetMs);
+        return true;
+      }
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(slotRequests, 2, 'both slots should be attempted');
+    assert.ok(
+      elapsed < budgetMs + 200,
+      `the call must not restart the budget per request, took ${elapsed}ms`
+    );
+    assert.ok(elapsed >= 300, `the call should not fail early, took ${elapsed}ms`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachments keeps the full budget when only the session request runs', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    return new Promise((_resolve, reject) => {
+      (init?.signal as AbortSignal)?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
+    });
+  }) as any;
+
+  try {
+    const start = Date.now();
+    await assert.rejects(
+      makeClient({ uploadTimeoutMs: 120 }).uploadAttachments([makeBlobOptions('stalled.png')], {
+        userToken: USER_TOKEN,
+      }),
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException, `Expected a timeout, got ${err?.name}`);
+        assert.equal(err.timeoutMs, 120);
+        return true;
+      }
+    );
+
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 100, `session creation should get the whole budget, took ${elapsed}ms`);
+    assert.ok(elapsed < 600, `session creation should not outlive its budget, took ${elapsed}ms`);
   } finally {
     globalThis.fetch = originalFetch;
   }

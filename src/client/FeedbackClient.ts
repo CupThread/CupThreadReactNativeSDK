@@ -206,6 +206,22 @@ function extractTimeoutMs(optionsOrSignal?: RequestOptions | AbortSignal): numbe
   return undefined;
 }
 
+/**
+ * Trims a request timer to the time left before a shared deadline, never below
+ * one millisecond. Returns `timeoutMs` untouched when no deadline applies or the
+ * budget disables timeouts (non-positive / non-finite), so single-request
+ * callers keep their exact timer.
+ */
+function clampToDeadline(timeoutMs: number, deadlineAt?: number): number {
+  if (deadlineAt === undefined) {
+    return timeoutMs;
+  }
+  const remaining = deadlineAt - Date.now();
+  const cap =
+    Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.min(timeoutMs, remaining) : remaining;
+  return Math.max(1, Math.ceil(cap));
+}
+
 interface TimeoutContext {
   signal: AbortSignal;
   race<R>(promise: Promise<R>): Promise<R>;
@@ -213,7 +229,14 @@ interface TimeoutContext {
 }
 
 interface ExecuteWithTimeoutOptions {
+  /** Time the operation may actually run, in milliseconds. */
   timeoutMs: number;
+  /**
+   * Completion budget reported on {@link RequestTimeoutException}. Differs from
+   * `timeoutMs` when a shared deadline (a batched upload) trims the timer while
+   * the error should still name the budget the caller configured.
+   */
+  reportedTimeoutMs?: number;
   signal?: AbortSignal;
   timeoutMessage: string;
 }
@@ -233,6 +256,7 @@ async function executeWithTimeout<T>(
   fn: (context: TimeoutContext) => Promise<T>
 ): Promise<T> {
   const { timeoutMs, signal: callerSignal, timeoutMessage } = options;
+  const reportedTimeoutMs = options.reportedTimeoutMs ?? timeoutMs;
 
   if (callerSignal?.aborted) {
     const abortError = new Error('The operation was aborted');
@@ -275,7 +299,7 @@ async function executeWithTimeout<T>(
       throw err;
     }
     if (isTimeout()) {
-      throw new RequestTimeoutException(timeoutMs, timeoutMessage);
+      throw new RequestTimeoutException(reportedTimeoutMs, timeoutMessage);
     }
     if (callerSignal?.aborted || err?.name === 'AbortError' || controller.signal.aborted) {
       const abortErr = err?.name === 'AbortError' ? err : new Error('The operation was aborted');
@@ -286,7 +310,7 @@ async function executeWithTimeout<T>(
 
   const race = <R>(promise: Promise<R>): Promise<R> => {
     if (isTimeout()) {
-      throw new RequestTimeoutException(timeoutMs, timeoutMessage);
+      throw new RequestTimeoutException(reportedTimeoutMs, timeoutMessage);
     }
     if (callerSignal?.aborted || controller.signal.aborted) {
       const abortErr = new Error('The operation was aborted');
@@ -306,7 +330,7 @@ async function executeWithTimeout<T>(
         settled = true;
         cleanup();
         if (isTimeout()) {
-          reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+          reject(new RequestTimeoutException(reportedTimeoutMs, timeoutMessage));
         } else {
           const abortErr = new Error('The operation was aborted');
           abortErr.name = 'AbortError';
@@ -322,7 +346,7 @@ async function executeWithTimeout<T>(
           settled = true;
           cleanup();
           if (isTimeout()) {
-            reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+            reject(new RequestTimeoutException(reportedTimeoutMs, timeoutMessage));
           } else {
             resolve(res);
           }
@@ -332,7 +356,7 @@ async function executeWithTimeout<T>(
           settled = true;
           cleanup();
           if (isTimeout()) {
-            reject(new RequestTimeoutException(timeoutMs, timeoutMessage));
+            reject(new RequestTimeoutException(reportedTimeoutMs, timeoutMessage));
           } else if (
             callerSignal?.aborted ||
             err?.name === 'AbortError' ||
@@ -439,6 +463,7 @@ export interface UploadAttachmentOptions {
    * Optional completion-budget override in milliseconds for this upload.
    * Falls back to `uploadTimeoutMs` from the client config, which defaults to
    * 60 seconds — uploads do not inherit the shorter JSON-request `timeoutMs`.
+   * A batch bills session creation and every file against the same budget.
    */
   timeoutMs?: number;
 
@@ -785,6 +810,20 @@ export class FeedbackClient {
     files: readonly UploadSessionFileSpec[],
     options: CreateUploadSessionOptions = {}
   ): Promise<UploadSession> {
+    return this.openUploadSession(files, options);
+  }
+
+  /**
+   * Session creation with an optional shared deadline, so a batched upload can
+   * bill the round trip against its own completion budget.
+   *
+   * @internal
+   */
+  private async openUploadSession(
+    files: readonly UploadSessionFileSpec[],
+    options: CreateUploadSessionOptions,
+    deadlineAt?: number
+  ): Promise<UploadSession> {
     const specs = this.normalizeUploadFileSpecs(files);
     const userToken = await this.resolveUploadUserToken(options.userToken);
     const turnstileToken = await this.resolveTurnstileToken(options.turnstileToken);
@@ -805,6 +844,7 @@ export class FeedbackClient {
       signal: options.signal,
       timeoutMs,
       timeoutMessage: `Upload session creation timed out after ${timeoutMs}ms`,
+      deadlineAt,
     });
 
     const session = json?.session;
@@ -888,6 +928,12 @@ export class FeedbackClient {
    * are uploaded sequentially in pick order, which keeps a slow uplink from
    * saturating the connection and bounds memory to one file at a time.
    *
+   * The completion budget (`timeoutMs`, falling back to
+   * {@link FeedbackClientConfig.uploadTimeoutMs}) covers the whole call:
+   * session creation and every slot draw from one deadline, and a slot that
+   * starts with no budget left fails with {@link RequestTimeoutException}
+   * without a request.
+   *
    * The batch is transactional: the first failure aborts it and rejects with
    * that error, and the descriptors already returned for earlier slots are not
    * included in the rejection. Callers that need per-file isolation should use
@@ -926,21 +972,33 @@ export class FeedbackClient {
     // Resolve every precondition before creating the session: a doomed file
     // must not consume a reserved slot or any of the daily quota.
     const declarations = options.map((option) => this.describeUpload(option));
-    const explicitToken =
-      shared.userToken ?? options.find((option) => option.userToken)?.userToken;
+    const explicitToken = shared.userToken ?? options.find((option) => option.userToken)?.userToken;
     const userToken = await this.resolveUploadUserToken(explicitToken);
     const signal = shared.signal ?? options.find((option) => option.signal)?.signal;
-    const timeoutMs = shared.timeoutMs ?? options.find((option) => option.timeoutMs)?.timeoutMs;
     const turnstileToken = shared.turnstileToken ?? options[0].turnstileToken;
 
-    const session = await this.createUploadSession(
-      declarations.map((declaration) => declaration.spec),
-      {
-        userToken,
-        turnstileToken,
-        signal,
-        timeoutMs: timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
+    // The configured value is a completion budget for the whole call, not a
+    // per-request allowance: session creation and every slot draw from one
+    // deadline, so an eight-file pick cannot outlive it by nine budgets.
+    const timeoutMs =
+      shared.timeoutMs ??
+      options.find((option) => option.timeoutMs)?.timeoutMs ??
+      this.config.uploadTimeoutMs ??
+      DEFAULT_UPLOAD_TIMEOUT_MS;
+    const deadlineAt =
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const assertUploadBudget = (): void => {
+      if (deadlineAt !== undefined && deadlineAt - Date.now() <= 0) {
+        // Fail before spending a request (and a reserved slot) on a call that
+        // can no longer complete inside the budget.
+        throw new RequestTimeoutException(timeoutMs, `Upload timed out after ${timeoutMs}ms`);
       }
+    };
+
+    const session = await this.openUploadSession(
+      declarations.map((declaration) => declaration.spec),
+      { userToken, turnstileToken, signal, timeoutMs },
+      deadlineAt
     );
 
     const uploaded: FeedbackAttachment[] = [];
@@ -951,19 +1009,26 @@ export class FeedbackClient {
         throw new UnreadableUploadResponseException();
       }
       if (declaration.size > slot.maxSizeBytes) {
+        // No server body exists for a rejection this client decided on, so
+        // mirror the API's `{ error, code }` shape for `responseBody`.
         throw new UploadRejectedException(
           413,
           'file_too_large',
-          `File "${declaration.spec.filename}" exceeds the ${slot.maxSizeBytes}-byte slot limit.`
+          JSON.stringify({
+            error: `File "${declaration.spec.filename}" exceeds the ${slot.maxSizeBytes}-byte slot limit.`,
+            code: 'file_too_large',
+          })
         );
       }
+      assertUploadBudget();
       uploaded.push(
         await this.putUploadSlot({
           slot,
           sessionToken: session.sessionToken,
           declaration,
           signal,
-          timeoutMs: timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
+          timeoutMs,
+          deadlineAt,
         })
       );
     }
@@ -1092,6 +1157,8 @@ export class FeedbackClient {
     declaration: UploadDeclaration;
     signal?: AbortSignal;
     timeoutMs: number;
+    /** Shared completion deadline of the enclosing batch, when one applies. */
+    deadlineAt?: number;
   }): Promise<FeedbackAttachment> {
     const { slot, sessionToken, declaration, timeoutMs } = params;
     const timeoutMessage = `Upload timed out after ${timeoutMs}ms`;
@@ -1107,6 +1174,7 @@ export class FeedbackClient {
       signal: params.signal,
       timeoutMs,
       timeoutMessage,
+      deadlineAt: params.deadlineAt,
     });
 
     return {
@@ -1835,6 +1903,12 @@ export class FeedbackClient {
     signal?: AbortSignal;
     timeoutMs?: number;
     timeoutMessage?: string;
+    /**
+     * Absolute epoch-ms deadline shared by a multi-request operation (the
+     * batched upload flow). The timer is trimmed to the time left before it, so
+     * a batch cannot outlive its completion budget.
+     */
+    deadlineAt?: number;
     uploadResponse?: boolean;
     /**
      * Extra request headers. Session slot uploads add their bearer token here.
@@ -1866,10 +1940,12 @@ export class FeedbackClient {
 
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const callerSignal = options.signal;
+    const effectiveTimeoutMs = clampToDeadline(timeoutMs, options.deadlineAt);
 
     return executeWithTimeout<T>(
       {
-        timeoutMs,
+        timeoutMs: effectiveTimeoutMs,
+        reportedTimeoutMs: timeoutMs,
         signal: callerSignal,
         timeoutMessage: options.timeoutMessage ?? `Request timed out after ${timeoutMs}ms`,
       },

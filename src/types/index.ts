@@ -70,6 +70,9 @@ export interface FeedbackClientConfig {
    * uplinks, so uploads default to a dedicated, larger value. A per-call
    * `timeoutMs` override on `uploadAttachment` still takes precedence.
    *
+   * The budget covers the entire call — session creation plus every file in a
+   * batch — so a multi-file pick cannot outlive it one file at a time.
+   *
    * @defaultValue 60000 (60 seconds)
    */
   uploadTimeoutMs?: number;
