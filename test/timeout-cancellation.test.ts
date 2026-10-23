@@ -552,7 +552,7 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
     await client.fetchChangelog(opts);
     await client.prepareChangelogOverlay({ signal: controller.signal });
     await client.subscribeToChangelog('a@b.com', 'u', opts);
-    await client.unsubscribeFromChangelog('a@b.com', opts);
+    await client.unsubscribeFromChangelog('unsub.token.value', opts);
     await client.updateUserAttributes({ userToken: 'u', signal: controller.signal });
     await client.fetchUserProfile('u1', opts);
 

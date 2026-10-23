@@ -1194,7 +1194,15 @@ export interface ChangelogSubscriptionResult {
 }
 
 /**
- * Response returned after unsubscribing an email address from changelog updates.
+ * Response returned after unsubscribing a changelog email subscription with a
+ * signed token.
+ *
+ * @remarks
+ * The response is uniform whether or not the subscription still existed, so a
+ * `200` is final: a token that verifies for this app unsubscribes even after
+ * its `exp` and even when the app has since disabled public surfaces. A
+ * successful unsubscribe also revokes any ship-notification consent for the
+ * same address, because those recipients receive the same changelog email.
  *
  * @example
  * ```ts
@@ -1205,7 +1213,7 @@ export interface ChangelogSubscriptionResult {
  */
 export interface ChangelogUnsubscribeResult {
   /**
-   * True if the email was successfully removed from the mailing list.
+   * True if the address is no longer subscribed.
    */
   unsubscribed: boolean;
 }
