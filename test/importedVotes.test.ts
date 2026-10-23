@@ -150,16 +150,17 @@ test('a payload without importedVotes still decodes as a plain summed count', as
 test('castVote surfaces the server total with the imported votes still counted', async () => {
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async () => jsonResponse({ voted: true, voteCount: 124 })) as any;
+  // Casting on a request displayed as 124 (120 imported + 4 in-app).
+  globalThis.fetch = (async () => jsonResponse({ voted: true, voteCount: 125 })) as any;
 
   try {
     const vote = await makeClient().castVote('fr_imported', USER_TOKEN);
 
     assert.equal(vote.voted, true);
-    assert.equal(vote.voteCount, 124, 'a new vote moves the displayed total by one, not by 121');
+    assert.equal(vote.voteCount, 125, 'a new vote moves the displayed total by one, not by 121');
 
     const updated = withServerVote(makeItem({ hasVoted: false }), vote);
-    assert.equal(updated.voteCount, 124);
+    assert.equal(updated.voteCount, 125);
     assert.equal(updated.importedVotes, 120, 'the imported portion survives the reconciliation');
   } finally {
     globalThis.fetch = originalFetch;
