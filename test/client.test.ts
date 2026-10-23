@@ -244,7 +244,9 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       {
         label: 'fetchUserProfile',
         run: () => client.fetchUserProfile(HOSTILE_SEGMENT),
-        expected: `https://api.cupthread.com/api/v1/users/${HOSTILE_SEGMENT_ENCODED}/profile`,
+        // `URLSearchParams` encodes a query-string space as `+` (RFC 3986 form encoding).
+        expected: `https://api.cupthread.com/api/v1/users/${HOSTILE_SEGMENT_ENCODED}/profile?appKey=${HOSTILE_SEGMENT_ENCODED.replace('%20', '+')}`,
+        expectedQuery: `?appKey=${HOSTILE_SEGMENT_ENCODED.replace('%20', '+')}`,
       },
     ];
 
@@ -358,7 +360,7 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       {
         label: 'fetchUserProfile',
         run: () => client.fetchUserProfile('user_42'),
-        expected: 'https://api.cupthread.com/api/v1/users/user_42/profile',
+        expected: 'https://api.cupthread.com/api/v1/users/user_42/profile?appKey=app_key_abc',
       },
     ];
 
@@ -393,7 +395,10 @@ test('FeedbackClient round-trips non-ASCII path segments through UTF-8 percent-e
 
     await client.fetchUserProfile('üser-42');
 
-    assert.equal(interceptedUrl, 'https://api.cupthread.com/api/v1/users/%C3%BCser-42/profile');
+    assert.equal(
+      interceptedUrl,
+      'https://api.cupthread.com/api/v1/users/%C3%BCser-42/profile?appKey=app_key_abc'
+    );
     const encodedSegment = interceptedUrl.slice(
       interceptedUrl.indexOf('/api/v1/users/') + '/api/v1/users/'.length,
       interceptedUrl.lastIndexOf('/profile')

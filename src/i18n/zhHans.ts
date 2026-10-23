@@ -134,6 +134,7 @@ export const zhHansStrings: CupThreadStrings = {
     activityTitle: '最近动态',
     noActivity: '暂无最近活动记录',
     loadFailed: '加载个人主页失败',
+    rateLimited: '个人主页请求过于频繁，请稍后重试。',
     notFound: '用户不存在',
     anonymous: '匿名开发者',
     recentComments: '最近评论',

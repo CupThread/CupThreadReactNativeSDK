@@ -136,6 +136,7 @@ export const koStrings: CupThreadStrings = {
     activityTitle: '최근 활동',
     noActivity: '최근 활동이 없습니다',
     loadFailed: '프로필을 불러오지 못했습니다',
+    rateLimited: '프로필 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.',
     notFound: '사용자를 찾을 수 없습니다',
     anonymous: '익명 개발자',
     recentComments: '최근 댓글',

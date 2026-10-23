@@ -146,6 +146,7 @@ export const deStrings: CupThreadStrings = {
     activityTitle: 'Letzte Aktivitäten',
     noActivity: 'Keine aktuellen Aktivitäten',
     loadFailed: 'Profil konnte nicht geladen werden',
+    rateLimited: 'Zu viele Profilanfragen. Bitte versuche es gleich noch einmal.',
     notFound: 'Benutzer nicht gefunden',
     anonymous: 'Anonymer Entwickler',
     recentComments: 'Neueste Kommentare',

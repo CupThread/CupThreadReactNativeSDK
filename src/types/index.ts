@@ -140,6 +140,20 @@ export interface CastVoteOptions extends RequestOptions {
 }
 
 /**
+ * Options for fetching a public user profile ({@link FeedbackClient.fetchUserProfile}).
+ */
+export interface FetchUserProfileOptions extends RequestOptions {
+  /**
+   * Public app key used to resolve an app-scoped `u_<hex>` user id.
+   *
+   * Defaults to the client's configured `appKey`. Override it when the profile
+   * was reached from a different app's board or comment, since those ids are
+   * only meaningful within the app that minted them.
+   */
+  appKey?: string;
+}
+
+/**
  * Metadata describing an uploaded media or log file attachment.
  *
  * @remarks

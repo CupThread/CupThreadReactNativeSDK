@@ -138,6 +138,7 @@ export const enStrings: CupThreadStrings = {
     activityTitle: 'Recent Activity',
     noActivity: 'No recent activity found',
     loadFailed: 'Failed to load profile',
+    rateLimited: 'Too many profile requests. Please try again shortly.',
     notFound: 'User not found',
     anonymous: 'Anonymous Developer',
     recentComments: 'Recent Comments',

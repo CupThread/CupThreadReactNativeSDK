@@ -136,6 +136,7 @@ export const viStrings: CupThreadStrings = {
     activityTitle: 'Hoạt động gần đây',
     noActivity: 'Không có hoạt động gần đây',
     loadFailed: 'Không thể tải hồ sơ',
+    rateLimited: 'Quá nhiều yêu cầu hồ sơ. Vui lòng thử lại sau ít phút.',
     notFound: 'Không tìm thấy người dùng',
     anonymous: 'Nhà phát triển ẩn danh',
     recentComments: 'Bình luận gần đây',

@@ -134,6 +134,7 @@ export const zhHantStrings: CupThreadStrings = {
     activityTitle: '最近活動',
     noActivity: '找不到最近活動',
     loadFailed: '無法載入個人檔案',
+    rateLimited: '個人檔案請求過於頻繁，請稍後再試。',
     notFound: '找不到使用者',
     anonymous: '匿名開發者',
     recentComments: '最近留言',

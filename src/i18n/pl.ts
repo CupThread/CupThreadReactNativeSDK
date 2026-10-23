@@ -150,6 +150,7 @@ export const plStrings: CupThreadStrings = {
     activityTitle: 'Ostatnia aktywność',
     noActivity: 'Brak ostatniej aktywności',
     loadFailed: 'Nie udało się załadować profilu',
+    rateLimited: 'Zbyt wiele żądań profilu. Spróbuj ponownie za chwilę.',
     notFound: 'Nie znaleziono użytkownika',
     anonymous: 'Anonimowy programista',
     recentComments: 'Ostatnie komentarze',

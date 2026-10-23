@@ -136,6 +136,7 @@ export const jaStrings: CupThreadStrings = {
     activityTitle: '最近のアクティビティ',
     noActivity: '最近のアクティビティはありません',
     loadFailed: 'プロフィールの読み込みに失敗しました',
+    rateLimited: 'プロフィールのリクエストが多すぎます。しばらくしてから再度お試しください。',
     notFound: 'ユーザーが見つかりません',
     anonymous: '匿名の開発者',
     recentComments: '最近のコメント',

@@ -143,6 +143,7 @@ export const frStrings: CupThreadStrings = {
     activityTitle: 'Activité récente',
     noActivity: 'Aucune activité récente',
     loadFailed: 'Échec du chargement du profil',
+    rateLimited: 'Trop de demandes de profil. Veuillez réessayer bientôt.',
     notFound: 'Utilisateur introuvable',
     anonymous: 'Développeur anonyme',
     recentComments: 'Commentaires récents',
