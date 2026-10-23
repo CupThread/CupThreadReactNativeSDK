@@ -49,6 +49,9 @@ export const jaStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) => `${count}件の添付ファイルのアップロードに失敗しました。`,
     unsupportedAttachment: (count: number) =>
       `${count}件のファイルはサポートされていない添付形式のため、スキップされました。`,
+    uploadSizeMissing: 'このファイルはサイズが報告されていないため、アップロードできません。',
+    uploadTooLarge: 'このファイルは大きすぎるためアップロードできません。',
+    uploadUnsupportedType: 'このファイル形式は添付ファイルとしてサポートされていません。',
     submitFailed: 'フィードバックの送信に失敗しました。もう一度お試しください。',
     sectionUnavailable: 'フィードバックは現在ご利用いただけません。',
   },

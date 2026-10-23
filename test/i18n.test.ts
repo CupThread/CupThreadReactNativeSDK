@@ -308,6 +308,16 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     // feedbackComposer
     assert.ok(typeof loc.feedbackComposer.uploadFailed === 'string' && loc.feedbackComposer.uploadFailed.length > 0);
     assert.ok(typeof loc.feedbackComposer.submitFailed === 'string' && loc.feedbackComposer.submitFailed.length > 0);
+    for (const key of [
+      'uploadSizeMissing',
+      'uploadTooLarge',
+      'uploadUnsupportedType',
+    ] as const) {
+      assert.ok(
+        typeof loc.feedbackComposer[key] === 'string' && loc.feedbackComposer[key].length > 0,
+        `${key} must be translated in every locale`
+      );
+    }
 
     // featureRequests
     assert.ok(typeof loc.featureRequests.voteFailed === 'string' && loc.featureRequests.voteFailed.length > 0);

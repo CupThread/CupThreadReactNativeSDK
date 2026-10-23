@@ -374,15 +374,36 @@ test('FeedbackClient supports passing AbortSignal directly as argument', async (
 
 test('FeedbackClient normal uploadAttachment is unaffected by timeout', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => {
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (url.toString().endsWith('/api/v1/uploads/sessions')) {
+      return new Response(
+        JSON.stringify({
+          session: {
+            sessionId: 'ups_1',
+            sessionToken: 'cpt_up_token',
+            expiresAt: '2026-10-23T13:00:00.000Z',
+            maxFileSizeBytes: 10485760,
+            maxFiles: 8,
+          },
+          files: [
+            {
+              clientFileId: 'screenshot.png',
+              uploadId: 'upl_1',
+              uploadUrl: '/api/v1/uploads/upl_1',
+              maxSizeBytes: 10485760,
+            },
+          ],
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(
       JSON.stringify({
-        kind: 'image',
-        key: 'img_123',
-        url: 'https://cdn.cupthread.com/img_123.png',
+        uploadId: 'upl_1',
         filename: 'screenshot.png',
-        mimeType: 'image/png',
-        size: 1024,
+        contentType: 'image/png',
+        sizeBytes: 1024,
+        downloadUrl: 'https://cdn.cupthread.com/img_123.png',
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
@@ -403,7 +424,7 @@ test('FeedbackClient normal uploadAttachment is unaffected by timeout', async ()
       signal: controller.signal,
     });
 
-    assert.equal(attachment.key, 'img_123');
+    assert.equal(attachment.uploadId, 'upl_1');
     assert.equal(attachment.url, 'https://cdn.cupthread.com/img_123.png');
   } finally {
     globalThis.fetch = originalFetch;
@@ -905,19 +926,42 @@ test('uploadAttachment uses the dedicated upload budget even when a JSON timeout
 test('uploadAttachment completes past the configured JSON timeoutMs budget', async () => {
   const originalFetch = globalThis.fetch;
 
-  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     void init;
     await new Promise((resolve) => setTimeout(resolve, 120));
+    if (url.toString().endsWith('/api/v1/uploads/sessions')) {
+      return {
+        status: 201,
+        headers: new Map([['content-type', 'application/json']]),
+        text: async () =>
+          JSON.stringify({
+            session: {
+              sessionId: 'ups_1',
+              sessionToken: 'cpt_up_token',
+              expiresAt: '2026-10-23T13:00:00.000Z',
+              maxFileSizeBytes: 10485760,
+              maxFiles: 8,
+            },
+            files: [
+              {
+                clientFileId: 'test.png',
+                uploadId: 'upl_1',
+                uploadUrl: '/api/v1/uploads/upl_1',
+                maxSizeBytes: 10485760,
+              },
+            ],
+          }),
+      } as any;
+    }
     return {
       status: 200,
+      headers: new Map([['content-type', 'application/json']]),
       text: async () =>
         JSON.stringify({
-          kind: 'image',
-          key: 'upload-key',
-          url: 'https://cdn.cupthread.com/upload-key',
+          uploadId: 'upl_1',
           filename: 'test.png',
-          mimeType: 'image/png',
-          size: 12,
+          contentType: 'image/png',
+          sizeBytes: 12,
         }),
     } as any;
   }) as any;
@@ -934,7 +978,7 @@ test('uploadAttachment completes past the configured JSON timeoutMs budget', asy
       filename: 'test.png',
       mimeType: 'image/png',
     });
-    assert.equal(attachment.key, 'upload-key');
+    assert.equal(attachment.uploadId, 'upl_1');
   } finally {
     globalThis.fetch = originalFetch;
   }

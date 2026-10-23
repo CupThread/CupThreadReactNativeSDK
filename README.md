@@ -216,7 +216,7 @@ export function AppHomeScreen() {
 
 ### 3. Attachment Uploads in Feedback Composer
 
-Connect your preferred file picker (e.g. `expo-image-picker` or `react-native-image-picker`) using the `onPickAttachment` prop. The composer handles file previews, human-readable size badges, removal, and automatic uploading via CupThread Cloudflare R2 / image upload endpoints:
+Connect your preferred file picker (e.g. `expo-image-picker` or `react-native-image-picker`) using the `onPickAttachment` prop. The composer handles file previews, human-readable size badges, removal, and automatic uploading through the CupThread upload-session flow:
 
 ```tsx
 import * as ImagePicker from 'expo-image-picker';
@@ -237,6 +237,9 @@ import { FeedbackComposer } from '@cupthread/react-native';
         file: { uri: asset.uri },
         filename: asset.fileName || 'screenshot.png',
         mimeType: asset.mimeType || 'image/png',
+        // The upload API reserves quota from the declared size, so forward the
+        // picker's fileSize. `Blob`/`File` payloads expose `.size` automatically.
+        size: asset.fileSize,
         preferredKind: 'image',
       };
     }
@@ -245,7 +248,31 @@ import { FeedbackComposer } from '@cupthread/react-native';
 />;
 ```
 
-The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachment` descriptors (`{ kind, key, url, ... }`, attached as-is), `UploadAttachmentOptions` payloads (`{ file, filename, mimeType, preferredKind? }`, uploaded automatically), and the legacy `{ fileUri, filename?, mimeType?, kind? }` alias, which is normalized into an upload automatically. Any item matching none of these shapes surfaces a visible, localized error instead of being silently dropped.
+The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachment` descriptors (`{ kind, key, uploadId?, ... }`, attached as-is), `UploadAttachmentOptions` payloads (`{ file, filename, mimeType, size?, preferredKind? }`, uploaded automatically), and the legacy `{ fileUri, filename?, mimeType?, kind?, size? }` alias, which is normalized into an upload automatically. Any item matching none of these shapes surfaces a visible, localized error instead of being silently dropped.
+
+#### Upload Sessions
+
+Both legacy direct-upload endpoints are gone: `POST /api/v1/uploads/r2` is a `410 Gone` tombstone, and `POST /api/v1/uploads/images` now requires a session. Uploads therefore run in two steps — reserve a slot, then fill it:
+
+```ts
+const attachments = await client.uploadAttachments(
+  [
+    { file: { uri: shot.uri }, filename: 'shot.png', mimeType: 'image/png', size: shot.fileSize },
+    { file: { uri: log.uri }, filename: 'crash.log', mimeType: 'text/plain', size: log.fileSize },
+  ],
+  { userToken }
+);
+
+await client.submit({ title, description, attachments }, userToken);
+```
+
+Key behaviors:
+
+- **A declared size is required.** The session endpoint reserves daily workspace quota from the byte size and rejects an undeclared size with `400 file_size_required`. React Native's `{ uri }` pick carries no size, and the SDK cannot read one without a native filesystem dependency, so pass the picker's `fileSize` as `size`. A missing size fails locally with `UploadValidationException` (`file_size_required`) before any request.
+- **Every session is bound to an uploader identity.** Anonymous callers must send a UUID `X-User-Token`; `uploadAttachment` falls back to the shared `UserTokenStore` identity so a later `submit()` presents the same one. A mismatch fails the submission with `uploader_mismatch` (SEC-28).
+- **Submissions reference uploads by id.** `submit()` sends `uploadIds` built from each attachment's `uploadId`; descriptors without one are omitted rather than failing the whole draft with `direct_attachment_forbidden`.
+- **Attachments are private.** No public delivery URL is issued; download is authorized by workspace membership or a signed token after the submission finalizes.
+- **Rejections are coded.** `UploadRejectedException` carries the API's `code` (`file_too_large`, `unsupported_mime_type`, `executable_extension_prohibited`, `uploader_identity_required`, `uploader_mismatch`, `session_invalid_or_expired`, …) and HTTP status.
 
 #### Platform Allowlist Validation
 
@@ -355,7 +382,7 @@ function AppHeader() {
 | `appKey`                 | `string`                                                    | _(required)_  | Unique application key from Developer Console                                                                                                                                                    |
 | `defaultPlatform`        | `FeedbackPlatform`                                          | auto-detected | Default platform reported on feedback submissions (`ios`, `android`, etc.)                                                                                                                       |
 | `timeoutMs`              | `number`                                                    | `15000`       | Optional timeout in milliseconds for API (JSON) requests; throws `RequestTimeoutException` on timeout                                                                                            |
-| `uploadTimeoutMs`        | `number`                                                    | `60000`       | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })`                     |
+| `uploadTimeoutMs`        | `number`                                                    | `60000`       | Optional completion budget in milliseconds for attachment uploads (`uploadAttachment`); covers session creation plus every file in a batch, independent of `timeoutMs`, overridden per call by `uploadAttachment({ timeoutMs })` |
 | `turnstileTokenProvider` | `() => string \| undefined \| Promise<string \| undefined>` | `undefined`   | Optional async provider resolving a Cloudflare Turnstile token before intake submissions (`submit`, `submitFeatureRequest`); see [Human Verification (Turnstile)](#human-verification-turnstile) |
 | `tokenTransport`         | `'query' \| 'header' \| 'both'`                             | `'header'`    | Strategy for user token transport on `fetchFeatureRequests` (`'header'` prevents query string leakage per CWE-598)                                                                               |
 
@@ -365,8 +392,10 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 
 | Method                                                      | Endpoint                                                  | Description                                                                                                                                                               |
 | ----------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments                                                                                                                       |
-| `uploadAttachment(options)`                                 | `POST /api/v1/uploads/{images,r2}`                        | Upload screenshot or log attachment (supports `signal`, `timeoutMs`)                                                                                                      |
+| `submit(draft, userToken?, options?)`                       | `POST /api/v1/feedback`                                   | Submit feedback draft with metadata and attachments (attachments are sent as `uploadIds`)                                                                                 |
+| `createUploadSession(files, options?)`                      | `POST /api/v1/uploads/sessions`                           | Reserve one upload slot per file (1–8) and receive the bearer token for slot uploads                                                                                      |
+| `uploadAttachment(options)`                                 | `POST /api/v1/uploads/sessions` + `POST /api/v1/uploads/{uploadId}` | Upload one screenshot or log attachment through an upload session (supports `signal`, `timeoutMs`)                                                              |
+| `uploadAttachments(options[], shared?)`                     | `POST /api/v1/uploads/sessions` + `POST /api/v1/uploads/{uploadId}` | Upload 1–8 attachments through one shared session                                                                                                                 |
 | `fetchAppConfig(options?)`                                  | `GET /api/v1/public/config/{appKey}`                      | Fetch app branding, appearance, and public settings (returns 404 for private or unknown apps)                                                                            |
 | `fetchColumns(options?)`                                    | `GET /api/v1/public/columns/{appKey}`                     | Fetch Kanban board columns for roadmap                                                                                                                                    |
 | `fetchVersions(options?)`                                   | `GET /api/v1/public/versions/{appKey}`                    | Fetch release versions                                                                                                                                                    |

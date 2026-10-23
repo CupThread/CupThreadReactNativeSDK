@@ -53,6 +53,9 @@ export const itStrings: CupThreadStrings = {
       count === 1
         ? '1 file è stato ignorato: formato di allegato non supportato.'
         : `${count} file sono stati ignorati: formato di allegato non supportato.`,
+    uploadSizeMissing: 'Questo file non ha indicato la sua dimensione, quindi non può essere caricato.',
+    uploadTooLarge: 'Questo file è troppo grande per essere caricato.',
+    uploadUnsupportedType: 'Questo tipo di file non è supportato come allegato.',
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
     sectionUnavailable: 'Il feedback non è al momento disponibile.',
   },

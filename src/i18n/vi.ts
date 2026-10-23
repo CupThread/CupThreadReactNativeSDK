@@ -49,6 +49,9 @@ export const viStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) => `Không thể tải lên ${count} tệp đính kèm.`,
     unsupportedAttachment: (count: number) =>
       `${count} tệp đã chọn bị bỏ qua vì định dạng tệp đính kèm không được hỗ trợ.`,
+    uploadSizeMissing: 'Tệp này không báo cáo kích thước nên không thể tải lên.',
+    uploadTooLarge: 'Tệp này quá lớn để tải lên.',
+    uploadUnsupportedType: 'Loại tệp này không được hỗ trợ làm tệp đính kèm.',
     submitFailed: 'Gửi phản hồi thất bại. Vui lòng thử lại.',
     sectionUnavailable: 'Tính năng phản hồi hiện không khả dụng.',
   },

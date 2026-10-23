@@ -52,6 +52,9 @@ export const noStrings: CupThreadStrings = {
       count === 1
         ? 'Hoppet over 1 fil: ustøttet vedleggsformat.'
         : `Hoppet over ${count} filer: ustøttet vedleggsformat.`,
+    uploadSizeMissing: 'Denne filen oppga ikke størrelsen, så den kan ikke lastes opp.',
+    uploadTooLarge: 'Denne filen er for stor til å lastes opp.',
+    uploadUnsupportedType: 'Denne filtypen støttes ikke som vedlegg.',
     submitFailed: 'Kunne ikke sende tilbakemelding. Vennligst prøv igjen.',
     sectionUnavailable: 'Tilbakemelding er for øyeblikket ikke tilgjengelig.',
   },

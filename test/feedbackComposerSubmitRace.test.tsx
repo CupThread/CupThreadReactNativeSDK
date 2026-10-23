@@ -64,6 +64,7 @@ async function flush(times = 8): Promise<void> {
 function makeAttachment(name: string): FeedbackAttachment {
   return {
     kind: 'image',
+    uploadId: `upl_${name}`,
     key: `key-${name}`,
     url: `https://cdn.example.com/${name}.png`,
     filename: `${name}.png`,
@@ -112,6 +113,21 @@ function createHarness(options: {
       return options.uploadPromiseFactory(uploadOptions);
     }
     return makeAttachment('uploaded-file');
+  }) as any;
+
+  // The composer now batches a multi-file pick into one upload session, so the
+  // batch seam is the path a pick actually takes.
+  client.uploadAttachments = (async (batch: any[]) => {
+    const uploaded: FeedbackAttachment[] = [];
+    for (const uploadOptions of batch) {
+      uploadCalls.push(uploadOptions);
+      uploaded.push(
+        options.uploadPromiseFactory
+          ? await options.uploadPromiseFactory(uploadOptions)
+          : makeAttachment(uploadOptions.filename.replace(/\.[^.]+$/, ''))
+      );
+    }
+    return uploaded;
   }) as any;
 
   let renderer!: TestRenderer.ReactTestRenderer;
@@ -515,6 +531,91 @@ test(
       false,
       'submit button re-enables after failed submit'
     );
+
+    harness.renderer.unmount();
+  }
+);
+
+test(
+  'issue #115: a multi-file pick uploads through one batch call and submits every uploadId',
+  renderTestOptions,
+  async () => {
+    const batchCalls: number[] = [];
+    const harness = createHarness({
+      onPickAttachment: async () => [
+        { file: { uri: 'file:///tmp/one.png' }, filename: 'one.png', mimeType: 'image/png', size: 100 },
+        { file: { uri: 'file:///tmp/two.png' }, filename: 'two.png', mimeType: 'image/png', size: 200 },
+      ],
+    });
+
+    // Replace the harness batch stub so the call count is observable.
+    const originalBatch = harness.client.uploadAttachments.bind(harness.client);
+    harness.client.uploadAttachments = (async (batch: any[], shared: any) => {
+      batchCalls.push(batch.length);
+      return originalBatch(batch, shared);
+    }) as any;
+
+    await flush();
+
+    const addBtn = harness.findAddAttachmentButton();
+    assert.ok(addBtn);
+    act(() => {
+      addBtn.props.onPress();
+    });
+    await flush(4);
+
+    assert.deepEqual(batchCalls, [2], 'one session must cover the whole pick');
+
+    await act(async () => {
+      await harness.findSubmitButton().props.onPress();
+    });
+    await flush();
+
+    assert.equal(harness.submitCalls.length, 1);
+    assert.deepEqual(
+      harness.submitCalls[0].attachments?.map((attachment) => attachment.uploadId),
+      ['upl_one', 'upl_two'],
+      'each uploaded attachment must expose its own session upload id to the submission'
+    );
+    harness.renderer.unmount();
+  }
+);
+
+test(
+  'issue #115: a single failed upload surfaces its actionable localized error',
+  renderTestOptions,
+  async () => {
+    const { UploadRejectedException } = await import('../src/client/FeedbackException');
+    const harness = createHarness({
+      onPickAttachment: async () => ({
+        file: { uri: 'file:///tmp/huge.png' },
+        filename: 'huge.png',
+        mimeType: 'image/png',
+        size: 999_999,
+      }),
+      uploadPromiseFactory: async () => {
+        throw new UploadRejectedException(413, 'file_too_large', '');
+      },
+    });
+    await flush();
+
+    const addBtn = harness.findAddAttachmentButton();
+    assert.ok(addBtn);
+    act(() => {
+      addBtn.props.onPress();
+    });
+    await flush(4);
+
+    const renderedText = harness.renderer.root
+      .findAllByType('Text' as any)
+      .map((node) => (Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children))
+      .filter((value): value is string => typeof value === 'string');
+
+    assert.ok(
+      renderedText.some((text) => text.includes('too large')),
+      `expected the localized "too large" message, saw: ${JSON.stringify(renderedText)}`
+    );
+    assert.equal(harness.uploadCalls.length, 1);
 
     harness.renderer.unmount();
   }

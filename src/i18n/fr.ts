@@ -56,6 +56,9 @@ export const frStrings: CupThreadStrings = {
       count === 1
         ? '1 fichier a été ignoré : format de pièce jointe non pris en charge.'
         : `${count} fichiers ont été ignorés : format de pièce jointe non pris en charge.`,
+    uploadSizeMissing: "Ce fichier n'a pas indiqué sa taille, il ne peut donc pas être envoyé.",
+    uploadTooLarge: 'Ce fichier est trop volumineux pour être envoyé.',
+    uploadUnsupportedType: "Ce type de fichier n'est pas pris en charge comme pièce jointe.",
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
     sectionUnavailable: 'Les commentaires sont actuellement indisponibles.',
   },

@@ -53,6 +53,9 @@ export const ptStrings: CupThreadStrings = {
       count === 1
         ? '1 arquivo foi ignorado: formato de anexo não suportado.'
         : `${count} arquivos foram ignorados: formato de anexo não suportado.`,
+    uploadSizeMissing: 'Este arquivo não informou o tamanho, por isso não pode ser enviado.',
+    uploadTooLarge: 'Este arquivo é grande demais para ser enviado.',
+    uploadUnsupportedType: 'Este tipo de arquivo não é aceito como anexo.',
     submitFailed: 'Falha ao enviar o feedback. Por favor, tente novamente.',
     sectionUnavailable: 'O feedback não está disponível no momento.',
   },

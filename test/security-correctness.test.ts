@@ -12,8 +12,11 @@ import {
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   AuthenticationRequiredException,
+  InvalidResponseException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
+  UploadRejectedException,
+  UploadValidationException,
 } from '../src/client/FeedbackException';
 import { UserTokenStore } from '../src/client/UserTokenStore';
 import type { FeatureRequestItem } from '../src/types';
@@ -459,26 +462,80 @@ test('useToggleVote with real FeedbackClient sends POST on upvote and DELETE on 
 });
 
 // ---------------------------------------------------------------------------
-// Issue #13 — uploadAttachment routed through the shared request pipeline
+// Issue #115 — uploads run through the governed upload-session flow
 // ---------------------------------------------------------------------------
 
-test('uploadAttachment sends X-User-Token and a multipart body without a JSON content type', async () => {
-  const originalFetch = globalThis.fetch;
-  let interceptedUrl = '';
-  let interceptedMethod = '';
-  let interceptedHeaders: Record<string, string> = {};
-  let interceptedBody: any = null;
+/**
+ * Stubs fetch with a session + slot upload pair, recording every request so a
+ * test can assert the two-step flow (create session, then fill the slot).
+ */
+function stubUploadSession(
+  options: {
+    sessionStatus?: number;
+    slotStatus?: number;
+    slotBody?: string;
+    sessionBody?: unknown;
+  } = {}
+) {
+  const requests: Array<{
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: any;
+  }> = [];
+
+  const sessionBody = options.sessionBody ?? {
+    session: {
+      sessionId: 'ups_1',
+      sessionToken: 'cpt_up_token',
+      expiresAt: '2026-10-23T13:00:00.000Z',
+      maxFileSizeBytes: 10485760,
+      maxFiles: 8,
+    },
+    files: [
+      { clientFileId: 'screenshot.png', uploadId: 'upl_1', uploadUrl: '/api/v1/uploads/upl_1', maxSizeBytes: 10485760 },
+    ],
+  };
 
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-    interceptedUrl = url.toString();
-    interceptedMethod = init?.method || 'GET';
-    interceptedHeaders = (init?.headers || {}) as Record<string, string>;
-    interceptedBody = init?.body;
+    const requestUrl = url.toString();
+    requests.push({
+      url: requestUrl,
+      method: init?.method || 'GET',
+      headers: (init?.headers || {}) as Record<string, string>,
+      body: init?.body,
+    });
+
+    if (requestUrl.endsWith('/api/v1/uploads/sessions')) {
+      return new Response(JSON.stringify(sessionBody), {
+        status: options.sessionStatus ?? 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(
-      JSON.stringify({ kind: 'image', key: 'img_123', url: 'https://cdn.example/img_123.png' }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      options.slotBody ??
+        JSON.stringify({
+          uploadId: 'upl_1',
+          clientFileId: 'screenshot.png',
+          filename: 'screenshot.png',
+          contentType: 'image/png',
+          sizeBytes: 2048,
+          stored: true,
+        }),
+      {
+        status: options.slotStatus ?? 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
     );
   }) as any;
+
+  return { requests };
+}
+
+test('uploadAttachment creates a session, then fills its slot with the bearer token', async () => {
+  const originalFetch = globalThis.fetch;
+  const { requests } = stubUploadSession();
 
   try {
     const client = new FeedbackClient({
@@ -490,53 +547,183 @@ test('uploadAttachment sends X-User-Token and a multipart body without a JSON co
       file: { uri: 'file:///tmp/screenshot.png' },
       filename: 'screenshot.png',
       mimeType: 'image/png',
+      size: 2048,
       userToken: 'usr_tok_123',
     });
 
-    assert.equal(interceptedUrl, 'https://api.cupthread.com/api/v1/uploads/images');
-    assert.equal(interceptedMethod, 'POST');
-    assert.equal(interceptedHeaders['X-User-Token'], 'usr_tok_123');
+    assert.equal(requests.length, 2, 'one session request plus one slot upload');
+
+    const [session, slot] = requests;
+    assert.equal(session.url, 'https://api.cupthread.com/api/v1/uploads/sessions');
+    assert.equal(session.method, 'POST');
+    assert.equal(session.headers['X-User-Token'], 'usr_tok_123');
     assert.equal(
-      interceptedHeaders['Content-Type'],
+      session.headers['Content-Type'],
+      'application/json',
+      'session creation is a JSON call'
+    );
+    const sessionPayload = JSON.parse(session.body as string);
+    assert.equal(sessionPayload.appKey, 'app_key_abc');
+    assert.equal(sessionPayload.purpose, 'feedback_attachment');
+    assert.deepEqual(sessionPayload.files, [
+      {
+        clientFileId: 'screenshot.png',
+        filename: 'screenshot.png',
+        contentType: 'image/png',
+        sizeBytes: 2048,
+      },
+    ]);
+
+    assert.equal(slot.url, 'https://api.cupthread.com/api/v1/uploads/upl_1');
+    assert.equal(slot.method, 'POST');
+    assert.equal(slot.headers.Authorization, 'Bearer cpt_up_token');
+    assert.equal(
+      slot.headers['Content-Type'],
       undefined,
       'fetch must set the multipart boundary itself'
     );
-    assert.ok(interceptedBody, 'body must be present');
-    assert.equal(typeof interceptedBody.get === 'function', true, 'body must be FormData');
-    assert.equal(interceptedBody.get('appKey'), 'app_key_abc');
-    assert.equal(attachment.key, 'img_123');
+    assert.equal(typeof slot.body.get, 'function', 'slot body must be FormData');
+
+    assert.equal(attachment.uploadId, 'upl_1');
+    assert.equal(attachment.key, 'upl_1');
     assert.equal(attachment.kind, 'image');
+    assert.equal(attachment.size, 2048);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('uploadAttachment accepts 202 responses like the rest of the pipeline', async () => {
+test('uploadAttachment rejects the removed legacy r2 endpoint before any request', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ kind: 'r2', key: 'log_1' }), {
-      status: 202,
-      headers: { 'Content-Type': 'application/json' },
-    })) as any;
+  const { requests } = stubUploadSession();
 
   try {
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_key_abc',
     });
-    const attachment = await client.uploadAttachment({
+
+    await client.uploadAttachment({
       file: { uri: 'file:///tmp/crash.log' },
       filename: 'crash.log',
       mimeType: 'text/plain',
+      size: 4096,
     });
-    assert.equal(attachment.key, 'log_1');
-    assert.equal(attachment.kind, 'r2');
+
+    assert.equal(
+      requests.some((request) => request.url.includes('/api/v1/uploads/r2')),
+      false,
+      'the 410 Gone tombstone must never be called'
+    );
+    assert.equal(requests[0].url, 'https://api.cupthread.com/api/v1/uploads/sessions');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('uploadAttachment maps error statuses through the shared pipeline', async () => {
+test('uploadAttachment fails locally with file_size_required when a { uri } pick declares no size', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response('{}', { status: 200 });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
+    await assert.rejects(
+      client.uploadAttachment({
+        file: { uri: 'file:///tmp/a.png' },
+        filename: 'a.png',
+        mimeType: 'image/png',
+      }),
+      (err: any) => {
+        assert.ok(err instanceof UploadValidationException);
+        assert.equal(err.code, 'file_size_required');
+        assert.match(err.message, /size/);
+        return true;
+      }
+    );
+    assert.equal(fetchCalls, 0, 'an undeclared size must fail before the network');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment reads the size from a Blob payload', async () => {
+  const originalFetch = globalThis.fetch;
+  const { requests } = stubUploadSession();
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
+    await client.uploadAttachment({
+      file: new Blob(['0123456789'], { type: 'image/png' }),
+      filename: 'shot.png',
+      mimeType: 'image/png',
+    });
+
+    const declared = JSON.parse(requests[0].body as string).files[0];
+    assert.equal(declared.sizeBytes, 10, 'the Blob size must be declared to the session');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment maps a rejected slot to UploadRejectedException with its code', async () => {
+  const originalFetch = globalThis.fetch;
+  stubUploadSession({
+    slotStatus: 413,
+    slotBody: JSON.stringify({ error: 'too large', code: 'file_too_large' }),
+  });
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
+    await assert.rejects(
+      client.uploadAttachment({
+        file: { uri: 'file:///tmp/a.png' },
+        filename: 'a.png',
+        mimeType: 'image/png',
+        size: 100,
+      }),
+      (err: any) => {
+        assert.ok(err instanceof UploadRejectedException);
+        assert.equal(err.status, 413);
+        assert.equal(err.code, 'file_too_large');
+        // The raw body must stay off `message` (it can reach end-user UI).
+        assert.equal(err.message.includes('too large'), false);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment maps an unauthenticated request to AuthenticationRequiredException', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })) as any;
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
+    await assert.rejects(
+      client.uploadAttachment({
+        file: { uri: 'file:///tmp/a.png' },
+        filename: 'a.png',
+        mimeType: 'image/png',
+        size: 100,
+      }),
+      (err: any) => {
+        assert.ok(err instanceof AuthenticationRequiredException);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment maps other statuses through the shared pipeline', async () => {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async () => new Response('server exploded', { status: 500 })) as any;
@@ -547,6 +734,7 @@ test('uploadAttachment maps error statuses through the shared pipeline', async (
         file: { uri: 'file:///tmp/a.png' },
         filename: 'a.png',
         mimeType: 'image/png',
+        size: 100,
       }),
       (err: any) => {
         assert.ok(err instanceof UnexpectedStatusException);
@@ -561,28 +749,9 @@ test('uploadAttachment maps error statuses through the shared pipeline', async (
   } finally {
     globalThis.fetch = originalFetch;
   }
-
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })) as any;
-  try {
-    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
-    await assert.rejects(
-      client.uploadAttachment({
-        file: { uri: 'file:///tmp/a.png' },
-        filename: 'a.png',
-        mimeType: 'image/png',
-      }),
-      (err: any) => {
-        assert.ok(err instanceof AuthenticationRequiredException);
-        return true;
-      }
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
 });
 
-test('uploadAttachment throws UnreadableUploadResponseException on malformed JSON', async () => {
+test('uploadAttachment reports a malformed session body as InvalidResponseException', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response('this is not json {', { status: 200 })) as any;
 
@@ -593,6 +762,30 @@ test('uploadAttachment throws UnreadableUploadResponseException on malformed JSO
         file: { uri: 'file:///tmp/a.png' },
         filename: 'a.png',
         mimeType: 'image/png',
+        size: 100,
+      }),
+      (err: any) => {
+        assert.ok(err instanceof InvalidResponseException);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uploadAttachment throws UnreadableUploadResponseException on a malformed slot body', async () => {
+  const originalFetch = globalThis.fetch;
+  stubUploadSession({ slotBody: 'not a repairable body {' });
+
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'k' });
+    await assert.rejects(
+      client.uploadAttachment({
+        file: { uri: 'file:///tmp/a.png' },
+        filename: 'a.png',
+        mimeType: 'image/png',
+        size: 100,
       }),
       (err: any) => {
         assert.ok(err instanceof UnreadableUploadResponseException);
