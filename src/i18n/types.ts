@@ -167,6 +167,7 @@ export interface UserProfileStrings {
   noActivity: string;
   loadFailed: string;
   notFound: string;
+  rateLimited: string;
   anonymous: string;
   recentComments: string;
   appsSection: (count: number) => string;

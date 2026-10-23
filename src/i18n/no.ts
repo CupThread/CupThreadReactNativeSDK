@@ -139,6 +139,7 @@ export const noStrings: CupThreadStrings = {
     activityTitle: 'Nylig aktivitet',
     noActivity: 'Ingen nylig aktivitet',
     loadFailed: 'Kunne ikke laste profilen',
+    rateLimited: 'For mange profilforespørsler. Prøv igjen om litt.',
     notFound: 'Bruker ikke funnet',
     anonymous: 'Anonym utvikler',
     recentComments: 'Nylige kommentarer',

@@ -141,6 +141,7 @@ export const itStrings: CupThreadStrings = {
     activityTitle: 'Attività recente',
     noActivity: 'Nessuna attività recente',
     loadFailed: 'Impossibile caricare il profilo',
+    rateLimited: 'Troppe richieste di profilo. Riprova tra poco.',
     notFound: 'Utente non trovato',
     anonymous: 'Sviluppatore anonimo',
     recentComments: 'Commenti recenti',

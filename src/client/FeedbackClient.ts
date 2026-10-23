@@ -13,6 +13,7 @@ import type {
   FeedbackClientConfig,
   FeedbackDraft,
   FeedbackSubmissionResult,
+  FetchUserProfileOptions,
   ListFeatureRequestsResult,
   ListPublicChangelogResult,
   PublicAppConfig,
@@ -1222,22 +1223,50 @@ export class FeedbackClient {
   /**
    * Retrieves the public developer profile, authored applications, and recent comment history.
    *
-   * @param userId - Target user or developer identifier.
+   * @remarks
+   * Board and comment payloads carry app-scoped public ids (`u_<hex>`). The
+   * API resolves those within the app named by the `appKey` query parameter,
+   * so this method always sends the client's configured app key; pass
+   * `appKey` to override it when rendering a profile from another app's board.
+   * Raw Clerk ids (`user_*`) resolve without an app key but still accept one.
+   *
+   * The endpoint is rate limited per client IP and answers `429` when the
+   * budget is spent, which surfaces as {@link RateLimitedException} with the
+   * `Retry-After` hint. An unknown `u_*` id, or a `u_*` id with no app key to
+   * resolve against, answers `404`.
+   *
+   * @param userId - App-scoped public id (`u_<hex>`) or a Clerk user id.
+   * @param options - Optional request options (including an `appKey` override), or an `AbortSignal`.
    * @returns Public profile details.
+   * @throws {@link RateLimitedException} If the per-IP profile budget is spent.
+   * @throws {@link UnexpectedStatusException} If the profile is unknown (404).
    *
    * @example
    * ```ts
-   * const profile = await client.fetchUserProfile('usr_42');
+   * const profile = await client.fetchUserProfile(comment.authorClerkId);
    * console.log(`Developer: ${profile.profile.displayName}`);
    * ```
    */
   public async fetchUserProfile(
     userId: string,
-    options?: RequestOptions | AbortSignal
+    options?: FetchUserProfileOptions | AbortSignal
   ): Promise<PublicUserProfileResult> {
+    const isOptionsObject =
+      options &&
+      typeof options === 'object' &&
+      !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
+    const profileOptions = isOptionsObject ? (options as FetchUserProfileOptions) : undefined;
+
+    const params = new URLSearchParams();
+    const appKey = profileOptions?.appKey?.trim() || this.config.appKey;
+    if (appKey) params.append('appKey', appKey);
+    const query = params.toString();
+
     return this.request<PublicUserProfileResult>({
       method: 'GET',
-      path: `/api/v1/users/${FeedbackClient.encodeSegment(userId)}/profile`,
+      path: `/api/v1/users/${FeedbackClient.encodeSegment(userId)}/profile${
+        query ? `?${query}` : ''
+      }`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });

@@ -141,6 +141,7 @@ export const esStrings: CupThreadStrings = {
     activityTitle: 'Actividad reciente',
     noActivity: 'No hay actividad reciente',
     loadFailed: 'Error al cargar el perfil',
+    rateLimited: 'Demasiadas solicitudes de perfil. Inténtalo de nuevo en breve.',
     notFound: 'Usuario no encontrado',
     anonymous: 'Desarrollador anónimo',
     recentComments: 'Comentarios recientes',

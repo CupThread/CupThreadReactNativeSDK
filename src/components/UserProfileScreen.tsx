@@ -15,6 +15,7 @@ import {
   useCupThreadStrings,
 } from '../theme/CupThreadThemeProvider';
 import type { PublicUserProfileResult } from '../types';
+import { RateLimitedException, UnexpectedStatusException } from '../client/FeedbackException';
 import { Avatar } from './Avatar';
 import { formatDate } from '../utils/formatters';
 import { isSafeLinkUrl, openSafeLinkUrl, sanitizeSafeLinkUrl } from '../utils/linkUrl';
@@ -35,11 +36,14 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const [data, setData] = useState<PublicUserProfileResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState<number>(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setIsLoading(true);
     setError(null);
+    setIsRateLimited(false);
     client
       .fetchUserProfile(userId, { signal: controller.signal })
       .then((res) => {
@@ -48,6 +52,17 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
       })
       .catch((err) => {
         if (err?.name === 'AbortError' || controller.signal.aborted) return;
+        // A spent per-IP budget is transient and worth a retry; an unknown id
+        // is final and gets the not-found copy.
+        if (err instanceof RateLimitedException) {
+          setIsRateLimited(true);
+          return;
+        }
+        if (err instanceof UnexpectedStatusException && err.status === 404) {
+          setData(null);
+          setError(strings.userProfile.notFound);
+          return;
+        }
         setError(userFacingErrorMessage(err, strings.userProfile.loadFailed, strings.common));
       })
       .finally(() => {
@@ -59,7 +74,14 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     return () => {
       controller.abort();
     };
-  }, [client, userId, strings.userProfile.loadFailed, strings.common]);
+  }, [
+    client,
+    userId,
+    reloadKey,
+    strings.userProfile.loadFailed,
+    strings.userProfile.notFound,
+    strings.common,
+  ]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -81,6 +103,23 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
+      ) : isRateLimited ? (
+        <View style={styles.center}>
+          <Text style={[styles.errorText, { color: colors.textPrimary }]}>
+            {strings.userProfile.rateLimited}
+          </Text>
+          <TouchableOpacity
+            onPress={() => setReloadKey((key) => key + 1)}
+            style={[styles.retryBtn, { borderColor: colors.border }]}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.retry}
+          >
+            <Text style={[styles.retryBtnText, { color: colors.primary }]}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
+        </View>
       ) : error || !data ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
@@ -95,18 +134,12 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               { backgroundColor: colors.card, borderColor: colors.cardBorder },
             ]}
           >
-            <Avatar
-              url={data.profile.avatarUrl}
-              name={data.profile.displayName}
-              size={64}
-            />
+            <Avatar url={data.profile.avatarUrl} name={data.profile.displayName} size={64} />
             <Text style={[styles.displayName, { color: colors.textPrimary }]}>
               {data.profile.displayName || strings.userProfile.anonymous}
             </Text>
             {data.profile.bio ? (
-              <Text style={[styles.bio, { color: colors.textSecondary }]}>
-                {data.profile.bio}
-              </Text>
+              <Text style={[styles.bio, { color: colors.textSecondary }]}>{data.profile.bio}</Text>
             ) : null}
             {data.profile.websiteUrl ? (
               <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl} />
@@ -126,9 +159,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                     { backgroundColor: colors.card, borderColor: colors.cardBorder },
                   ]}
                 >
-                  <Text style={[styles.appName, { color: colors.textPrimary }]}>
-                    {app.name}
-                  </Text>
+                  <Text style={[styles.appName, { color: colors.textPrimary }]}>{app.name}</Text>
                   {app.description && (
                     <Text
                       numberOfLines={2}
@@ -178,9 +209,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                   {strings.userProfile.activityTitle}
                 </Text>
-                <Text style={[{ color: colors.textMuted }]}>
-                  {strings.userProfile.noActivity}
-                </Text>
+                <Text style={[{ color: colors.textMuted }]}>{strings.userProfile.noActivity}</Text>
               </View>
             )}
         </ScrollView>
@@ -255,6 +284,19 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  retryBtn: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
     padding: 16,

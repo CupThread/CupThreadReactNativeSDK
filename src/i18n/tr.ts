@@ -136,6 +136,7 @@ export const trStrings: CupThreadStrings = {
     activityTitle: 'Son etkinlikler',
     noActivity: 'Son etkinlik bulunamadı',
     loadFailed: 'Profil yüklenemedi',
+    rateLimited: 'Çok fazla profil isteği. Lütfen kısa süre sonra tekrar deneyin.',
     notFound: 'Kullanıcı bulunamadı',
     anonymous: 'Anonim Geliştirici',
     recentComments: 'Son Yorumlar',
