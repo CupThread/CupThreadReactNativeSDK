@@ -1298,12 +1298,22 @@ export class FeedbackClient {
    * });
    * console.log(`Found ${result.total} matching requests.`);
    * ```
+   *
+   * @example Anonymous read
+   * ```ts
+   * // Omit `userToken` to browse without an identity. No token parameter or
+   * // `X-User-Token` header is sent for the request.
+   * const result = await client.fetchFeatureRequests({ limit: 20 });
+   * ```
    */
   public async fetchFeatureRequests(options: {
     /**
      * Unique user token to evaluate `hasVoted` and `isOwnRequest` states.
+     *
+     * Optional: when omitted, `undefined`, or empty, the request is sent
+     * without an identity token and the response reflects anonymous state.
      */
-    userToken: string;
+    userToken?: string;
     /**
      * Maximum number of items to return per page (default: 50).
      */
