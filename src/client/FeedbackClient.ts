@@ -21,9 +21,11 @@ import type {
   PublicUserProfileResult,
   RequestOptions,
   SdkAppearance,
+  UpdateUserAttributesOptions,
   UploadSession,
   UploadSessionFileSpec,
   UploadSessionSlot,
+  UserAttributesCanonicalArguments,
   UserAttributesUpdateResult,
   VoteResult,
 } from '../types';
@@ -45,6 +47,11 @@ import {
 } from './FeedbackException';
 import { getRuntimePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
+import {
+  assertValidUserAttributesSignature,
+  buildUserAttributesCanonicalString,
+  hmacSha256Hex,
+} from '../utils/userAttributesSigning';
 import { SDK_VERSION } from '../generated/version';
 import { UserTokenStore } from './UserTokenStore';
 
@@ -565,6 +572,8 @@ export class FeedbackClient {
     this.config = {
       baseUrl,
       appKey: config.appKey,
+      signingSecret: config.signingSecret,
+      userAttributesSigner: config.userAttributesSigner,
       allowInsecureBaseUrl: config.allowInsecureBaseUrl ?? false,
       defaultPlatform: config.defaultPlatform || getRuntimePlatform(),
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -1859,13 +1868,48 @@ export class FeedbackClient {
   }
 
   /**
-   * Reports customer tier, subscription plan, or revenue metrics for a user token.
+   * Reports customer tier, subscription plan, or revenue metrics for a user
+   * token.
    *
-   * @param options - User attributes including subscription status, plan name, and MRR.
+   * @remarks
+   * Reports that include any of `isPaying`, `plan`, `mrr`, or `currency` are
+   * payment attributes and are HMAC-SHA256 signed over the server's
+   * newline-delimited `cpt-user-attrs-v1` canonical string. Identity-only
+   * reports are sent unsigned.
+   *
+   * Signing material resolves in this order:
+   * 1. The {@link FeedbackClientConfig.userAttributesSigner} provider — the
+   *    recommended integration, because the SDK signing secret stays on your
+   *    backend. Return `null` to decline and fall through.
+   * 2. The per-call `signingSecret`, then
+   *    {@link FeedbackClientConfig.signingSecret}. An embedded secret is not
+   *    tamper-resistant: anyone who installs the app can extract it.
+   * 3. With neither available, the report is sent unsigned and the server
+   *    rejects it with HTTP 422.
+   *
+   * Signature timestamps come from the device clock; the server accepts them
+   * within ±300 seconds of its own time, so a device whose clock is off by
+   * more than five minutes cannot report payment attributes.
+   *
+   * @param options - User attributes and optional signing overrides.
    * @returns Update confirmation.
+   * @throws {@link InvalidUserAttributesException} If `mrr` is not finite or
+   * the signature timestamp is not a nonnegative integer.
+   * @throws {@link InvalidUserAttributesSignatureException} If the configured
+   * signer returns malformed signing material.
    *
    * @example
    * ```ts
+   * // Recommended: the backend holds the SDK signing secret.
+   * const client = new FeedbackClient({
+   *   baseUrl: 'https://api.cupthread.com',
+   *   appKey: 'app_live_abc123',
+   *   userAttributesSigner: async ({ canonicalString }) => {
+   *     const signed = await myBackend.signUserAttributes(canonicalString);
+   *     return { signature: signed.signature, timestamp: signed.timestamp };
+   *   },
+   * });
+   *
    * await client.updateUserAttributes({
    *   userToken: 'usr_token_abc',
    *   isPaying: true,
@@ -1875,24 +1919,76 @@ export class FeedbackClient {
    * });
    * ```
    */
-  public async updateUserAttributes(options: {
-    userToken: string;
-    isPaying?: boolean;
-    plan?: string;
-    mrr?: number;
-    currency?: string;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-  }): Promise<UserAttributesUpdateResult> {
+  public async updateUserAttributes(
+    options: UpdateUserAttributesOptions
+  ): Promise<UserAttributesUpdateResult> {
+    const isPaying = options.isPaying;
+    const plan = options.plan == null ? options.plan : options.plan.trim();
+    const mrr = options.mrr;
+    const currency = options.currency == null ? options.currency : options.currency.trim();
+
+    const body: {
+      isPaying?: boolean | null;
+      plan?: string | null;
+      mrr?: number | null;
+      currency?: string | null;
+      signature?: string;
+      timestamp?: number;
+    } = { isPaying, plan, mrr, currency };
+
+    // The API requires a signature whenever the body asserts any payment
+    // attribute, currency included (a currency-only write changes stored
+    // revenue semantics too). `undefined` means absent; explicit `null` is a
+    // clear and signs as "null".
+    const assertsPaymentAttributes =
+      isPaying !== undefined || plan !== undefined || mrr !== undefined || currency !== undefined;
+
+    if (assertsPaymentAttributes) {
+      const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
+      const canonicalArguments: UserAttributesCanonicalArguments = {
+        appKey: this.config.appKey,
+        userToken: options.userToken,
+        isPaying,
+        plan,
+        mrr,
+        currency,
+        timestamp,
+      };
+      const canonicalString = buildUserAttributesCanonicalString(canonicalArguments);
+
+      let signature: string | undefined;
+      let signatureTimestamp = timestamp;
+
+      const provider = this.config.userAttributesSigner;
+      if (provider) {
+        const provided = await provider({
+          canonicalString,
+          arguments: canonicalArguments,
+        });
+        if (provided) {
+          assertValidUserAttributesSignature(provided, timestamp);
+          signature = provided.signature;
+          signatureTimestamp = provided.timestamp;
+        }
+      }
+
+      if (!signature) {
+        const secret = options.signingSecret ?? this.config.signingSecret;
+        if (typeof secret === 'string' && secret.length > 0) {
+          signature = hmacSha256Hex(secret, canonicalString);
+        }
+      }
+
+      if (signature) {
+        body.signature = signature;
+        body.timestamp = signatureTimestamp;
+      }
+    }
+
     return this.request<UserAttributesUpdateResult>({
       method: 'PUT',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/user`,
-      body: {
-        isPaying: options.isPaying,
-        plan: options.plan?.trim(),
-        mrr: options.mrr,
-        currency: options.currency?.trim(),
-      },
+      body,
       userToken: options.userToken,
       accepted: [200],
       signal: options.signal,
