@@ -30,8 +30,27 @@ export interface FeedbackClientConfig {
   /**
    * Root API URL of the CupThread backend instance (e.g., `"https://api.cupthread.com"`).
    * Trailing slashes are automatically normalized and stripped.
+   *
+   * @remarks
+   * Must use `https://` unless {@link FeedbackClientConfig.allowInsecureBaseUrl}
+   * is explicitly enabled, because every request carries bearer-like values
+   * (the `X-User-Token` header, signed unsubscribe tokens, feedback drafts).
+   * A cleartext base URL throws {@link InsecureBaseUrlException} at construction.
    */
   baseUrl: string;
+
+  /**
+   * Permit an `http://` (or otherwise non-HTTPS) `baseUrl`.
+   *
+   * @remarks
+   * Off by default so tokens and user content cannot travel in cleartext on
+   * runtimes that allow HTTP. Enable this only for a local or self-hosted
+   * backend on a network you control, such as `http://localhost:3000` during
+   * development. It has no effect on an `https://` base URL.
+   *
+   * @defaultValue false
+   */
+  allowInsecureBaseUrl?: boolean;
 
   /**
    * Unique application key generated in the CupThread Developer Console.
@@ -1435,6 +1454,32 @@ export interface ChangelogSubscriptionResult {
 export interface ChangelogUnsubscribeResult {
   /**
    * True if the address is no longer subscribed.
+   */
+  unsubscribed: boolean;
+}
+
+/**
+ * Response returned after unsubscribing a workspace from the weekly digest
+ * email with the signed token carried by that email.
+ *
+ * @remarks
+ * The digest token is workspace-scoped, so this response belongs to the
+ * workspace the token was minted for and not to an app key. A `200` is final:
+ * the token is authenticated by signature, expiry, and workspace existence
+ * only, so it keeps working after the owner's email changes or ownership is
+ * transferred, and replaying it is idempotent. Only the workspace's
+ * `weekly.digest` email event is cleared — inbox notifications are unchanged.
+ *
+ * @example
+ * ```ts
+ * const digestResult: DigestUnsubscribeResult = {
+ *   unsubscribed: true,
+ * };
+ * ```
+ */
+export interface DigestUnsubscribeResult {
+  /**
+   * True if the workspace no longer receives the weekly digest email.
    */
   unsubscribed: boolean;
 }

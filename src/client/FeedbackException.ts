@@ -10,6 +10,25 @@ export class FeedbackException extends Error {
 }
 
 /**
+ * Thrown at construction when `baseUrl` would send requests over cleartext.
+ *
+ * Bearer-like values travel on every surface — the `X-User-Token` header, the
+ * signed unsubscribe tokens, and the feedback drafts themselves — so an
+ * `http://` base URL exposes them to an on-path observer on any runtime that
+ * permits cleartext traffic. HTTPS is therefore required by default; a
+ * self-hosted backend on a network you control can opt in with
+ * `allowInsecureBaseUrl: true`.
+ */
+export class InsecureBaseUrlException extends FeedbackException {
+  constructor(
+    message: string = 'FeedbackClient requires an https:// baseUrl. Set allowInsecureBaseUrl to true only for a local backend you control.'
+  ) {
+    super(message);
+    this.name = 'InsecureBaseUrlException';
+  }
+}
+
+/**
  * Thrown when an endpoint requires user authentication / token and none was provided.
  */
 export class AuthenticationRequiredException extends FeedbackException {
@@ -147,12 +166,13 @@ export class UnreadableUploadResponseException extends FeedbackException {
 }
 
 /**
- * Thrown when a changelog unsubscribe is attempted without a signed token.
+ * Thrown when an email unsubscribe is attempted without a signed token.
  *
- * The endpoint is token-gated: a bare email address can no longer unsubscribe
- * anyone (SEC-14). The token arrives in the unsubscribe link inside a
- * changelog or confirmation email; a blank value has no signature to verify,
- * so it is rejected locally instead of being sent to the API.
+ * Both unsubscribe endpoints are token-gated: the changelog route was changed
+ * because a bare email address could unsubscribe anyone (SEC-14), and the
+ * weekly digest route only clears the preference described by the signed token
+ * in its own email. A blank value has no signature to verify, so it is
+ * rejected locally instead of being sent to the API.
  */
 export class MissingUnsubscribeTokenException extends FeedbackException {
   constructor(message: string = 'A signed unsubscribe token from the email link is required.') {
