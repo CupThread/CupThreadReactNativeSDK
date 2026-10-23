@@ -353,6 +353,111 @@ test('useToggleVote ignores own requests and empty userToken', () => {
   assert.equal(ownItem.hasVoted, false);
 });
 
+test('useToggleVote routes hasVoted=false to castVote and hasVoted=true to removeVote', async () => {
+  const calls: Array<{ action: 'cast' | 'remove'; id: string; token: string }> = [];
+  const mockClient = {
+    castVote: async (id: string, token: string) => {
+      calls.push({ action: 'cast', id, token });
+      return { voted: true, voteCount: 11 };
+    },
+    removeVote: async (id: string, token: string) => {
+      calls.push({ action: 'remove', id, token });
+      return { voted: false, voteCount: 10 };
+    },
+  } as any;
+
+  let stateItem = makeItem({ id: 'fr_route', hasVoted: false, voteCount: 10 });
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem
+  ) => {
+    stateItem = transform(stateItem);
+  };
+
+  const harness = renderTestHook(() => useToggleVote(mockClient, 'usr_tok_abc', applyChange));
+
+  // 1. Unvoted item -> dispatches castVote
+  harness.result.toggleVote(stateItem);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(calls, [{ action: 'cast', id: 'fr_route', token: 'usr_tok_abc' }]);
+  assert.equal(stateItem.hasVoted, true);
+  assert.equal(stateItem.voteCount, 11);
+
+  // 2. Voted item -> dispatches removeVote
+  harness.result.toggleVote(stateItem);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(calls, [
+    { action: 'cast', id: 'fr_route', token: 'usr_tok_abc' },
+    { action: 'remove', id: 'fr_route', token: 'usr_tok_abc' },
+  ]);
+  assert.equal(stateItem.hasVoted, false);
+  assert.equal(stateItem.voteCount, 10);
+});
+
+test('useToggleVote with real FeedbackClient sends POST on upvote and DELETE on un-vote', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ method: string; url: string; body: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method || 'GET';
+    requests.push({
+      method,
+      url: url.toString(),
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    const voted = method === 'POST';
+    return new Response(JSON.stringify({ voted, voteCount: voted ? 6 : 5 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_e2e_vote',
+    });
+
+    let stateItem = makeItem({ id: 'fr_e2e', hasVoted: false, voteCount: 5 });
+    const applyChange = (
+      _id: string,
+      transform: (item: FeatureRequestItem) => FeatureRequestItem
+    ) => {
+      stateItem = transform(stateItem);
+    };
+
+    const harness = renderTestHook(() => useToggleVote(client, 'usr_e2e_tok', applyChange));
+
+    // Upvote -> POST
+    harness.result.toggleVote(stateItem);
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'POST');
+    assert.equal(requests[0].url, 'https://api.cupthread.com/api/v1/feature-requests/fr_e2e/vote');
+    assert.deepEqual(requests[0].body, {
+      appKey: 'app_e2e_vote',
+      userToken: 'usr_e2e_tok',
+    });
+    assert.equal(stateItem.hasVoted, true);
+    assert.equal(stateItem.voteCount, 6);
+
+    // Un-vote -> DELETE
+    harness.result.toggleVote(stateItem);
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].method, 'DELETE');
+    assert.equal(requests[1].url, 'https://api.cupthread.com/api/v1/feature-requests/fr_e2e/vote');
+    assert.deepEqual(requests[1].body, {
+      appKey: 'app_e2e_vote',
+      userToken: 'usr_e2e_tok',
+    });
+    assert.equal(stateItem.hasVoted, false);
+    assert.equal(stateItem.voteCount, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Issue #13 — uploadAttachment routed through the shared request pipeline
 // ---------------------------------------------------------------------------

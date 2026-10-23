@@ -544,6 +544,8 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
     await client.fetchVersions(opts);
     await client.fetchFeatureRequests({ userToken: 'u', signal: controller.signal });
     await client.submitFeatureRequest({ title: 'T', description: 'D' }, 'u', opts);
+    await client.castVote('fr_1', 'u', opts);
+    await client.removeVote('fr_1', 'u', opts);
     await client.toggleVote('fr_1', 'u', opts);
     await client.fetchComments('fr_1', opts);
     await client.postComment('fr_1', { body: 'hello' }, 'u', opts);

@@ -1,6 +1,35 @@
 import { useCallback, useRef, useState } from 'react';
-import type { FeedbackClient } from '../client/FeedbackClient';
+import { FeedbackClient } from '../client/FeedbackClient';
 import type { FeatureRequestItem, VoteResult } from '../types';
+
+function dispatchVoteRequest(
+  client: FeedbackClient,
+  featureRequestId: string,
+  userToken: string,
+  wasVoted: boolean
+): Promise<VoteResult> {
+  const proto = FeedbackClient?.prototype;
+  const hasCustomToggleVote =
+    typeof client.toggleVote === 'function' && client.toggleVote !== proto?.toggleVote;
+
+  if (wasVoted) {
+    if (
+      typeof client.removeVote === 'function' &&
+      (!hasCustomToggleVote || client.removeVote !== proto?.removeVote)
+    ) {
+      return client.removeVote(featureRequestId, userToken);
+    }
+    return client.toggleVote(featureRequestId, userToken);
+  }
+
+  if (
+    typeof client.castVote === 'function' &&
+    (!hasCustomToggleVote || client.castVote !== proto?.castVote)
+  ) {
+    return client.castVote(featureRequestId, userToken);
+  }
+  return client.toggleVote(featureRequestId, userToken);
+}
 
 /**
  * Applies the optimistic vote delta to an item: flips `hasVoted` and adjusts
@@ -15,10 +44,7 @@ export function withOptimisticVote(item: FeatureRequestItem): FeatureRequestItem
 /**
  * Reconciles an item with the server-returned vote truth.
  */
-export function withServerVote(
-  item: FeatureRequestItem,
-  result: VoteResult
-): FeatureRequestItem {
+export function withServerVote(item: FeatureRequestItem, result: VoteResult): FeatureRequestItem {
   return { ...item, hasVoted: result.voted, voteCount: result.voteCount };
 }
 
@@ -182,8 +208,7 @@ export function useToggleVote(
       };
       applyChangeRef.current(item.id, withOptimisticVote);
 
-      client
-        .toggleVote(item.id, userToken)
+      dispatchVoteRequest(client, item.id, userToken, preVoteSnapshot.hasVoted)
         .then((res) => {
           applyChangeRef.current(item.id, (current) => withServerVote(current, res));
           setErrorsByItemId((prev) => {

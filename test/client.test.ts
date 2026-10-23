@@ -33,10 +33,10 @@ test('FeedbackClient.submitFeatureRequest dispatches POST /api/v1/feature-reques
     interceptedUrl = url.toString();
     interceptedMethod = init?.method || 'GET';
     interceptedBody = init?.body ? JSON.parse(init.body as string) : null;
-    return new Response(
-      JSON.stringify({ featureRequestId: 'fr_test_999', pending: false }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ featureRequestId: 'fr_test_999', pending: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }) as any;
 
   try {
@@ -120,7 +120,10 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     });
 
     // 1. First check when unseen: returns overlay data
-    const overlay1 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: testStore });
+    const overlay1 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: true,
+      tokenStore: testStore,
+    });
     assert.ok(overlay1);
     assert.equal(overlay1?.latestKey, '1.5.0');
     assert.equal(overlay1?.entries.length, 1);
@@ -129,11 +132,21 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     await testStore.markChangelogSeen('1.5.0');
 
     // 3. Query with onlyIfUnseen: true: should now be null
-    const overlay2 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: testStore });
-    assert.equal(overlay2, null, 'Should return null when latest changelog version was already seen');
+    const overlay2 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: true,
+      tokenStore: testStore,
+    });
+    assert.equal(
+      overlay2,
+      null,
+      'Should return null when latest changelog version was already seen'
+    );
 
     // 4. Query without onlyIfUnseen: returns data
-    const overlay3 = await client.prepareChangelogOverlay({ onlyIfUnseen: false, tokenStore: testStore });
+    const overlay3 = await client.prepareChangelogOverlay({
+      onlyIfUnseen: false,
+      tokenStore: testStore,
+    });
     assert.ok(overlay3);
   } finally {
     globalThis.fetch = originalFetch;
@@ -176,6 +189,16 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
         label: 'fetchVersions',
         run: () => client.fetchVersions(),
         expected: `https://api.cupthread.com/api/v1/public/versions/${HOSTILE_SEGMENT_ENCODED}`,
+      },
+      {
+        label: 'castVote',
+        run: () => client.castVote(HOSTILE_SEGMENT, 'usr_tok'),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/vote`,
+      },
+      {
+        label: 'removeVote',
+        run: () => client.removeVote(HOSTILE_SEGMENT, 'usr_tok'),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/vote`,
       },
       {
         label: 'toggleVote',
@@ -271,6 +294,16 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
         expected: 'https://api.cupthread.com/api/v1/public/versions/app_key_abc',
       },
       {
+        label: 'castVote',
+        run: () => client.castVote('fr_123', 'usr_tok'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/vote',
+      },
+      {
+        label: 'removeVote',
+        run: () => client.removeVote('fr_123', 'usr_tok'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/vote',
+      },
+      {
         label: 'toggleVote',
         run: () => client.toggleVote('fr_123', 'usr_tok'),
         expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/vote',
@@ -349,6 +382,131 @@ test('FeedbackClient round-trips non-ASCII path segments through UTF-8 percent-e
       interceptedUrl.lastIndexOf('/profile')
     );
     assert.equal(decodeURIComponent(encodedSegment), 'üser-42');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.castVote sends POST /api/v1/feature-requests/:id/vote with optional shipNotifyEmail and turnstileToken', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: Array<{ url: string; method?: string; body?: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    captured.push({
+      url: url.toString(),
+      method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return new Response(JSON.stringify({ voted: true, voteCount: 12 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_test',
+    });
+
+    // 1. Plain castVote omits optional fields
+    const res1 = await client.castVote('fr_100', 'usr_tok_1');
+    assert.deepEqual(res1, { voted: true, voteCount: 12 });
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].url, 'https://api.cupthread.com/api/v1/feature-requests/fr_100/vote');
+    assert.equal(captured[0].method, 'POST');
+    assert.deepEqual(captured[0].body, {
+      appKey: 'app_vote_test',
+      userToken: 'usr_tok_1',
+    });
+
+    // 2. castVote trims shipNotifyEmail and turnstileToken, omitting blank values
+    await client.castVote('fr_100', 'usr_tok_1', {
+      shipNotifyEmail: '  notify@example.com  ',
+      turnstileToken: '  ts_tok_abc  ',
+    });
+    assert.equal(captured.length, 2);
+    assert.equal(captured[1].method, 'POST');
+    assert.deepEqual(captured[1].body, {
+      appKey: 'app_vote_test',
+      userToken: 'usr_tok_1',
+      shipNotifyEmail: 'notify@example.com',
+      turnstileToken: 'ts_tok_abc',
+    });
+
+    // 3. Whitespace-only optional fields are omitted
+    await client.castVote('fr_100', 'usr_tok_1', {
+      shipNotifyEmail: '   ',
+      turnstileToken: '',
+    });
+    assert.equal(captured.length, 3);
+    assert.deepEqual(captured[2].body, {
+      appKey: 'app_vote_test',
+      userToken: 'usr_tok_1',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.removeVote sends DELETE /api/v1/feature-requests/:id/vote with { appKey, userToken } body', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedMethod: string | undefined;
+  let capturedBody: any;
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = url.toString();
+    capturedMethod = init?.method;
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+    return new Response(JSON.stringify({ voted: false, voteCount: 11 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_test',
+    });
+
+    const res = await client.removeVote('fr_100', 'usr_tok_1');
+    assert.deepEqual(res, { voted: false, voteCount: 11 });
+    assert.equal(capturedUrl, 'https://api.cupthread.com/api/v1/feature-requests/fr_100/vote');
+    assert.equal(capturedMethod, 'DELETE');
+    assert.deepEqual(capturedBody, {
+      appKey: 'app_vote_test',
+      userToken: 'usr_tok_1',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async () => {
+  const originalFetch = globalThis.fetch;
+  const methods: string[] = [];
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    methods.push(init?.method || 'GET');
+    return new Response(JSON.stringify({ voted: true, voteCount: 5 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_test',
+    });
+
+    const first = await client.toggleVote('fr_100', 'usr_tok_1');
+    const second = await client.toggleVote('fr_100', 'usr_tok_1');
+    assert.deepEqual(first, { voted: true, voteCount: 5 });
+    assert.deepEqual(second, { voted: true, voteCount: 5 });
+    assert.deepEqual(methods, ['POST', 'POST']);
   } finally {
     globalThis.fetch = originalFetch;
   }
