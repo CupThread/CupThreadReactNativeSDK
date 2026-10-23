@@ -224,6 +224,120 @@ test('FeedbackClient.fetchFeatureRequests serializes limit, offset, and versionI
 });
 
 // ---------------------------------------------------------------------------
+// Regression coverage for #59: an absent or empty token must never be
+// serialized as `userToken=undefined` / `userToken=` or sent as a header.
+// ---------------------------------------------------------------------------
+
+async function captureFeatureRequestsRequest(
+  options: Parameters<FeedbackClient['fetchFeatureRequests']>[0],
+  config: { tokenTransport?: 'query' | 'header' | 'both' } = {}
+): Promise<{ parsed: URL; headers: Record<string, string>; rawUrl: string }> {
+  let interceptedUrl = '';
+  let interceptedHeaders: Record<string, string> = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    interceptedUrl = url.toString();
+    interceptedHeaders = (init?.headers || {}) as Record<string, string>;
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_token_serialization_test',
+      ...config,
+    });
+    await client.fetchFeatureRequests(options);
+    return { parsed: new URL(interceptedUrl), headers: interceptedHeaders, rawUrl: interceptedUrl };
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test('fetchFeatureRequests omits an absent or empty userToken from query and header', async () => {
+  const cases: Array<{ label: string; userToken: string | undefined }> = [
+    { label: 'key present with undefined', userToken: undefined },
+    { label: 'empty string', userToken: '' },
+  ];
+
+  for (const tokenTransport of ['query', 'both'] as const) {
+    for (const testCase of cases) {
+      const { parsed, headers } = await captureFeatureRequestsRequest(
+        { userToken: testCase.userToken, tokenTransport },
+        { tokenTransport }
+      );
+
+      assert.equal(
+        parsed.searchParams.has('userToken'),
+        false,
+        `${tokenTransport}/${testCase.label}: no userToken query param`
+      );
+      assert.equal(
+        parsed.searchParams.get('userToken'),
+        null,
+        `${tokenTransport}/${testCase.label}: param is absent`
+      );
+      assert.equal(
+        headers['X-User-Token'],
+        undefined,
+        `${tokenTransport}/${testCase.label}: no X-User-Token header`
+      );
+      assert.equal(parsed.searchParams.get('appKey'), 'app_token_serialization_test');
+    }
+  }
+});
+
+test('fetchFeatureRequests omits the token when the option key is missing entirely', async () => {
+  const { parsed, headers } = await captureFeatureRequestsRequest({ limit: 10 });
+
+  assert.equal(parsed.searchParams.has('userToken'), false);
+  assert.equal(parsed.searchParams.get('limit'), '10');
+  assert.equal(parsed.searchParams.get('offset'), '0');
+  assert.equal(headers['X-User-Token'], undefined);
+});
+
+test('fetchFeatureRequests percent-encodes a real token on the query transport', async () => {
+  const token = 'tok en&x';
+  const { parsed, headers, rawUrl } = await captureFeatureRequestsRequest(
+    { userToken: token, tokenTransport: 'query' },
+    { tokenTransport: 'query' }
+  );
+
+  assert.equal(
+    rawUrl.includes('userToken=tok+en%26x'),
+    true,
+    'raw URL uses form-urlencoded escaping (+ for space, %26 for &)'
+  );
+  assert.equal(rawUrl.includes('userToken=tok en&x'), false, 'raw token is never written verbatim');
+  assert.equal(parsed.searchParams.get('userToken'), token);
+  assert.equal(headers['X-User-Token'], undefined, 'query transport keeps the token out of headers');
+});
+
+test('fetchFeatureRequests sends a real token in both places on the both transport', async () => {
+  const { parsed, headers } = await captureFeatureRequestsRequest(
+    { userToken: 'usr_tok_both', tokenTransport: 'both' },
+    { tokenTransport: 'both' }
+  );
+
+  assert.equal(parsed.searchParams.get('userToken'), 'usr_tok_both');
+  assert.equal(headers['X-User-Token'], 'usr_tok_both');
+});
+
+test('fetchFeatureRequests keeps q and versionId filters on an anonymous read', async () => {
+  const { parsed } = await captureFeatureRequestsRequest(
+    { query: 'a b', versionId: 'v1', tokenTransport: 'query' },
+    { tokenTransport: 'query' }
+  );
+
+  assert.equal(parsed.searchParams.has('userToken'), false);
+  assert.equal(parsed.searchParams.get('q'), 'a b');
+  assert.equal(parsed.searchParams.get('versionId'), 'v1');
+});
+
+// ---------------------------------------------------------------------------
 // Mocked backend returning >50 items with pagination
 // ---------------------------------------------------------------------------
 
