@@ -130,7 +130,7 @@ export function ChangelogOverlay({
     if (autoMarkSeen && latestKey) {
       try {
         const store = tokenStore || UserTokenStore.shared;
-        await store.markChangelogSeen(latestKey);
+        await store.markChangelogSeen(latestKey, client.config.appKey);
       } catch {
         // ignore
       }

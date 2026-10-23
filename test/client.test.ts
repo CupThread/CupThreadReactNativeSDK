@@ -163,8 +163,8 @@ test('prepareChangelogOverlay respects onlyIfUnseen filtering', async () => {
     assert.equal(overlay1?.latestKey, '1.5.0');
     assert.equal(overlay1?.entries.length, 1);
 
-    // 2. Mark changelog seen
-    await testStore.markChangelogSeen('1.5.0');
+    // 2. Mark changelog seen within the client's app scope
+    await testStore.markChangelogSeen('1.5.0', client.config.appKey);
 
     // 3. Query with onlyIfUnseen: true: should now be null
     const overlay2 = await client.prepareChangelogOverlay({

@@ -124,7 +124,7 @@ test(
       await flush(10);
 
       // Verify custom store has not yet marked it seen
-      assert.equal(await customStore.hasSeenChangelog('3.0.0'), false);
+      assert.equal(await customStore.hasSeenChangelog('3.0.0', 'app_overlay_prop_test'), false);
 
       // Dismiss overlay via Modal onRequestClose
       assert.ok(lastModalProps);
@@ -134,8 +134,13 @@ test(
 
       assert.equal(dismissed, true);
 
-      // Custom store should now have marked 3.0.0 as seen
-      assert.equal(await customStore.hasSeenChangelog('3.0.0'), true);
+      // The overlay marks the version as seen within the client's app scope
+      assert.equal(await customStore.hasSeenChangelog('3.0.0', 'app_overlay_prop_test'), true);
+      assert.equal(
+        await customStore.hasSeenChangelog('3.0.0'),
+        false,
+        'the unscoped legacy set must stay untouched'
+      );
 
       // A cold start store using the same storage sees it as well
       const coldStartStore = new UserTokenStore({
@@ -144,7 +149,7 @@ test(
           mem[k] = v;
         },
       });
-      assert.equal(await coldStartStore.hasSeenChangelog('3.0.0'), true);
+      assert.equal(await coldStartStore.hasSeenChangelog('3.0.0', 'app_overlay_prop_test'), true);
 
       renderer?.unmount();
     } finally {
