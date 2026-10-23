@@ -804,14 +804,21 @@ export class UserTokenStore {
       // Entries cannot be attributed to an app after the fact, so the first app
       // that reads adopts them and the legacy blob is dropped to prevent bleed.
       // Keep the blob when the scoped write failed, so the data is not lost.
-      try {
-        if (this.storage?.removeItem) {
-          await this.storage.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
-        } else if (this.storage) {
-          await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
+      if (this.storage) {
+        try {
+          if (this.storage.removeItem) {
+            await this.storage.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
+          } else {
+            await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
+          }
+        } catch {
+          // Blank the legacy key when removal fails, so another scope cannot adopt it.
+          try {
+            await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
+          } catch {
+            // ignore
+          }
         }
-      } catch {
-        // ignore
       }
     }
 

@@ -901,3 +901,27 @@ test('UserTokenStore: clearing a scope waits for an in-flight load before emptyi
     'the load that finished after the clear request must not repopulate the cache'
   );
 });
+
+test('UserTokenStore: blanks the legacy blob when removeItem fails after migration', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const failingRemove = {
+    ...adapter,
+    removeItem: async (key: string) => {
+      if (key === 'cupthread_seen_changelogs_v1') throw new Error('remove failed');
+      delete mem[key];
+    },
+  };
+  mem['cupthread_seen_changelogs_v1'] = JSON.stringify(['8.0.0']);
+
+  const appA = new UserTokenStore(failingRemove, { appKey: 'app_a' });
+  assert.equal(await appA.hasSeenChangelog('8.0.0'), true);
+
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1'],
+    '[]',
+    'a failed remove must blank the legacy key so no other scope adopts it'
+  );
+
+  const appB = new UserTokenStore(adapter, { appKey: 'app_b' });
+  assert.equal(await appB.hasSeenChangelog('8.0.0'), false);
+});
