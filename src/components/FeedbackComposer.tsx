@@ -257,7 +257,13 @@ export function FeedbackComposer({
 
       const notices: string[] = [];
       if (failed.length > 0) {
-        notices.push(strings.feedbackComposer.someUploadsFailed(failed.length));
+        // A single failure has an actionable cause (missing size, unsupported
+        // type, oversized file); only aggregate several into a count.
+        notices.push(
+          failed.length === 1
+            ? uploadErrorMessage(failed[0].error, strings.feedbackComposer, strings.common)
+            : strings.feedbackComposer.someUploadsFailed(failed.length)
+        );
       }
       if (unsupported.length > 0) {
         if (typeof __DEV__ === 'undefined' || __DEV__) {

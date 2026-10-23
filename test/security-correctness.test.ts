@@ -569,7 +569,7 @@ test('uploadAttachment creates a session, then fills its slot with the bearer to
       {
         clientFileId: 'screenshot.png',
         filename: 'screenshot.png',
-        mimeType: 'image/png',
+        contentType: 'image/png',
         sizeBytes: 2048,
       },
     ]);

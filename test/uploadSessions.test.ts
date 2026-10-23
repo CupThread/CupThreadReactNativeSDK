@@ -4,6 +4,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   AuthenticationRequiredException,
   RateLimitedException,
+  RequestTimeoutException,
   TurnstileRequiredException,
   UploadRejectedException,
   UploadValidationException,
@@ -143,7 +144,7 @@ test('createUploadSession posts the declared files with the appKey and purpose',
       {
         clientFileId: 'screenshot.png',
         filename: 'screenshot.png',
-        mimeType: 'image/png',
+        contentType: 'image/png',
         sizeBytes: 2048,
       },
     ]);
@@ -762,14 +763,14 @@ test('uploadErrorMessage falls back to the localized upload failure for other er
   );
 });
 
-test('uploadErrorMessage keeps the shared transport mappings', () => {
-  const timeout = new Error('timed out');
-  timeout.name = 'RequestTimeoutException';
-
-  // A plain Error is not a transport exception, so it falls back.
+test('uploadErrorMessage delegates transport failures to the shared mapping', () => {
   assert.equal(
-    uploadErrorMessage(timeout, enStrings.feedbackComposer, enStrings.common),
-    enStrings.feedbackComposer.uploadFailed
+    uploadErrorMessage(
+      new RequestTimeoutException(1000),
+      enStrings.feedbackComposer,
+      enStrings.common
+    ),
+    enStrings.common.timeoutError
   );
 });
 
@@ -884,6 +885,67 @@ test('submit keeps the shared error mapping for a plain draft rejection', async 
       }
     );
   } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('createUploadSession disambiguates duplicate filenames within one session', async () => {
+  const mocked = installUploadFetch({ slots: ['upl_1', 'upl_2'] });
+
+  try {
+    await makeClient().createUploadSession(
+      [
+        { filename: 'image.png', mimeType: 'image/png', sizeBytes: 10 },
+        { filename: 'image.png', mimeType: 'image/png', sizeBytes: 20 },
+      ],
+      { userToken: USER_TOKEN }
+    );
+
+    const files = JSON.parse(mocked.requests[0].body as string).files;
+    assert.deepEqual(
+      files.map((file: any) => file.clientFileId),
+      ['image.png', 'image.png#2'],
+      'same-named files must not share a slot correlation id'
+    );
+    assert.deepEqual(
+      files.map((file: any) => file.contentType),
+      ['image/png', 'image/png']
+    );
+  } finally {
+    mocked.restore();
+  }
+});
+
+test('submit warns in development when legacy descriptors are omitted', async () => {
+  const originalFetch = globalThis.fetch;
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ submissionId: 'sub_1', forwardedToGithub: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    await makeClient().submit(
+      {
+        title: 'Legacy attachment',
+        description: 'References a pre-session storage key',
+        platform: 'ios',
+        attachments: [{ kind: 'r2', key: 'legacy-key', url: 'https://cdn.example/legacy.log' }],
+      },
+      USER_TOKEN
+    );
+
+    assert.ok(
+      warnings.some((warning) => warning.includes('without an uploadId')),
+      `expected a dev warning, saw: ${JSON.stringify(warnings)}`
+    );
+  } finally {
+    console.warn = originalWarn;
     globalThis.fetch = originalFetch;
   }
 });

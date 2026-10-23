@@ -212,7 +212,9 @@ export interface FeedbackAttachment {
    *
    * Attachments are stored privately: this is never a publicly fetchable
    * asset, and the server returns no delivery URL until the feedback
-   * submission finalizes. Treat the value as opaque.
+   * submission finalizes. The fallback can be a server-relative path
+   * (`/api/v1/uploads/…`), so treat the value as opaque and never assume it is
+   * absolute or fetchable.
    *
    * @deprecated the intake endpoint no longer accepts this value; submit
    * `uploadId` instead. Kept for display fallbacks on existing descriptors.
@@ -271,7 +273,8 @@ export interface UploadSessionFileSpec {
 
   /**
    * Optional client-side correlation id echoed back on the reserved slot.
-   * Defaults to the `filename`.
+   * Defaults to the `filename`; duplicates within one session are disambiguated
+   * with a `#n` suffix so two same-named files never share a slot id.
    */
   clientFileId?: string;
 }

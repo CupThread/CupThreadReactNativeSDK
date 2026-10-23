@@ -88,6 +88,19 @@ interface CreateUploadSessionResponse {
 }
 
 /**
+ * One file entry on the session-creation wire format.
+ *
+ * The published contract names the MIME field `contentType` and the size field
+ * `sizeBytes`; the SDK's public option is the more familiar `mimeType`.
+ */
+interface UploadSessionFileWire {
+  clientFileId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+/**
  * Response shape of `PUT /api/v1/uploads/{uploadId}`.
  */
 interface UploadedFileResponse {
@@ -559,6 +572,20 @@ export class FeedbackClient {
   }
 
   /**
+   * Whether diagnostics should reach the console. React Native sets `__DEV__`;
+   * outside a dev bundle (tests, web previews) it is undefined and the SDK
+   * follows the composer's convention of treating that as development.
+   */
+  private static isDevelopment(): boolean {
+    try {
+      const flag = (globalThis as { __DEV__?: unknown }).__DEV__;
+      return typeof flag === 'undefined' || Boolean(flag);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Maps an upload-session rejection to a deterministic exception carrying the
    * API's machine-readable `code`.
    *
@@ -669,6 +696,16 @@ export class FeedbackClient {
     const uploadIds = (draft.attachments || [])
       .map((attachment) => attachment.uploadId)
       .filter((uploadId): uploadId is string => typeof uploadId === 'string' && !!uploadId);
+    // Descriptors without an uploadId predate the session flow and cannot be
+    // sent (the API rejects raw keys/URLs). Say so in development instead of
+    // submitting a silently attachment-less draft.
+    const legacyCount = (draft.attachments || []).length - uploadIds.length;
+    if (legacyCount > 0 && FeedbackClient.isDevelopment()) {
+      console.warn(
+        `[CupThread] ${legacyCount} attachment${legacyCount === 1 ? '' : 's'} without an uploadId ` +
+          'were not submitted. Re-upload through uploadAttachment/uploadAttachments first.'
+      );
+    }
     // SEC-28: the intake endpoint finalizes uploads only for the identity that
     // created their session. When a draft carries session uploads and no token
     // was passed, fall back to the same store identity `uploadAttachment` uses
@@ -939,7 +976,7 @@ export class FeedbackClient {
    */
   private normalizeUploadFileSpecs(
     files: readonly UploadSessionFileSpec[]
-  ): Array<Required<UploadSessionFileSpec>> {
+  ): UploadSessionFileWire[] {
     if (files.length === 0) {
       throw new UploadValidationException(
         'invalid_file_count',
@@ -952,6 +989,11 @@ export class FeedbackClient {
         `An upload session accepts at most ${MAX_UPLOAD_FILES} files (received ${files.length}).`
       );
     }
+
+    // Slot ids must be unique within one session: two screenshots named
+    // `image.png` would otherwise share a correlation id and could shadow each
+    // other server-side.
+    const usedClientFileIds = new Set<string>();
 
     return files.map((file) => {
       const filename = typeof file.filename === 'string' ? file.filename.trim() : '';
@@ -968,11 +1010,25 @@ export class FeedbackClient {
           `File "${filename}" must declare its size in bytes (received ${String(file.sizeBytes)}).`
         );
       }
-      const clientFileId =
+
+      const requested =
         typeof file.clientFileId === 'string' && file.clientFileId.trim()
           ? file.clientFileId.trim()
           : filename;
-      return { filename, mimeType, sizeBytes: Math.ceil(file.sizeBytes), clientFileId };
+      let clientFileId = requested;
+      let suffix = 2;
+      while (usedClientFileIds.has(clientFileId)) {
+        clientFileId = `${requested}#${suffix}`;
+        suffix += 1;
+      }
+      usedClientFileIds.add(clientFileId);
+
+      return {
+        clientFileId,
+        filename,
+        contentType: mimeType,
+        sizeBytes: Math.ceil(file.sizeBytes),
+      };
     });
   }
 

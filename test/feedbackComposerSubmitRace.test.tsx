@@ -124,7 +124,7 @@ function createHarness(options: {
       uploaded.push(
         options.uploadPromiseFactory
           ? await options.uploadPromiseFactory(uploadOptions)
-          : makeAttachment('uploaded-file')
+          : makeAttachment(uploadOptions.filename.replace(/\.[^.]+$/, ''))
       );
     }
     return uploaded;
@@ -574,9 +574,49 @@ test(
     assert.equal(harness.submitCalls.length, 1);
     assert.deepEqual(
       harness.submitCalls[0].attachments?.map((attachment) => attachment.uploadId),
-      ['upl_uploaded-file', 'upl_uploaded-file'],
-      'each uploaded attachment must expose the session upload id to the submission'
+      ['upl_one', 'upl_two'],
+      'each uploaded attachment must expose its own session upload id to the submission'
     );
+    harness.renderer.unmount();
+  }
+);
+
+test(
+  'issue #115: a single failed upload surfaces its actionable localized error',
+  renderTestOptions,
+  async () => {
+    const { UploadRejectedException } = await import('../src/client/FeedbackException');
+    const harness = createHarness({
+      onPickAttachment: async () => ({
+        file: { uri: 'file:///tmp/huge.png' },
+        filename: 'huge.png',
+        mimeType: 'image/png',
+        size: 999_999,
+      }),
+      uploadPromiseFactory: async () => {
+        throw new UploadRejectedException(413, 'file_too_large', '');
+      },
+    });
+    await flush();
+
+    const addBtn = harness.findAddAttachmentButton();
+    assert.ok(addBtn);
+    act(() => {
+      addBtn.props.onPress();
+    });
+    await flush(4);
+
+    const renderedText = harness.renderer.root
+      .findAllByType('Text' as any)
+      .map((node) => (Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children))
+      .filter((value): value is string => typeof value === 'string');
+
+    assert.ok(
+      renderedText.some((text) => text.includes('too large')),
+      `expected the localized "too large" message, saw: ${JSON.stringify(renderedText)}`
+    );
+    assert.equal(harness.uploadCalls.length, 1);
+
     harness.renderer.unmount();
   }
 );

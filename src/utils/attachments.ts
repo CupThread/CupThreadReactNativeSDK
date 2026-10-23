@@ -88,9 +88,9 @@ export interface ProcessPickedAttachmentsOptions {
    * this function in one call so the uploader can reserve a single session for
    * the whole pick; results are matched back to their items by position.
    *
-   * Implementations may return either a descriptor array aligned with
-   * `batch`, or per-item outcomes. When it throws, every item in the batch is
-   * reported as failed.
+   * Implementations must return one {@link AttachmentBatchOutcome} per item,
+   * aligned with `batch`. When it throws, every item in the batch is reported
+   * as failed.
    */
   uploadBatch?: (
     batch: readonly UploadAttachmentOptions[]
