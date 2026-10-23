@@ -298,7 +298,7 @@ A blank token has no signature to verify in either flow and throws `MissingUnsub
 
 ### 5. Persistent Anonymous User Token
 
-The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts, as well as persisting changelog seen status (`cupthread_seen_changelogs_v1`). Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
+The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts, as well as persisting changelog seen status. Seen status is scoped per app key (`cupthread_seen_changelogs_v1:<appKey>`), so a host that embeds more than one CupThread app never suppresses the other app's release overlay. Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
 
 ```tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -307,6 +307,18 @@ import { UserTokenStore } from '@cupthread/react-native';
 UserTokenStore.configure(AsyncStorage);
 console.log('Storage is persistent:', UserTokenStore.shared.isPersistent); // true
 ```
+
+The SDK passes the client's `appKey` to the seen-status methods automatically. Direct `UserTokenStore` calls accept the same scope, either through the constructor/`configure` options or per call:
+
+```tsx
+const store = new UserTokenStore(AsyncStorage, { appKey: 'app_live_abc123' });
+await store.markChangelogSeen('1.2.0');
+
+// Or scope a single call:
+await UserTokenStore.shared.markChangelogSeen('1.2.0', 'app_live_abc123');
+```
+
+Each scope keeps at most 50 seen ids (`UserTokenStore.MAX_SEEN_CHANGELOGS`) and evicts the oldest first. When upgrading from a version that wrote the legacy unscoped key `cupthread_seen_changelogs_v1`, the first app to read the set adopts those ids and the legacy key is removed so it cannot bleed into another app.
 
 #### Storage Security & Encrypted Adapters
 

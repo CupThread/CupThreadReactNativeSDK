@@ -1705,7 +1705,7 @@ export class FeedbackClient {
       if (!store.isPersistent) {
         store.warnUnpersistedChangelogSeen();
       }
-      const seen = await store.hasSeenChangelog(latestKey);
+      const seen = await store.hasSeenChangelog(latestKey, this.config.appKey);
       if (seen) {
         return null;
       }

@@ -497,7 +497,7 @@ test('prepareChangelogOverlay with onlyIfUnseen suppresses seen release when bac
         mem[key] = val;
       },
     };
-    const store = new UserTokenStore(adapter);
+    const store = new UserTokenStore(adapter, { appKey: 'app_overlay_spec' });
 
     // Call 1: Unseen version returns overlay payload
     const result1 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store });
@@ -604,4 +604,225 @@ test('prepareChangelogOverlay honors tokenStore prop passthrough and warns on un
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
   }
+});
+
+function memoryAdapter(): { adapter: any; mem: Record<string, string> } {
+  const mem: Record<string, string> = {};
+  return {
+    mem,
+    adapter: {
+      getItem: async (key: string) => mem[key] ?? null,
+      setItem: async (key: string, value: string) => {
+        mem[key] = value;
+      },
+      removeItem: async (key: string) => {
+        delete mem[key];
+      },
+    },
+  };
+}
+
+test('UserTokenStore: scopes changelog seen state by appKey', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const appA = new UserTokenStore(adapter, { appKey: 'app_a' });
+  const appB = new UserTokenStore(adapter, { appKey: 'app_b' });
+
+  await appA.markChangelogSeen('1.2.0');
+
+  assert.equal(await appA.hasSeenChangelog('1.2.0'), true);
+  assert.equal(await appB.hasSeenChangelog('1.2.0'), false, 'app scopes must not share seen ids');
+
+  assert.ok(mem['cupthread_seen_changelogs_v1:app_a']);
+  assert.equal(mem['cupthread_seen_changelogs_v1:app_b'], undefined);
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1'],
+    undefined,
+    'scoped writes must not touch the legacy global key'
+  );
+
+  await appB.markChangelogSeen('1.2.0');
+  assert.equal(await appB.hasSeenChangelog('1.2.0'), true);
+  assert.equal(await appA.hasSeenChangelog('1.2.0'), true);
+});
+
+test('UserTokenStore: a per-call appKey overrides the configured scope', async () => {
+  const { adapter } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 'app_a' });
+
+  await store.markChangelogSeen('2.0.0', 'app_b');
+
+  assert.equal(await store.hasSeenChangelog('2.0.0', 'app_b'), true);
+  assert.equal(await store.hasSeenChangelog('2.0.0', 'app_a'), false);
+  assert.equal(await store.hasSeenChangelog('2.0.0'), false, 'configured scope stayed untouched');
+});
+
+test('UserTokenStore: getSeenStorageKey scopes keys and falls back to the legacy key', () => {
+  assert.equal(
+    UserTokenStore.getSeenStorageKey('app_live_abc123'),
+    'cupthread_seen_changelogs_v1:app_live_abc123'
+  );
+  assert.equal(
+    UserTokenStore.getSeenStorageKey('  app_trimmed  '),
+    'cupthread_seen_changelogs_v1:app_trimmed'
+  );
+  assert.equal(UserTokenStore.getSeenStorageKey(''), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey(null), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey(undefined), 'cupthread_seen_changelogs_v1');
+});
+
+test('UserTokenStore: evicts the oldest seen changelogs once the retention cap is reached', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 'app_cap' });
+  const total = UserTokenStore.MAX_SEEN_CHANGELOGS + 5;
+
+  for (let i = 0; i < total; i++) {
+    await store.markChangelogSeen(`1.0.${i}`);
+  }
+
+  assert.equal(await store.hasSeenChangelog('1.0.0'), false, 'oldest entry must be evicted');
+  assert.equal(await store.hasSeenChangelog('1.0.4'), false, 'first five entries must be evicted');
+  assert.equal(await store.hasSeenChangelog('1.0.5'), true, 'the cap keeps the newest entries');
+  assert.equal(await store.hasSeenChangelog(`1.0.${total - 1}`), true);
+
+  const persisted = JSON.parse(mem['cupthread_seen_changelogs_v1:app_cap']);
+  assert.equal(persisted.length, UserTokenStore.MAX_SEEN_CHANGELOGS);
+  assert.equal(persisted[0], '1.0.5', 'persisted order must start at the first retained entry');
+});
+
+test('UserTokenStore: trims an oversized persisted seen set on load', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const oversized = Array.from(
+    { length: UserTokenStore.MAX_SEEN_CHANGELOGS + 10 },
+    (_, i) => `3.0.${i}`
+  );
+  mem['cupthread_seen_changelogs_v1:app_trim'] = JSON.stringify(oversized);
+
+  const store = new UserTokenStore(adapter, { appKey: 'app_trim' });
+
+  assert.equal(await store.hasSeenChangelog('3.0.0'), false);
+  assert.equal(await store.hasSeenChangelog('3.0.9'), false);
+  assert.equal(await store.hasSeenChangelog('3.0.10'), true);
+  assert.equal(await store.hasSeenChangelog(`3.0.${oversized.length - 1}`), true);
+
+  const rewritten = JSON.parse(mem['cupthread_seen_changelogs_v1:app_trim']);
+  assert.equal(rewritten.length, UserTokenStore.MAX_SEEN_CHANGELOGS, 'load must persist the trim');
+  assert.equal(rewritten[0], '3.0.10');
+});
+
+test('UserTokenStore: migrates the legacy unscoped seen set into the first app scope', async () => {
+  const { adapter, mem } = memoryAdapter();
+  mem['cupthread_seen_changelogs_v1'] = JSON.stringify(['1.0.0', '1.1.0']);
+
+  const appA = new UserTokenStore(adapter, { appKey: 'app_a' });
+  assert.equal(await appA.hasSeenChangelog('1.0.0'), true, 'single-app upgrade keeps seen state');
+  assert.equal(await appA.hasSeenChangelog('1.1.0'), true);
+
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1'],
+    undefined,
+    'the legacy blob must be dropped once adopted'
+  );
+  const migrated = JSON.parse(mem['cupthread_seen_changelogs_v1:app_a']);
+  assert.deepEqual(migrated.sort(), ['1.0.0', '1.1.0']);
+
+  const appB = new UserTokenStore(adapter, { appKey: 'app_b' });
+  assert.equal(
+    await appB.hasSeenChangelog('1.0.0'),
+    false,
+    'another app must not inherit the migrated entries'
+  );
+});
+
+test('UserTokenStore: clearSeenChangelogs only clears the requested scope', async () => {
+  const { adapter } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 'app_a' });
+
+  await store.markChangelogSeen('1.0.0');
+  await store.markChangelogSeen('1.0.0', 'app_b');
+
+  await store.clearSeenChangelogs('app_a');
+
+  assert.equal(await store.hasSeenChangelog('1.0.0'), false);
+  assert.equal(await store.hasSeenChangelog('1.0.0', 'app_b'), true);
+});
+
+test('prepareChangelogOverlay scopes onlyIfUnseen by the client appKey', async () => {
+  const { FeedbackClient } = await import('../src/client/FeedbackClient');
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const s = url.toString();
+    if (s.includes('/api/v1/public/config/')) {
+      return new Response(
+        JSON.stringify({
+          appKey: 'app_scoped_overlay',
+          sdk: {
+            features: { changelog: true },
+            changelogOverlay: { entryCount: 3 },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (s.includes('/changelog')) {
+      return new Response(
+        JSON.stringify({
+          entries: [
+            {
+              id: 'entry_1.4.0',
+              versionLabel: '1.4.0',
+              title: 'Release 1.4.0',
+              body: 'Release notes',
+              publishedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return new Response('{}', { status: 200 });
+  }) as any;
+
+  try {
+    const clientA = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_a',
+    });
+    const clientB = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_b',
+    });
+    const { adapter } = memoryAdapter();
+    const store = new UserTokenStore(adapter);
+
+    assert.ok(await clientA.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }));
+
+    await store.markChangelogSeen('1.4.0', 'app_a');
+
+    assert.equal(
+      await clientA.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }),
+      null,
+      'the app that saw the release keeps the overlay hidden'
+    );
+    assert.ok(
+      await clientB.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }),
+      'another app with the same version label still sees its overlay'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('UserTokenStore: setAppKey switches the default scope and null unscopes', async () => {
+  const { adapter } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 'app_a' });
+  await store.markChangelogSeen('9.0.0');
+
+  store.setAppKey('  app_b  ');
+  assert.equal(store.getAppKey(), 'app_b');
+  assert.equal(await store.hasSeenChangelog('9.0.0'), false, 'a new scope starts empty');
+
+  store.setAppKey(null);
+  assert.equal(store.getAppKey(), null);
+  assert.equal(await store.hasSeenChangelog('9.0.0'), false);
 });

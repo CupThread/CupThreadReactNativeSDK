@@ -69,6 +69,20 @@ export interface TokenStorageAdapter {
 }
 
 /**
+ * Configuration options for {@link UserTokenStore}.
+ */
+export interface UserTokenStoreOptions {
+  /**
+   * Application key used to scope per-app persistent state such as seen changelog
+   * versions. Without it, seen state falls back to the legacy unscoped key unless
+   * an `appKey` is passed to {@link UserTokenStore.hasSeenChangelog},
+   * {@link UserTokenStore.markChangelogSeen}, or
+   * {@link UserTokenStore.clearSeenChangelogs}.
+   */
+  appKey?: string;
+}
+
+/**
  * Storage key used to persist the anonymous user identifier in key-value storage.
  */
 function isDevMode(): boolean {
@@ -157,14 +171,32 @@ export class UserTokenStore {
   private listeners: Set<() => void> = new Set();
 
   /**
-   * In-memory cache of seen changelog versions/IDs.
+   * Application key used to scope per-app persistent state such as seen changelog versions.
    */
-  private seenChangelogsCache: Set<string> | null = null;
+  private appKey: string | null = null;
 
   /**
-   * Storage key used to persist seen changelog versions.
+   * In-memory cache of seen changelog versions/IDs, keyed by the resolved storage key.
    */
-  private static readonly CHANGELOG_SEEN_KEY = 'cupthread_seen_changelogs_v1';
+  private seenChangelogsCache: Map<string, Set<string>> = new Map();
+
+  /**
+   * In-flight seen changelog loads, keyed by storage key, so concurrent reads and
+   * legacy migration resolve only once.
+   */
+  private pendingSeenChangelogLoads: Map<string, Promise<Set<string>>> = new Map();
+
+  /**
+   * Storage key that older SDK versions used to persist seen changelog versions
+   * without an app scope.
+   */
+  private static readonly LEGACY_CHANGELOG_SEEN_KEY = 'cupthread_seen_changelogs_v1';
+
+  /**
+   * Maximum number of seen changelog versions/IDs retained per app scope.
+   * Oldest entries are evicted first so storage cannot grow without bound.
+   */
+  public static readonly MAX_SEEN_CHANGELOGS = 50;
 
   /**
    * Tracks whether a warning about unpersisted changelog seen-status has already been logged.
@@ -219,14 +251,16 @@ export class UserTokenStore {
    * Creates a new `UserTokenStore` instance.
    *
    * @param storage - Optional custom storage adapter conforming to {@link TokenStorageAdapter}.
+   * @param options - Optional configuration, including the `appKey` that scopes per-app state.
    *
    * @example
    * ```ts
-   * const store = new UserTokenStore(customStorageAdapter);
+   * const store = new UserTokenStore(customStorageAdapter, { appKey: 'app_live_abc123' });
    * ```
    */
-  constructor(storage?: TokenStorageAdapter) {
+  constructor(storage?: TokenStorageAdapter, options?: UserTokenStoreOptions) {
     this.storage = storage || null;
+    this.appKey = normalizeAppKey(options?.appKey);
     this.initToken();
   }
 
@@ -249,19 +283,71 @@ export class UserTokenStore {
    * Reconfigures the shared singleton with a custom storage adapter.
    *
    * @param storage - Storage adapter instance.
+   * @param options - Optional configuration, including the `appKey` that scopes per-app state.
    * @returns The configured singleton `UserTokenStore`.
    *
    * @example
    * ```ts
-   * UserTokenStore.configure({
-   *   getItem: (key) => localStorage.getItem(key),
-   *   setItem: (key, val) => localStorage.setItem(key, val),
-   * });
+   * UserTokenStore.configure(
+   *   {
+   *     getItem: (key) => localStorage.getItem(key),
+   *     setItem: (key, val) => localStorage.setItem(key, val),
+   *   },
+   *   { appKey: 'app_live_abc123' }
+   * );
    * ```
    */
-  public static configure(storage: TokenStorageAdapter): UserTokenStore {
-    this._shared = new UserTokenStore(storage);
+  public static configure(
+    storage: TokenStorageAdapter,
+    options?: UserTokenStoreOptions
+  ): UserTokenStore {
+    this._shared = new UserTokenStore(storage, options);
     return this._shared;
+  }
+
+  /**
+   * Sets the application key used to scope changelog seen state when a call does
+   * not pass its own `appKey`. Pass `null` to fall back to the legacy unscoped key.
+   *
+   * @param appKey - The application key, or `null` to unscope.
+   */
+  public setAppKey(appKey?: string | null): void {
+    this.appKey = normalizeAppKey(appKey);
+  }
+
+  /**
+   * Returns the application key this store scopes changelog seen state by, or
+   * `null` when calls fall back to the legacy unscoped key.
+   */
+  public getAppKey(): string | null {
+    return this.appKey;
+  }
+
+  /**
+   * Computes the storage key used for seen changelog status within an app scope.
+   *
+   * @param appKey - Application key. When omitted or blank, returns the legacy
+   * unscoped key.
+   *
+   * @example
+   * ```ts
+   * UserTokenStore.getSeenStorageKey('app_live_abc123');
+   * // 'cupthread_seen_changelogs_v1:app_live_abc123'
+   * ```
+   */
+  public static getSeenStorageKey(appKey?: string | null): string {
+    const normalized = normalizeAppKey(appKey);
+    return normalized
+      ? `${UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY}:${normalized}`
+      : UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY;
+  }
+
+  /**
+   * Resolves the storage key for a call: a per-call `appKey` wins over the
+   * configured one, and `undefined` means "use the configured appKey".
+   */
+  private resolveSeenStorageKey(appKey?: string | null): string {
+    return UserTokenStore.getSeenStorageKey(appKey === undefined ? this.appKey : appKey);
   }
 
   /**
@@ -558,64 +644,70 @@ export class UserTokenStore {
    * Checks whether a changelog release version or entry ID has already been marked as seen.
    *
    * @param versionOrId - Changelog version label (e.g. `'1.2.0'`) or entry ID.
+   * @param appKey - Application key to scope the lookup. Defaults to the configured
+   * `appKey`, or the legacy unscoped set when neither is set.
    * @returns Promise resolving to `true` if seen, `false` otherwise.
    *
    * @example
    * ```ts
-   * const hasSeen = await UserTokenStore.shared.hasSeenChangelog('1.2.0');
+   * const hasSeen = await UserTokenStore.shared.hasSeenChangelog('1.2.0', 'app_live_abc123');
    * ```
    */
-  public async hasSeenChangelog(versionOrId: string): Promise<boolean> {
+  public async hasSeenChangelog(versionOrId: string, appKey?: string | null): Promise<boolean> {
     if (!versionOrId) return false;
-    const seenSet = await this.getSeenChangelogs();
+    const seenSet = await this.getSeenChangelogs(appKey);
     return seenSet.has(versionOrId);
   }
 
   /**
    * Marks a changelog release version or entry ID as seen and persists it.
    *
+   * @remarks
+   * Each app scope keeps at most {@link UserTokenStore.MAX_SEEN_CHANGELOGS}
+   * entries; the oldest ones are evicted first.
+   *
    * @param versionOrId - Changelog version label (e.g. `'1.2.0'`) or entry ID.
+   * @param appKey - Application key to scope the write. Defaults to the configured
+   * `appKey`, or the legacy unscoped set when neither is set.
    *
    * @example
    * ```ts
-   * await UserTokenStore.shared.markChangelogSeen('1.2.0');
+   * await UserTokenStore.shared.markChangelogSeen('1.2.0', 'app_live_abc123');
    * ```
    */
-  public async markChangelogSeen(versionOrId: string): Promise<void> {
+  public async markChangelogSeen(versionOrId: string, appKey?: string | null): Promise<void> {
     if (!versionOrId) return;
     if (!this.isPersistent) {
       this.warnUnpersistedChangelogSeen();
     }
-    const seenSet = await this.getSeenChangelogs();
+    const seenSet = await this.getSeenChangelogs(appKey);
     if (seenSet.has(versionOrId)) return;
 
     seenSet.add(versionOrId);
-    if (this.storage) {
-      try {
-        const payload = JSON.stringify(Array.from(seenSet));
-        await this.storage.setItem(UserTokenStore.CHANGELOG_SEEN_KEY, payload);
-      } catch {
-        // ignore
-      }
-    }
+    this.trimSeenChangelogs(seenSet);
+    await this.persistSeenChangelogs(this.resolveSeenStorageKey(appKey), seenSet);
   }
 
   /**
-   * Clears all recorded seen changelog entries from memory and storage.
+   * Clears the recorded seen changelog entries for one app scope from memory and storage.
+   *
+   * @param appKey - Application key whose seen set is cleared. Defaults to the
+   * configured `appKey`, or the legacy unscoped set when neither is set.
    *
    * @example
    * ```ts
-   * await UserTokenStore.shared.clearSeenChangelogs();
+   * await UserTokenStore.shared.clearSeenChangelogs('app_live_abc123');
    * ```
    */
-  public async clearSeenChangelogs(): Promise<void> {
-    this.seenChangelogsCache = new Set<string>();
+  public async clearSeenChangelogs(appKey?: string | null): Promise<void> {
+    const storageKey = this.resolveSeenStorageKey(appKey);
+    this.seenChangelogsCache.set(storageKey, new Set<string>());
     if (this.storage) {
       try {
         if (this.storage.removeItem) {
-          await this.storage.removeItem(UserTokenStore.CHANGELOG_SEEN_KEY);
+          await this.storage.removeItem(storageKey);
         } else {
-          await this.storage.setItem(UserTokenStore.CHANGELOG_SEEN_KEY, '[]');
+          await this.storage.setItem(storageKey, '[]');
         }
       } catch {
         // ignore
@@ -624,40 +716,145 @@ export class UserTokenStore {
   }
 
   /**
-   * Internal helper to load the set of seen changelog identifiers from storage or cache.
+   * Internal helper to load the set of seen changelog identifiers for an app scope.
    */
-  private async getSeenChangelogs(): Promise<Set<string>> {
-    if (this.seenChangelogsCache) {
-      return this.seenChangelogsCache;
+  private async getSeenChangelogs(appKey?: string | null): Promise<Set<string>> {
+    const storageKey = this.resolveSeenStorageKey(appKey);
+    const cached = this.seenChangelogsCache.get(storageKey);
+    if (cached) {
+      return cached;
     }
 
-    let raw: string | null = null;
-    if (this.storage) {
+    const pending = this.pendingSeenChangelogLoads.get(storageKey);
+    if (pending) {
+      return pending;
+    }
+
+    const load = this.loadSeenChangelogs(storageKey).then((set) => {
+      this.seenChangelogsCache.set(storageKey, set);
+      return set;
+    });
+    this.pendingSeenChangelogLoads.set(storageKey, load);
+    try {
+      return await load;
+    } finally {
+      this.pendingSeenChangelogLoads.delete(storageKey);
+    }
+  }
+
+  /**
+   * Reads a seen set from storage, adopting the legacy unscoped blob the first
+   * time a scoped set is read on an installation that predates app scoping.
+   */
+  private async loadSeenChangelogs(storageKey: string): Promise<Set<string>> {
+    let raw = await this.readStorage(storageKey);
+    let migratedFromLegacy = false;
+
+    if (raw === null && storageKey !== UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY) {
+      const legacyRaw = await this.readStorage(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
+      if (legacyRaw !== null) {
+        raw = legacyRaw;
+        migratedFromLegacy = true;
+      }
+    }
+
+    const set = parseSeenChangelogs(raw);
+    const shouldRewrite = set.size > UserTokenStore.MAX_SEEN_CHANGELOGS;
+    this.trimSeenChangelogs(set);
+
+    if (migratedFromLegacy || shouldRewrite) {
+      await this.persistSeenChangelogs(storageKey, set);
+    }
+
+    if (migratedFromLegacy && this.storage) {
+      // Entries cannot be attributed to an app after the fact, so the first app
+      // that reads adopts them and the legacy blob is dropped to prevent bleed.
       try {
-        raw = await this.storage.getItem(UserTokenStore.CHANGELOG_SEEN_KEY);
+        if (this.storage.removeItem) {
+          await this.storage.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
+        } else {
+          await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
+        }
       } catch {
         // ignore
       }
     }
 
-    const set = new Set<string>();
-    if (raw && typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((item) => {
-            if (typeof item === 'string') set.add(item);
-          });
-        }
-      } catch {
-        raw.split(',').forEach((s) => {
-          const t = s.trim();
-          if (t) set.add(t);
-        });
-      }
-    }
-
-    this.seenChangelogsCache = set;
     return set;
   }
+
+  /**
+   * Reads one stored string, treating adapter failures and non-string payloads as absent.
+   */
+  private async readStorage(key: string): Promise<string | null> {
+    if (!this.storage) {
+      return null;
+    }
+    try {
+      const value = await this.storage.getItem(key);
+      return typeof value === 'string' ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Persists a seen set, keeping storage failures from breaking the caller.
+   */
+  private async persistSeenChangelogs(storageKey: string, seenSet: Set<string>): Promise<void> {
+    if (!this.storage) {
+      return;
+    }
+    try {
+      await this.storage.setItem(storageKey, JSON.stringify(Array.from(seenSet)));
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Evicts the oldest entries until the set fits {@link UserTokenStore.MAX_SEEN_CHANGELOGS}.
+   */
+  private trimSeenChangelogs(seenSet: Set<string>): void {
+    while (seenSet.size > UserTokenStore.MAX_SEEN_CHANGELOGS) {
+      const oldest = seenSet.values().next().value;
+      if (oldest === undefined) return;
+      seenSet.delete(oldest);
+    }
+  }
+}
+
+/**
+ * Normalizes a caller-supplied app key, treating blank strings as unscoped.
+ */
+function normalizeAppKey(appKey?: string | null): string | null {
+  const trimmed = appKey?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * Parses a persisted seen set, accepting the JSON array format and the older
+ * comma-separated format.
+ */
+function parseSeenChangelogs(raw: string | null): Set<string> {
+  const set = new Set<string>();
+  if (!raw) {
+    return set;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      parsed.forEach((item) => {
+        if (typeof item === 'string' && item) set.add(item);
+      });
+    }
+  } catch {
+    raw.split(',').forEach((entry) => {
+      const trimmed = entry.trim();
+      if (trimmed) set.add(trimmed);
+    });
+  }
+
+  return set;
 }
