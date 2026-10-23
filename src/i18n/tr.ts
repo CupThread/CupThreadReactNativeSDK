@@ -129,6 +129,7 @@ export const trStrings: CupThreadStrings = {
     unsubscribeButton: 'Abonelikten çık',
     subscribeFailed: 'Değişiklik günlüğüne abone olunamadı.',
     sectionUnavailable: 'Değişiklik günlüğü şu anda kullanılamıyor.',
+    loadMore: 'Daha fazla yükle',
   },
   userProfile: {
     screenTitle: 'Kullanıcı profili',

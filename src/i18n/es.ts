@@ -134,6 +134,7 @@ export const esStrings: CupThreadStrings = {
     unsubscribeButton: 'Cancelar suscripción',
     subscribeFailed: 'Error al suscribirse al registro de cambios.',
     sectionUnavailable: 'El registro de cambios no está disponible en este momento.',
+    loadMore: 'Cargar más',
   },
   userProfile: {
     screenTitle: 'Perfil de usuario',

@@ -127,6 +127,7 @@ export const zhHansStrings: CupThreadStrings = {
     unsubscribeButton: '退订邮件',
     subscribeFailed: '订阅更新日志失败。',
     sectionUnavailable: '更新日志暂不可用。',
+    loadMore: '加载更多',
   },
   userProfile: {
     screenTitle: '用户主页',

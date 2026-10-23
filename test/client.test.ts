@@ -174,7 +174,12 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       appKey: HOSTILE_SEGMENT,
     });
 
-    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+    const cases: Array<{
+      label: string;
+      run: () => Promise<unknown>;
+      expected: string;
+      expectedQuery?: string;
+    }> = [
       {
         label: 'fetchAppConfig',
         run: () => client.fetchAppConfig(),
@@ -218,7 +223,8 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       {
         label: 'fetchChangelog',
         run: () => client.fetchChangelog(),
-        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog`,
+        expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog?limit=100`,
+        expectedQuery: '?limit=100',
       },
       {
         label: 'subscribeToChangelog',
@@ -250,8 +256,14 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       assert.equal(url, testCase.expected, testCase.label);
       // Segment containment: reserved characters must never escape into the
       // URL structure (no stray query, fragment, or unencoded separators).
-      assert.ok(!url.includes('?'), `${testCase.label}: no raw "?" in URL`);
-      assert.ok(!url.includes('#'), `${testCase.label}: no raw "#" in URL`);
+      // The changelog list is the one method allowed a query string (cursor
+      // pagination parameters), so its declared query is stripped first.
+      const withoutQuery =
+        testCase.expectedQuery && url.endsWith(testCase.expectedQuery)
+          ? url.slice(0, url.length - testCase.expectedQuery.length)
+          : url;
+      assert.ok(!withoutQuery.includes('?'), `${testCase.label}: no raw "?" in URL`);
+      assert.ok(!withoutQuery.includes('#'), `${testCase.label}: no raw "#" in URL`);
       assert.ok(!url.includes(' '), `${testCase.label}: no raw space in URL`);
     }
   } finally {
@@ -277,7 +289,12 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       appKey: 'app_key_abc',
     });
 
-    const cases: Array<{ label: string; run: () => Promise<unknown>; expected: string }> = [
+    const cases: Array<{
+      label: string;
+      run: () => Promise<unknown>;
+      expected: string;
+      expectedQuery?: string;
+    }> = [
       {
         label: 'fetchAppConfig',
         run: () => client.fetchAppConfig(),
@@ -321,7 +338,7 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       {
         label: 'fetchChangelog',
         run: () => client.fetchChangelog(),
-        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog',
+        expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog?limit=100',
       },
       {
         label: 'subscribeToChangelog',

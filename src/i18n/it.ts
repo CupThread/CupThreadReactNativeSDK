@@ -134,6 +134,7 @@ export const itStrings: CupThreadStrings = {
     unsubscribeButton: 'Annulla iscrizione',
     subscribeFailed: 'Impossibile iscriversi al registro delle modifiche.',
     sectionUnavailable: 'Il registro delle modifiche non è al momento disponibile.',
+    loadMore: 'Carica altri',
   },
   userProfile: {
     screenTitle: 'Profilo utente',

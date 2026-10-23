@@ -133,6 +133,7 @@ export const ptStrings: CupThreadStrings = {
     unsubscribeButton: 'Cancelar inscrição',
     subscribeFailed: 'Falha ao se inscrever no changelog.',
     sectionUnavailable: 'O registro de alterações não está disponível no momento.',
+    loadMore: 'Carregar mais',
   },
   userProfile: {
     screenTitle: 'Perfil do usuário',

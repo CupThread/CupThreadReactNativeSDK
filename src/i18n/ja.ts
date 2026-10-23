@@ -129,6 +129,7 @@ export const jaStrings: CupThreadStrings = {
     unsubscribeButton: '購読を解除',
     subscribeFailed: '更新情報の購読に失敗しました。',
     sectionUnavailable: '更新履歴は現在ご利用いただけません。',
+    loadMore: 'もっと読み込む',
   },
   userProfile: {
     screenTitle: 'ユーザープロフィール',

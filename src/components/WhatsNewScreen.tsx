@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,12 +19,11 @@ import {
   useCupThreadAppConfig,
   useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
-import type { ChangelogEntry } from '../types';
+import { useChangelogEntries } from '../hooks/useChangelogEntries';
 import { isSurfaceEnabled } from '../utils/featureFlags';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
-import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import { userFacingErrorMessage } from '../utils/errors';
@@ -44,19 +43,18 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const isEnabled = isSurfaceEnabled(appConfig, 'changelog');
   const title = headerTitle ?? strings.changelog.overlayTitle;
 
-  const fetchChangelog = useCallback(
-    (signal: AbortSignal) => client.fetchChangelog({ signal }),
-    [client]
-  );
   const {
-    data: changelogData,
+    entries,
+    hasMore,
     isLoading,
     isRefreshing,
+    isLoadingMore,
     error: loadError,
-    reload,
+    loadMoreError,
+    loadMore,
     refresh,
-  } = useAsyncData(fetchChangelog, { enabled: isEnabled || isLoadingConfig });
-  const entries: ChangelogEntry[] = changelogData ?? [];
+    reload,
+  } = useChangelogEntries({ client, enabled: isEnabled || isLoadingConfig });
 
   const [email, setEmail] = useState<string>('');
   const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
@@ -161,7 +159,12 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
           {onBack && (
-            <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={strings.common.back}>
+            <TouchableOpacity
+              onPress={onBack}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel={strings.common.back}
+            >
               <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
             </TouchableOpacity>
           )}
@@ -216,6 +219,41 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
               onRefresh={refresh}
               tintColor={colors.primary}
             />
+          }
+          onEndReached={() => {
+            if (hasMore && !isLoading && !isLoadingMore && !isRefreshing) {
+              loadMore();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={styles.footerLoading}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.footerText, { color: colors.textMuted }]}>
+                  {strings.common.loadingMore}
+                </Text>
+              </View>
+            ) : hasMore ? (
+              <View style={styles.footerAffordance}>
+                {loadMoreError && (
+                  <Text style={[styles.footerAffordanceText, { color: colors.danger }]}>
+                    {strings.common.error}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  onPress={() => loadMore()}
+                  style={[styles.loadMoreBtn, { borderColor: colors.border }]}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={strings.changelog.loadMore}
+                >
+                  <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
+                    {loadMoreError ? strings.common.retry : strings.changelog.loadMore}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <View
@@ -356,6 +394,36 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  footerLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  footerText: {
+    fontSize: 13,
+    marginLeft: 8,
+  },
+  footerAffordance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  footerAffordanceText: {
+    fontSize: 13,
+    marginRight: 12,
+  },
+  loadMoreBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  loadMoreBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   centerEmpty: {
     flex: 1,

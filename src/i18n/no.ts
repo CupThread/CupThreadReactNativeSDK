@@ -132,6 +132,7 @@ export const noStrings: CupThreadStrings = {
     unsubscribeButton: 'Avslutt abonnement',
     subscribeFailed: 'Kunne ikke abonnere på endringsloggen.',
     sectionUnavailable: 'Endringsloggen er for øyeblikket ikke tilgjengelig.',
+    loadMore: 'Last inn mer',
   },
   userProfile: {
     screenTitle: 'Brukerprofil',

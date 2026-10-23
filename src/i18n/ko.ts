@@ -129,6 +129,7 @@ export const koStrings: CupThreadStrings = {
     unsubscribeButton: '구독 취소',
     subscribeFailed: '변경 로그 구독에 실패했습니다.',
     sectionUnavailable: '변경 로그를 현재 사용할 수 없습니다.',
+    loadMore: '더 불러오기',
   },
   userProfile: {
     screenTitle: '사용자 프로필',

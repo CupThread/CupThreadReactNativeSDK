@@ -1140,6 +1140,37 @@ export interface ChangelogEntry {
 }
 
 /**
+ * Paginated list response of published changelog entries.
+ *
+ * Pass `nextCursor` to {@link FeedbackClient.listChangelog} to fetch the next page.
+ *
+ * @example
+ * ```ts
+ * const result: ListPublicChangelogResult = {
+ *   entries: [{ id: 'chg_v2', title: 'Version 2.0', body: '...', publishedAt: '...', linkedRequests: [] }],
+ *   hasMore: true,
+ *   nextCursor: 'MjAyNi0w...',
+ * };
+ * ```
+ */
+export interface ListPublicChangelogResult {
+  /**
+   * Changelog entries for the current page, newest first.
+   */
+  entries: ChangelogEntry[];
+
+  /**
+   * True when more entries are available beyond this page.
+   */
+  hasMore: boolean;
+
+  /**
+   * Opaque keyset cursor for the next page, or `null` on the last page.
+   */
+  nextCursor: string | null;
+}
+
+/**
  * Response returned after subscribing an email address to changelog notifications.
  *
  * @example
