@@ -464,12 +464,14 @@ The canonical string is newline-joined with no trailing newline:
 cpt-user-attrs-v1
 <appKey>
 <userToken>
-<isPaying: true|false|unset>
-<plan: value|null|unset>
-<mrr: canonicalNumber|null|unset>
-<currency: valueAsSent|unset>
-<timestamp: epochSeconds>
+<true|false|unset>
+<value|null|unset>
+<canonicalNumber|null|unset>
+<valueAsSent|unset>
+<epochSeconds>
 ```
+
+Each line holds the bare value; the angle-bracket labels describe the expected value and are not part of the bytes.
 
 Absent fields sign as `unset`, explicit `null` signs as `null`, and strings are signed exactly as sent (plan and currency are trimmed before sending). `mrr` is rendered with `toFixed(2)` and trailing zeros stripped (`1200`, `99.5`). Timestamps are device-clock epoch seconds and must fall within ±300 seconds of server time.
 
