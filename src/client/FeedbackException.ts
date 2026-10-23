@@ -147,12 +147,13 @@ export class UnreadableUploadResponseException extends FeedbackException {
 }
 
 /**
- * Thrown when a changelog unsubscribe is attempted without a signed token.
+ * Thrown when an email unsubscribe is attempted without a signed token.
  *
- * The endpoint is token-gated: a bare email address can no longer unsubscribe
- * anyone (SEC-14). The token arrives in the unsubscribe link inside a
- * changelog or confirmation email; a blank value has no signature to verify,
- * so it is rejected locally instead of being sent to the API.
+ * Both unsubscribe endpoints are token-gated: the changelog route was changed
+ * because a bare email address could unsubscribe anyone (SEC-14), and the
+ * weekly digest route only clears the preference described by the signed token
+ * in its own email. A blank value has no signature to verify, so it is
+ * rejected locally instead of being sent to the API.
  */
 export class MissingUnsubscribeTokenException extends FeedbackException {
   constructor(message: string = 'A signed unsubscribe token from the email link is required.') {

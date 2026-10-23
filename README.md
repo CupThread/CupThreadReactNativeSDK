@@ -278,16 +278,21 @@ Key behaviors:
 
 When `<CupThreadProvider>` loads your application configuration (`PublicAppConfig`), `FeedbackComposer` automatically validates the outgoing feedback platform against `allowedPlatforms` via `resolveAllowedPlatform()`. If the candidate platform (from `initialDraft.platform`, `client.config.defaultPlatform`, or the runtime OS) is excluded from the app's configured allowlist, it falls back to the first allowed platform and emits a diagnostic warning in development mode (`__DEV__`).
 
-### 4. Changelog Email Unsubscribe
+### 4. Email Unsubscribe (Changelog & Weekly Digest)
 
-Changelog unsubscribe is token-gated. The API removed the unauthenticated bare-email payload, so unsubscribing requires the per-subscriber `token` carried by the link in a changelog or confirmation email:
+Both unsubscribe flows are token-gated. The API removed the unauthenticated bare-email payload, so unsubscribing requires the signed `token` carried by the link inside the email:
 
 ```ts
-// `token` is the `token` query item of the email's unsubscribe link.
-await client.unsubscribeFromChangelog(tokenFromEmail);
+// Changelog: the `token` query item of the changelog email's unsubscribe link.
+await client.unsubscribeFromChangelog(tokenFromChangelogEmail);
+
+// Weekly digest: the `token` query item of the digest email footer or its List-Unsubscribe header.
+await client.unsubscribeFromDigest(tokenFromDigestEmail);
 ```
 
-A `200` is final even when the token's `exp` has passed or the app has since disabled public surfaces — the link belongs to the recipient. A blank token has no signature to verify and throws `MissingUnsubscribeTokenException` locally, before any request. Successful unsubscribes also revoke any ship-notification consent for the same address.
+A `200` is final in both flows. The changelog token unsubscribes even when its `exp` has passed or the app has since disabled public surfaces, because the link belongs to the recipient, and a successful unsubscribe also revokes any ship-notification consent for the same address. The digest token is workspace-scoped instead of app-scoped — the request carries no app key — and it clears only the workspace's `weekly.digest` email event, leaving inbox notifications unchanged.
+
+A blank token has no signature to verify in either flow and throws `MissingUnsubscribeTokenException` locally, before any request. Both endpoints are asked for JSON explicitly, so they answer JSON instead of their browser landing page; the digest endpoint's `429` surfaces as `RateLimitedException` with the server's `Retry-After` hint in `retryAfterMs`.
 
 ### 5. Persistent Anonymous User Token
 
@@ -411,6 +416,7 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 | `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                                                                                       |
 | `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                                                                                              |
 | `unsubscribeFromChangelog(token, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe with the per-subscriber token from the email link (blank tokens throw `MissingUnsubscribeTokenException`)                                                      |
+| `unsubscribeFromDigest(token, options?)`                    | `POST /api/v1/public/digest/unsubscribe`                  | Unsubscribe the workspace from the weekly digest email with the token from the email footer (blank tokens throw `MissingUnsubscribeTokenException`)                        |
 | `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                                                                                   |
 | `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                                                                                                 |
 

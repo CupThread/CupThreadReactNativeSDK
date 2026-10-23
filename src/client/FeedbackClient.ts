@@ -6,6 +6,7 @@ import type {
   ChangelogSubscriptionResult,
   ChangelogUnsubscribeResult,
   CommentDraft,
+  DigestUnsubscribeResult,
   FeatureRequestComment,
   FeatureRequestDraft,
   FeatureRequestSubmissionResult,
@@ -1786,6 +1787,60 @@ export class FeedbackClient {
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/unsubscribe`,
+      body: { token: trimmed },
+      accept: 'application/json',
+      accepted: [200],
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
+    });
+  }
+
+  /**
+   * Unsubscribes the workspace from its weekly digest email using the signed
+   * token carried by that email's footer link and `List-Unsubscribe` header.
+   *
+   * @remarks
+   * `POST /api/v1/public/digest/unsubscribe` is the only mutating digest path.
+   * Its `GET` twin renders an interstitial confirmation page and never changes
+   * preferences, so mail-gateway scanners that prefetch the footer link cause
+   * no side effect. The token travels in the JSON body and
+   * `Accept: application/json` is pinned so the endpoint answers JSON instead
+   * of that HTML landing page, exactly like the changelog unsubscribe.
+   *
+   * The token is workspace-scoped rather than app-scoped: the request carries
+   * no `appKey` path segment, and a token authenticated by signature, expiry,
+   * and workspace existence keeps working after the owner's email changes or
+   * ownership is transferred. A `200` is therefore final and clears only the
+   * workspace's `weekly.digest` email event — inbox notifications are
+   * unchanged — while replaying the same token stays idempotent. A blank token
+   * has no signature to verify and is rejected locally before any network
+   * round trip.
+   *
+   * @param token - Signed token from the weekly digest email footer or its `List-Unsubscribe` header.
+   * @param options - Optional request options or an AbortSignal.
+   * @returns Confirmation result.
+   * @throws {@link MissingUnsubscribeTokenException} If `token` is blank.
+   * @throws {@link UnexpectedStatusException} If the token is missing, invalid, or expired (HTTP 400).
+   * @throws {@link RateLimitedException} If the per-IP unsubscribe budget is spent (HTTP 429).
+   *
+   * @example
+   * ```ts
+   * // `token` comes from the digest email footer: .../digest/unsubscribe?token=...
+   * await client.unsubscribeFromDigest(tokenFromDigestEmail);
+   * ```
+   */
+  public async unsubscribeFromDigest(
+    token: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<DigestUnsubscribeResult> {
+    const trimmed = typeof token === 'string' ? token.trim() : '';
+    if (!trimmed) {
+      throw new MissingUnsubscribeTokenException();
+    }
+
+    return this.request<DigestUnsubscribeResult>({
+      method: 'POST',
+      path: '/api/v1/public/digest/unsubscribe',
       body: { token: trimmed },
       accept: 'application/json',
       accepted: [200],

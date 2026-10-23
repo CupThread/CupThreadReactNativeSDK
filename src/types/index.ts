@@ -1424,6 +1424,32 @@ export interface ChangelogUnsubscribeResult {
 }
 
 /**
+ * Response returned after unsubscribing a workspace from the weekly digest
+ * email with the signed token carried by that email.
+ *
+ * @remarks
+ * The digest token is workspace-scoped, so this response belongs to the
+ * workspace the token was minted for and not to an app key. A `200` is final:
+ * the token is authenticated by signature, expiry, and workspace existence
+ * only, so it keeps working after the owner's email changes or ownership is
+ * transferred, and replaying it is idempotent. Only the workspace's
+ * `weekly.digest` email event is cleared — inbox notifications are unchanged.
+ *
+ * @example
+ * ```ts
+ * const digestResult: DigestUnsubscribeResult = {
+ *   unsubscribed: true,
+ * };
+ * ```
+ */
+export interface DigestUnsubscribeResult {
+  /**
+   * True if the workspace no longer receives the weekly digest email.
+   */
+  unsubscribed: boolean;
+}
+
+/**
  * Response returned after updating custom telemetry or business attributes for a user token.
  *
  * @example
