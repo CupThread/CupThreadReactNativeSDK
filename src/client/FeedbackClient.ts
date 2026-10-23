@@ -45,6 +45,7 @@ import {
 } from './FeedbackException';
 import { getRuntimePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
+import { SDK_VERSION } from '../generated/version';
 import { UserTokenStore } from './UserTokenStore';
 
 /**
@@ -758,6 +759,7 @@ export class FeedbackClient {
       metadata: {
         ...(draft.metadata || {}),
         sdk: 'cupthread-react-native',
+        sdkVersion: SDK_VERSION,
         platform,
         submittedAt: iso8601Now(),
       },
@@ -1985,6 +1987,11 @@ export class FeedbackClient {
     const url = `${this.config.baseUrl}${options.path}`;
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const headers: Record<string, string> = { ...(options.headers || {}) };
+
+    // Identify the SDK on every call, including upload and vote traffic that
+    // carries no metadata block, so the backend can segment behavior by
+    // version. Set after the extra headers so the SDK owns this field.
+    headers['X-SDK-Version'] = SDK_VERSION;
 
     // FormData bodies must not carry an explicit Content-Type: the fetch
     // implementation sets the multipart boundary header itself.

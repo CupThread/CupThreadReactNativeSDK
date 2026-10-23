@@ -1,6 +1,9 @@
 // Export Types
 export * from './types';
 
+// Export the SDK version reported in X-SDK-Version and submission metadata
+export { SDK_VERSION } from './generated/version';
+
 // Export Errors
 export * from './client/FeedbackException';
 

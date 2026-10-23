@@ -20,3 +20,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+      - name: Check generated SDK version is committed
+        run: git diff --exit-code -- src/generated/version.ts

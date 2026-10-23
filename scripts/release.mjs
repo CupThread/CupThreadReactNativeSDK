@@ -75,7 +75,9 @@ run('npm', ['run', 'build'], dryRun);
 
 // 4. Git Commit & Tag
 console.log('\n🏷️ Tagging release...');
-run('git', ['add', 'package.json'], dryRun);
+// The build regenerates src/generated/version.ts from the bumped package.json,
+// so both files belong in the release commit.
+run('git', ['add', 'package.json', 'src/generated/version.ts'], dryRun);
 run('git', ['commit', '-m', `release: react-native SDK v${version}`], dryRun);
 run('git', ['tag', '-a', `v${version}`, '-m', `Release v${version}`], dryRun);
 

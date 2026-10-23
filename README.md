@@ -394,6 +394,8 @@ function AppHeader() {
 
 All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ signal?: AbortSignal, timeoutMs?: number }`) to support cancellation on component unmount and per-request timeout overrides. When a request is cancelled by caller signal, an `AbortError` is thrown so UI components can ignore it cleanly.
 
+Every outgoing request carries `X-SDK-Version: <version>`, and `submit()` records the same value as `metadata.sdkVersion` next to the stable `metadata.sdk` identifier. The version is generated from `package.json` at build time and exported as `SDK_VERSION` for host telemetry.
+
 ### Methods
 
 | Method                                                      | Endpoint                                                  | Description                                                                                                                                                               |
