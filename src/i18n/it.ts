@@ -55,6 +55,8 @@ export const itStrings: CupThreadStrings = {
         : `${count} file sono stati ignorati: formato di allegato non supportato.`,
     uploadSizeMissing: 'Questo file non ha indicato la sua dimensione, quindi non può essere caricato.',
     uploadTooLarge: 'Questo file è troppo grande per essere caricato.',
+    attachmentTooLarge: (maxSize: string) =>
+      `Questo file è troppo grande. Dimensione massima dell'allegato: ${maxSize}.`,
     uploadUnsupportedType: 'Questo tipo di file non è supportato come allegato.',
     submitFailed: 'Impossibile inviare il feedback. Riprova.',
     sectionUnavailable: 'Il feedback non è al momento disponibile.',

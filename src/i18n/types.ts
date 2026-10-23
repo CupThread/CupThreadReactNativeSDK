@@ -53,6 +53,7 @@ export interface FeedbackComposerStrings {
   unsupportedAttachment: (count: number) => string;
   uploadSizeMissing: string;
   uploadTooLarge: string;
+  attachmentTooLarge: (maxSize: string) => string;
   uploadUnsupportedType: string;
   submitFailed: string;
   sectionUnavailable: string;

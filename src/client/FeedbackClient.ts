@@ -47,6 +47,7 @@ import {
 } from './FeedbackException';
 import { getRuntimePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
+import { resolveDeclaredAttachmentSize } from '../utils/attachments';
 import {
   assertValidUserAttributesSignature,
   buildUserAttributesCanonicalString,
@@ -131,24 +132,6 @@ interface UploadDeclaration {
   file: any;
   filename: string;
   mimeType: string;
-}
-
-/**
- * Reads a declared byte size from the upload payload: an explicit `size` wins,
- * then a `File`/`Blob`-shaped `.size`. A React Native `{ uri }` pick exposes
- * neither, so it resolves to `undefined` and fails validation instead of
- * guessing (quota is reserved from this number server-side).
- */
-function resolveDeclaredSize(option: UploadAttachmentOptions): number | undefined {
-  const explicit = option.size;
-  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
-    return Math.ceil(explicit);
-  }
-  const payloadSize = option.file?.size;
-  if (typeof payloadSize === 'number' && Number.isFinite(payloadSize) && payloadSize > 0) {
-    return Math.ceil(payloadSize);
-  }
-  return undefined;
 }
 
 /**
@@ -1130,7 +1113,7 @@ export class FeedbackClient {
       );
     }
 
-    const size = resolveDeclaredSize(option);
+    const size = resolveDeclaredAttachmentSize(option);
     if (size === undefined) {
       throw new UploadValidationException(
         'file_size_required',

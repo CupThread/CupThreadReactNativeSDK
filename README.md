@@ -250,6 +250,8 @@ import { FeedbackComposer } from '@cupthread/react-native';
 
 The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachment` descriptors (`{ kind, key, uploadId?, ... }`, attached as-is), `UploadAttachmentOptions` payloads (`{ file, filename, mimeType, size?, preferredKind? }`, uploaded automatically), and the legacy `{ fileUri, filename?, mimeType?, kind?, size? }` alias, which is normalized into an upload automatically. Any item matching none of these shapes surfaces a visible, localized error instead of being silently dropped.
 
+When the app config is loaded, the composer also enforces `maxAttachmentBytes` locally: an item whose picker-reported `size` (or `file.size`) exceeds the limit is rejected before any upload session is reserved, and the form shows a localized message with the formatted ceiling. Items that report no size keep uploading, and the server remains the final authority for those.
+
 #### Upload Sessions
 
 Both legacy direct-upload endpoints are gone: `POST /api/v1/uploads/r2` is a `410 Gone` tombstone, and `POST /api/v1/uploads/images` now requires a session. Uploads therefore run in two steps — reserve a slot, then fill it:
@@ -493,7 +495,7 @@ The Developer Console provides feature flag toggles under **App Settings → SDK
 #### Precedence & Informational Fields
 - **Safe by default**: If `appConfig` is not loaded yet (or retrieval fails), or if the backend omits `sdk.features` (older server versions), all surfaces remain enabled (`isSurfaceEnabled()` returns `true`). While `isLoadingConfig` is true, screens render normally to prevent a flash of disabled state.
 - **Explicit kill-switch**: Gating activates strictly when a flag is explicitly set to `false`.
-- **Informational vs. Enforced Policy Fields**: Other `PublicAppConfig` fields like `allowAnonymousRoadmap`, `allowAnonymousVote`, `allowAnonymousFeedback`, and `allowAnonymousChangelog` are informational in the SDK and enforced server-side (unauthorized submissions fail with HTTP 401/403). `maxAttachmentBytes` indicates the server-side file upload limit.
+- **Informational vs. Enforced Policy Fields**: Other `PublicAppConfig` fields like `allowAnonymousRoadmap`, `allowAnonymousVote`, `allowAnonymousFeedback`, and `allowAnonymousChangelog` are informational in the SDK and enforced server-side (unauthorized submissions fail with HTTP 401/403). `maxAttachmentBytes` is enforced in two places: the composer rejects a picked file whose reported size exceeds it before uploading, and the server remains the final authority for payloads that declare no size.
 
 ---
 

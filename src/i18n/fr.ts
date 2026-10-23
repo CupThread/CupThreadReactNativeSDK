@@ -58,6 +58,8 @@ export const frStrings: CupThreadStrings = {
         : `${count} fichiers ont été ignorés : format de pièce jointe non pris en charge.`,
     uploadSizeMissing: "Ce fichier n'a pas indiqué sa taille, il ne peut donc pas être envoyé.",
     uploadTooLarge: 'Ce fichier est trop volumineux pour être envoyé.',
+    attachmentTooLarge: (maxSize: string) =>
+      `Ce fichier est trop volumineux. Taille maximale de la pièce jointe : ${maxSize}.`,
     uploadUnsupportedType: "Ce type de fichier n'est pas pris en charge comme pièce jointe.",
     submitFailed: "Échec de l'envoi du retour. Veuillez réessayer.",
     sectionUnavailable: 'Les commentaires sont actuellement indisponibles.',

@@ -56,6 +56,8 @@ export const esStrings: CupThreadStrings = {
         : `Se omitieron ${count} archivos: formato de adjunto no compatible.`,
     uploadSizeMissing: 'Este archivo no indicó su tamaño, por lo que no se puede subir.',
     uploadTooLarge: 'Este archivo es demasiado grande para subirlo.',
+    attachmentTooLarge: (maxSize: string) =>
+      `Este archivo es demasiado grande. Tamaño máximo del adjunto: ${maxSize}.`,
     uploadUnsupportedType: 'Este tipo de archivo no se admite como adjunto.',
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
     sectionUnavailable: 'Los comentarios no están disponibles en este momento.',

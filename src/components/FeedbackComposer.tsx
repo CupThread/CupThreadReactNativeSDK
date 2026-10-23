@@ -229,7 +229,10 @@ export function FeedbackComposer({
 
       const items = Array.isArray(picked) ? picked : [picked];
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      const { succeeded, failed, unsupported } = await processPickedAttachments(items, {
+      const { succeeded, failed, unsupported, rejected } = await processPickedAttachments(items, {
+        // Reject known-oversized picks before an upload session is reserved, so
+        // a doomed file never spends the upload timeout budget or user data.
+        maxBytes: appConfig?.maxAttachmentBytes,
         upload: async (options) => {
           if (isSubmittingRef.current || isSubmitting) {
             throw new Error('Upload cancelled: submission in progress');
@@ -256,6 +259,13 @@ export function FeedbackComposer({
       }
 
       const notices: string[] = [];
+      if (rejected.length > 0) {
+        // The configured limit applies to the whole pick, so one message with
+        // the formatted ceiling explains every rejected item.
+        notices.push(
+          strings.feedbackComposer.attachmentTooLarge(formatFileSize(rejected[0].maxBytes))
+        );
+      }
       if (failed.length > 0) {
         // A single failure has an actionable cause (missing size, unsupported
         // type, oversized file); only aggregate several into a count.

@@ -51,6 +51,7 @@ export const trStrings: CupThreadStrings = {
       `${count} dosya desteklenmeyen ek formatı nedeniyle atlandı.`,
     uploadSizeMissing: 'Bu dosya boyutunu bildirmediği için yüklenemiyor.',
     uploadTooLarge: 'Bu dosya yüklemek için çok büyük.',
+    attachmentTooLarge: (maxSize: string) => `Bu dosya çok büyük. Maksimum ek boyutu: ${maxSize}.`,
     uploadUnsupportedType: 'Bu dosya türü ek olarak desteklenmiyor.',
     submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
     sectionUnavailable: 'Geri bildirim şu anda kullanılamıyor.',

@@ -59,6 +59,8 @@ export const deStrings: CupThreadStrings = {
         : `${count} Dateien wurden übersprungen: Anhangsformat wird nicht unterstützt.`,
     uploadSizeMissing: 'Für diese Datei wurde keine Größe gemeldet, daher kann sie nicht hochgeladen werden.',
     uploadTooLarge: 'Diese Datei ist zu groß für den Upload.',
+    attachmentTooLarge: (maxSize: string) =>
+      `Diese Datei ist zu groß. Maximale Anhangsgröße: ${maxSize}.`,
     uploadUnsupportedType: 'Dieser Dateityp wird als Anhang nicht unterstützt.',
     submitFailed: 'Feedback konnte nicht gesendet werden. Bitte versuche es erneut.',
     sectionUnavailable: 'Feedback ist derzeit nicht verfügbar.',
