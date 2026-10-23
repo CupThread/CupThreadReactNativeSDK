@@ -168,6 +168,9 @@ export function FeedbackComposer({
   const [isSubmitting, setIsSubmitting] = useState(initialState.isSubmitting);
   const isSubmittingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(initialState.errorMessage);
+  // Attachment notices live apart from validation and submission errors so a
+  // later successful pick clears only its own stale warning.
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
 
   const resetForm = useCallback((draft?: Partial<FeedbackDraft>) => {
     const fresh = resetFeedbackComposerState(draft);
@@ -179,6 +182,7 @@ export function FeedbackComposer({
     setIsUploadingAttachment(fresh.isUploadingAttachment);
     setIsSubmitting(fresh.isSubmitting);
     setErrorMessage(fresh.errorMessage);
+    setAttachmentNotice(null);
   }, []);
 
   const prevVisibleRef = useRef(visible);
@@ -285,11 +289,13 @@ export function FeedbackComposer({
         notices.push(strings.feedbackComposer.unsupportedAttachment(unsupported.length));
       }
       if (notices.length > 0) {
-        setErrorMessage(notices.join(' '));
+        setAttachmentNotice(notices.join(' '));
+      } else {
+        setAttachmentNotice(null);
       }
     } catch (err: any) {
       if (!isSubmittingRef.current && !isSubmitting) {
-        setErrorMessage(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
+        setAttachmentNotice(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
       }
     } finally {
       setIsUploadingAttachment(false);
@@ -380,6 +386,8 @@ export function FeedbackComposer({
     }
   };
 
+  const displayedError = [errorMessage, attachmentNotice].filter(Boolean).join(' ');
+
   const content = (
     <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
@@ -398,7 +406,7 @@ export function FeedbackComposer({
         )}
       </View>
 
-      {(errorMessage || isFeedbackDisabled) && (
+      {(displayedError || isFeedbackDisabled) && (
         <View
           style={[
             styles.errorBox,
@@ -406,7 +414,7 @@ export function FeedbackComposer({
           ]}
         >
           <Text style={{ color: colors.danger, fontSize: 13 }}>
-            {errorMessage || strings.feedbackComposer.sectionUnavailable}
+            {displayedError || strings.feedbackComposer.sectionUnavailable}
           </Text>
         </View>
       )}

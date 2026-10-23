@@ -132,8 +132,10 @@ export interface ProcessPickedAttachmentsOptions {
    * `PublicAppConfig.maxAttachmentBytes`. A pending item whose picker-reported
    * size is above the limit is rejected locally, before any upload request.
    *
-   * Items that report no size keep today's behavior and upload normally; the
-   * server remains the final authority for those.
+   * Items that report no size skip this pre-flight and reach the upload seam,
+   * where `uploadAttachment` still rejects a bare `{ uri }` payload with
+   * `file_size_required` before a request. Hosts should forward the picker's
+   * `fileSize` so both checks can run.
    */
   maxBytes?: number;
 

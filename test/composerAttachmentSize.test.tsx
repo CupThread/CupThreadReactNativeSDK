@@ -84,8 +84,7 @@ function nodeText(node: any): string {
   return '';
 }
 
-function findAddAttachmentButton(renderer: TestRenderer.ReactTestRenderer) {
-  const label = enStrings.feedbackComposer.addAttachment;
+function findButtonByText(renderer: TestRenderer.ReactTestRenderer, label: string) {
   return renderer.root.findAll(
     (node) =>
       (node.type as any) === 'TouchableOpacity' &&
@@ -93,6 +92,14 @@ function findAddAttachmentButton(renderer: TestRenderer.ReactTestRenderer) {
       node.findAll((child) => (child.type as any) === 'Text' && nodeText(child).includes(label))
         .length > 0
   )[0];
+}
+
+function findAddAttachmentButton(renderer: TestRenderer.ReactTestRenderer) {
+  return findButtonByText(renderer, enStrings.feedbackComposer.addAttachment);
+}
+
+function findSubmitButton(renderer: TestRenderer.ReactTestRenderer) {
+  return findButtonByText(renderer, enStrings.feedbackComposer.submitButton);
 }
 
 function collectText(renderer: TestRenderer.ReactTestRenderer): string[] {
@@ -229,6 +236,85 @@ test(
     assert.ok(
       collectText(renderer).every((text) => !text.includes('too large')),
       'no size warning is shown for an accepted pick'
+    );
+  }
+);
+
+test(
+  'a successful pick clears the attachment warning but keeps validation errors',
+  renderTestOptions,
+  async () => {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_attachment_size',
+    });
+    client.fetchAppConfig = async () => makeAppConfig(10);
+
+    let uploadCount = 0;
+    client.uploadAttachments = (async () => {
+      uploadCount += 1;
+      return [
+        {
+          kind: 'image',
+          key: `upload-key-${uploadCount}`,
+          filename: 'small.png',
+          mimeType: 'image/png',
+        },
+      ];
+    }) as any;
+
+    let pickSize = 100;
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={client} userToken="usr_test">
+          <FeedbackComposer
+            onPickAttachment={async () => ({
+              file: { uri: 'file:///tmp/pick.png' },
+              filename: 'pick.png',
+              mimeType: 'image/png',
+              size: pickSize,
+            })}
+          />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    const warning = enStrings.feedbackComposer.attachmentTooLarge(formatFileSize(10));
+
+    await act(async () => {
+      await findAddAttachmentButton(renderer).props.onPress();
+    });
+    await flush();
+    assert.ok(collectText(renderer).includes(warning), 'the oversized pick warns first');
+
+    pickSize = 5;
+    await act(async () => {
+      await findAddAttachmentButton(renderer).props.onPress();
+    });
+    await flush();
+    assert.ok(
+      collectText(renderer).every((text) => !text.includes(warning)),
+      'a successful pick clears the stale attachment warning'
+    );
+
+    await act(async () => {
+      await findSubmitButton(renderer).props.onPress();
+    });
+    await flush();
+    assert.ok(
+      collectText(renderer).includes(enStrings.feedbackComposer.titleMinLengthError),
+      'submitting with a short title sets a validation error'
+    );
+
+    await act(async () => {
+      await findAddAttachmentButton(renderer).props.onPress();
+    });
+    await flush();
+    assert.ok(
+      collectText(renderer).includes(enStrings.feedbackComposer.titleMinLengthError),
+      'a later attachment pick must not clear the validation error'
     );
   }
 );

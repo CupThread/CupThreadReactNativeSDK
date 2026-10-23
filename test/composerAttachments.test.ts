@@ -422,7 +422,7 @@ test('maxBytes accepts an item exactly at the limit', async () => {
   assert.deepEqual(result.succeeded, [makeDescriptor('exact')]);
 });
 
-test('maxBytes leaves items without a declared size on the legacy upload path', async () => {
+test('maxBytes leaves items without a declared size to the upload seam', async () => {
   const { uploadedNames, upload } = makeUploadFn();
 
   const result = await processPickedAttachments([makeUploadOptions('unknown-size')], {
@@ -430,7 +430,7 @@ test('maxBytes leaves items without a declared size on the legacy upload path', 
     maxBytes: 1,
   });
 
-  assert.deepEqual(uploadedNames, ['unknown-size.png'], 'the server remains the final authority');
+  assert.deepEqual(uploadedNames, ['unknown-size.png'], 'the seam owns size validation for unsized items');
   assert.equal(result.rejected.length, 0);
 });
 
