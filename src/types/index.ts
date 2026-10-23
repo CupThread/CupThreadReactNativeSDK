@@ -219,6 +219,16 @@ export interface UserAttributesSigningRequest {
 
   /** Structured values that produced `canonicalString`. */
   arguments: UserAttributesCanonicalArguments;
+
+  /**
+   * Signal aborted when the caller cancels the report or its timeout expires.
+   *
+   * Forward it to the backend request that produces the signature so signing
+   * is cancelled with the rest of the operation. The client settles the
+   * operation even if the signer ignores this signal, but in-flight work is
+   * only released when the signer observes it.
+   */
+  signal?: AbortSignal;
 }
 
 /**

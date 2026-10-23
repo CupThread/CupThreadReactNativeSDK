@@ -445,12 +445,14 @@ The SDK resolves signing material in this order:
    const client = new FeedbackClient({
      baseUrl: 'https://api.cupthread.com',
      appKey: 'app_live_abc123',
-     userAttributesSigner: async ({ canonicalString }) => {
-       const signed = await myBackend.signUserAttributes(canonicalString);
+     userAttributesSigner: async ({ canonicalString, signal }) => {
+       const signed = await myBackend.signUserAttributes(canonicalString, { signal });
        return { signature: signed.signature, timestamp: signed.timestamp };
      },
    });
    ```
+
+   The provider receives an optional `signal`; forward it to the backend call so cancelling the report also cancels signing. Signing shares the report's `timeoutMs` budget, and the client settles the operation on abort or timeout even when the signer ignores the signal.
 
 2. **`signingSecret`.** Configure it on the client or per call to sign locally with the bundled pure-TypeScript HMAC-SHA256 implementation. This is convenient for development and internal builds; anyone who installs the app can extract an embedded secret and forge payment attributes, so keep it out of production builds.
 

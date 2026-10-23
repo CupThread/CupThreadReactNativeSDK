@@ -5,6 +5,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   InvalidUserAttributesException,
   InvalidUserAttributesSignatureException,
+  RequestTimeoutException,
 } from '../src/client/FeedbackException';
 import {
   buildUserAttributesCanonicalString,
@@ -520,6 +521,109 @@ test('a non-finite mrr fails before any request', async () => {
         }),
       InvalidUserAttributesException
     );
+    assert.equal(recorder.requests.length, 0);
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('a provider that ignores the abort signal cannot outlive the operation timeout', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    let providerSignal: AbortSignal | undefined;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+      userAttributesSigner: (request) => {
+        providerSignal = request.signal;
+        return new Promise(() => {});
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        client.updateUserAttributes({
+          userToken: USER_TOKEN,
+          isPaying: true,
+          timestamp: TIMESTAMP,
+          timeoutMs: 25,
+        }),
+      (err: any) => {
+        assert.ok(err instanceof RequestTimeoutException);
+        assert.equal(err.timeoutMs, 25);
+        return true;
+      }
+    );
+
+    assert.equal(recorder.requests.length, 0);
+    assert.equal(providerSignal?.aborted, true);
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('the caller signal aborts an uncooperative signer and is forwarded to the provider', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    const controller = new AbortController();
+    let markProviderStarted!: () => void;
+    const providerStarted = new Promise<void>((resolve) => {
+      markProviderStarted = resolve;
+    });
+    let providerSignal: AbortSignal | undefined;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+      userAttributesSigner: (request) => {
+        providerSignal = request.signal;
+        markProviderStarted();
+        return new Promise(() => {});
+      },
+    });
+
+    const pending = client.updateUserAttributes({
+      userToken: USER_TOKEN,
+      isPaying: true,
+      timestamp: TIMESTAMP,
+      signal: controller.signal,
+    });
+    await providerStarted;
+    controller.abort();
+
+    await assert.rejects(pending, (err: any) => err.name === 'AbortError');
+    assert.equal(recorder.requests.length, 0);
+    assert.equal(providerSignal?.aborted, true);
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('a pre-aborted signal rejects before invoking the provider', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+      userAttributesSigner: () => {
+        calls += 1;
+        return { signature: 'a'.repeat(64), timestamp: TIMESTAMP };
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        client.updateUserAttributes({
+          userToken: USER_TOKEN,
+          isPaying: true,
+          timestamp: TIMESTAMP,
+          signal: controller.signal,
+        }),
+      (err: any) => err.name === 'AbortError'
+    );
+    assert.equal(calls, 0);
     assert.equal(recorder.requests.length, 0);
   } finally {
     recorder.restore();

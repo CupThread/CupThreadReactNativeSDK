@@ -1943,6 +1943,8 @@ export class FeedbackClient {
     const assertsPaymentAttributes =
       isPaying !== undefined || plan !== undefined || mrr !== undefined || currency !== undefined;
 
+    let deadlineAt: number | undefined;
+
     if (assertsPaymentAttributes) {
       const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
       const canonicalArguments: UserAttributesCanonicalArguments = {
@@ -1961,10 +1963,31 @@ export class FeedbackClient {
 
       const provider = this.config.userAttributesSigner;
       if (provider) {
-        const provided = await provider({
-          canonicalString,
-          arguments: canonicalArguments,
-        });
+        // A provider may call a backend, so it is part of the operation's
+        // timeout and abort budget. The shared deadline keeps the following
+        // request from restarting the full timeout after signing.
+        const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        deadlineAt =
+          Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+        const provided = await executeWithTimeout(
+          {
+            timeoutMs,
+            signal: options.signal,
+            timeoutMessage: `User attributes signing timed out after ${timeoutMs}ms`,
+          },
+          async (context) =>
+            // Race the provider so abort and timeout settle the operation even
+            // when the signer never observes `context.signal`.
+            context.race(
+              Promise.resolve(
+                provider({
+                  canonicalString,
+                  arguments: canonicalArguments,
+                  signal: context.signal,
+                })
+              )
+            )
+        );
         if (provided) {
           assertValidUserAttributesSignature(provided, timestamp);
           signature = provided.signature;
@@ -1993,6 +2016,7 @@ export class FeedbackClient {
       accepted: [200],
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      deadlineAt,
     });
   }
 
