@@ -125,7 +125,8 @@ interface DetailHarness {
 
 async function renderDetail(
   item: FeatureRequestItem,
-  visible = true
+  visible = true,
+  locale?: string
 ): Promise<DetailHarness> {
   // The provider's config fetch is the only call reaching global fetch; it
   // gets a rejection (non-fatal, falls back to system theme).
@@ -139,6 +140,7 @@ async function renderDetail(
     React.createElement(CupThreadProvider, {
       client,
       userToken: 'usr_tok_test',
+      locale,
       children: React.createElement(FeatureRequestDetail, {
         item: detailItem,
         visible: detailVisible,
@@ -313,6 +315,33 @@ test(
         "A's late rollback must not clobber B's vote fields"
       );
       assert.deepEqual(harness.client.voteCalls, ['fr_A']);
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'detail renders calendar dates in the provider locale',
+  renderTestOptions,
+  async () => {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const createdAt = thirtyDaysAgo.toISOString();
+    const item = makeItem({ id: 'fr_locale', createdAt, updatedAt: createdAt });
+    const expected = thirtyDaysAgo.toLocaleDateString('de', {
+      year:
+        thirtyDaysAgo.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+      month: 'short',
+      day: 'numeric',
+    });
+
+    const harness = await renderDetail(item, true, 'de');
+    try {
+      assert.ok(
+        collectText(harness.renderer.root).includes(expected),
+        `Expected "${expected}" in the rendered detail`
+      );
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();

@@ -16,6 +16,7 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadLocale,
   useCupThreadAppConfig,
   useCupThreadTokenReadiness,
 } from '../theme/CupThreadThemeProvider';
@@ -39,6 +40,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const locale = useCupThreadLocale();
   const { appConfig, isLoadingConfig } = useCupThreadAppConfig();
   const isEnabled = isSurfaceEnabled(appConfig, 'changelog');
   const title = headerTitle ?? strings.changelog.overlayTitle;
@@ -271,7 +273,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
               </View>
 
               <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
-                {formatDate(item.publishedAt, strings.common)}
+                {formatDate(item.publishedAt, strings.common, locale)}
               </Text>
 
               {item.linkedRequests && item.linkedRequests.length > 0 && (

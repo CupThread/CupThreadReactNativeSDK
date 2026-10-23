@@ -13,6 +13,7 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadStrings,
+  useCupThreadLocale,
 } from '../theme/CupThreadThemeProvider';
 import type { PublicUserProfileResult } from '../types';
 import { RateLimitedException, UnexpectedStatusException } from '../client/FeedbackException';
@@ -31,6 +32,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const strings = useCupThreadStrings();
+  const locale = useCupThreadLocale();
   const title = headerTitle ?? strings.userProfile.screenTitle;
 
   const [data, setData] = useState<PublicUserProfileResult | null>(null);
@@ -196,7 +198,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                     "{comment.body}"
                   </Text>
                   <Text style={[styles.commentDate, { color: colors.textMuted }]}>
-                    {formatDate(comment.createdAt, strings.common)} · {comment.appName}
+                    {formatDate(comment.createdAt, strings.common, locale)} · {comment.appName}
                   </Text>
                 </View>
               ))}
