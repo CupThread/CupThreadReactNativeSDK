@@ -414,6 +414,14 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 | `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                                                                                   |
 | `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                                                                                                 |
 
+#### Vote counts and imported history
+
+`voteCount` on a feature request is the **displayed total**: votes cast in CupThread plus the historical votes copied from the import source (GitHub issues/discussions, Linear, Notion, Slack) at import time. `importedVotes` reports that historical portion, is **already included** in `voteCount`, and is `0` for requests created in CupThread; the field is absent on payloads predating the change.
+
+Render `voteCount` as-is and never add `importedVotes` on top of it. To label the historical share, read `importedVotes` directly (for example `<voteCount> votes · <importedVotes> imported`) rather than recomputing a total.
+
+Vote toggles answer with the same summed definition: `castVote` / `removeVote` / `toggleVote` results carry the new total, so removing a vote takes away only that ballot and leaves the imported votes in place. The `useToggleVote` transforms treat the number as a total — an optimistic ±1, then the server value — and carry `importedVotes` through untouched.
+
 ---
 
 ### Remote Feature Flags (`sdk.features.*`)

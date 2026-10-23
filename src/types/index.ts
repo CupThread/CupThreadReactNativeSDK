@@ -966,12 +966,22 @@ export interface FeatureRequestItem {
   approved: boolean;
 
   /**
-   * Total number of upvotes received.
+   * Displayed total number of upvotes: votes cast in CupThread plus the
+   * historical votes copied from the import source.
+   *
+   * {@link FeatureRequestItem.importedVotes} is already part of this number, so
+   * render this value as-is and never add the imported portion on top of it.
    */
   voteCount: number;
 
   /**
-   * Historical votes imported from the source provider, when available.
+   * Historical votes copied from the source provider at import time (GitHub
+   * issues/discussions, Linear, Notion, Slack), already included in
+   * {@link FeatureRequestItem.voteCount}.
+   *
+   * `0` for requests created in CupThread, and absent on payloads from before
+   * the field was populated. Useful to label the historical portion of the
+   * count (for example "124 votes · 120 imported").
    */
   importedVotes?: number;
 
@@ -1084,7 +1094,13 @@ export interface VoteResult {
   voted: boolean;
 
   /**
-   * Updated total vote count for the feature request.
+   * Displayed total after the toggle, using the same definition as
+   * {@link FeatureRequestItem.voteCount}: in-app votes plus imported historical
+   * votes.
+   *
+   * Treat it as the new total rather than a delta: removing a vote still leaves
+   * the imported portion in place, and other votes may have landed since this
+   * client last read the item.
    */
   voteCount: number;
 

@@ -457,3 +457,35 @@ test(
     }
   }
 );
+
+test('acceptance 6: toggling a vote on an imported request keeps the imported vote portion', async () => {
+  const mockClient = {
+    // The server answers with the displayed total: 120 imported + 5 in-app.
+    toggleVote: async () => ({ voted: true, voteCount: 125 }),
+  } as any;
+
+  let stateItem = makeItem({
+    id: 'item_imported',
+    voteCount: 124,
+    importedVotes: 120,
+    hasVoted: false,
+  });
+  const applyChange = (_id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    stateItem = transform(stateItem);
+  };
+
+  const harness = renderTestHook(() => useToggleVote(mockClient, 'usr_token', applyChange));
+
+  harness.result.toggleVote(stateItem);
+
+  // Issue #111: the optimistic delta moves the summed total, never the imported portion.
+  assert.equal(stateItem.voteCount, 125);
+  assert.equal(stateItem.importedVotes, 120);
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  // The server total replaces the optimistic one and the imported portion survives.
+  assert.equal(stateItem.hasVoted, true);
+  assert.equal(stateItem.voteCount, 125);
+  assert.equal(stateItem.importedVotes, 120);
+});

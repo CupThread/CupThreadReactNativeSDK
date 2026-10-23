@@ -38,6 +38,10 @@ function dispatchVoteRequest(
 /**
  * Applies the optimistic vote delta to an item: flips `hasVoted` and adjusts
  * `voteCount` by ±1, clamped at zero.
+ *
+ * `voteCount` is the displayed total and already contains the imported
+ * historical portion, so the delta moves the whole number by one and every
+ * other field (including `importedVotes`) is carried over untouched.
  */
 export function withOptimisticVote(item: FeatureRequestItem): FeatureRequestItem {
   const nextVoted = !item.hasVoted;
@@ -47,6 +51,10 @@ export function withOptimisticVote(item: FeatureRequestItem): FeatureRequestItem
 
 /**
  * Reconciles an item with the server-returned vote truth.
+ *
+ * The server count is the displayed total (in-app votes plus imported historical
+ * votes), so it replaces the optimistic ±1 rather than adjusting it, and the
+ * imported portion stays visible because the item's other fields are preserved.
  */
 export function withServerVote(item: FeatureRequestItem, result: VoteResult): FeatureRequestItem {
   return { ...item, hasVoted: result.voted, voteCount: result.voteCount };
