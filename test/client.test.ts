@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
+import { InsecureBaseUrlException } from '../src/client/FeedbackException';
 import { FeedbackPlatformUtil } from '../src/utils/platform';
 
 test('FeedbackClient normalizes baseUrl and holds config', () => {
@@ -13,6 +14,40 @@ test('FeedbackClient normalizes baseUrl and holds config', () => {
   assert.equal(client.config.baseUrl, 'https://api.cupthread.com');
   assert.equal(client.config.appKey, 'app_test_123');
   assert.equal(client.config.defaultPlatform, 'ios');
+  assert.equal(client.config.allowInsecureBaseUrl, false);
+});
+
+test('FeedbackClient rejects a cleartext baseUrl before any request can carry a token', () => {
+  assert.throws(
+    () =>
+      new FeedbackClient({
+        baseUrl: 'http://api.cupthread.com',
+        appKey: 'app_test_123',
+      }),
+    (err: any) => {
+      assert.ok(err instanceof InsecureBaseUrlException);
+      assert.equal(err.name, 'InsecureBaseUrlException');
+      assert.match(err.message, /https:\/\//);
+      return true;
+    }
+  );
+
+  // A schemeless baseUrl is not HTTPS either, so it must not slip through.
+  assert.throws(
+    () => new FeedbackClient({ baseUrl: 'api.cupthread.com', appKey: 'app_test_123' }),
+    InsecureBaseUrlException
+  );
+});
+
+test('FeedbackClient allows a cleartext baseUrl only through the explicit opt-in', () => {
+  const client = new FeedbackClient({
+    baseUrl: 'http://localhost:3000/',
+    appKey: 'app_test_123',
+    allowInsecureBaseUrl: true,
+  });
+
+  assert.equal(client.config.baseUrl, 'http://localhost:3000');
+  assert.equal(client.config.allowInsecureBaseUrl, true);
 });
 
 test('FeedbackPlatformUtil maps wire values correctly', () => {

@@ -10,6 +10,25 @@ export class FeedbackException extends Error {
 }
 
 /**
+ * Thrown at construction when `baseUrl` would send requests over cleartext.
+ *
+ * Bearer-like values travel on every surface — the `X-User-Token` header, the
+ * signed unsubscribe tokens, and the feedback drafts themselves — so an
+ * `http://` base URL exposes them to an on-path observer on any runtime that
+ * permits cleartext traffic. HTTPS is therefore required by default; a
+ * self-hosted backend on a network you control can opt in with
+ * `allowInsecureBaseUrl: true`.
+ */
+export class InsecureBaseUrlException extends FeedbackException {
+  constructor(
+    message: string = 'FeedbackClient requires an https:// baseUrl. Set allowInsecureBaseUrl to true only for a local backend you control.'
+  ) {
+    super(message);
+    this.name = 'InsecureBaseUrlException';
+  }
+}
+
+/**
  * Thrown when an endpoint requires user authentication / token and none was provided.
  */
 export class AuthenticationRequiredException extends FeedbackException {

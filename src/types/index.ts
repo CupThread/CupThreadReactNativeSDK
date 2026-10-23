@@ -30,8 +30,27 @@ export interface FeedbackClientConfig {
   /**
    * Root API URL of the CupThread backend instance (e.g., `"https://api.cupthread.com"`).
    * Trailing slashes are automatically normalized and stripped.
+   *
+   * @remarks
+   * Must use `https://` unless {@link FeedbackClientConfig.allowInsecureBaseUrl}
+   * is explicitly enabled, because every request carries bearer-like values
+   * (the `X-User-Token` header, signed unsubscribe tokens, feedback drafts).
+   * A cleartext base URL throws {@link InsecureBaseUrlException} at construction.
    */
   baseUrl: string;
+
+  /**
+   * Permit an `http://` (or otherwise non-HTTPS) `baseUrl`.
+   *
+   * @remarks
+   * Off by default so tokens and user content cannot travel in cleartext on
+   * runtimes that allow HTTP. Enable this only for a local or self-hosted
+   * backend on a network you control, such as `http://localhost:3000` during
+   * development. It has no effect on an `https://` base URL.
+   *
+   * @defaultValue false
+   */
+  allowInsecureBaseUrl?: boolean;
 
   /**
    * Unique application key generated in the CupThread Developer Console.

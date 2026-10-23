@@ -30,6 +30,7 @@ import type {
 import {
   AuthenticationRequiredException,
   InactiveSubscriptionException,
+  InsecureBaseUrlException,
   InvalidResponseException,
   MissingUnsubscribeTokenException,
   PaymentRequiredException,
@@ -555,9 +556,15 @@ export class FeedbackClient {
    * ```
    */
   constructor(config: FeedbackClientConfig) {
+    const baseUrl = config.baseUrl.replace(/\/+$/, '');
+    if (!config.allowInsecureBaseUrl && !/^https:\/\//i.test(baseUrl)) {
+      throw new InsecureBaseUrlException();
+    }
+
     this.config = {
-      baseUrl: config.baseUrl.replace(/\/+$/, ''),
+      baseUrl,
       appKey: config.appKey,
+      allowInsecureBaseUrl: config.allowInsecureBaseUrl ?? false,
       defaultPlatform: config.defaultPlatform || getRuntimePlatform(),
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       uploadTimeoutMs: config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
