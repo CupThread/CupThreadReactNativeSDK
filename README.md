@@ -251,7 +251,18 @@ The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachmen
 
 When `<CupThreadProvider>` loads your application configuration (`PublicAppConfig`), `FeedbackComposer` automatically validates the outgoing feedback platform against `allowedPlatforms` via `resolveAllowedPlatform()`. If the candidate platform (from `initialDraft.platform`, `client.config.defaultPlatform`, or the runtime OS) is excluded from the app's configured allowlist, it falls back to the first allowed platform and emits a diagnostic warning in development mode (`__DEV__`).
 
-### 4. Persistent Anonymous User Token
+### 4. Changelog Email Unsubscribe
+
+Changelog unsubscribe is token-gated. The API removed the unauthenticated bare-email payload, so unsubscribing requires the per-subscriber `token` carried by the link in a changelog or confirmation email:
+
+```ts
+// `token` is the `token` query item of the email's unsubscribe link.
+await client.unsubscribeFromChangelog(tokenFromEmail);
+```
+
+A `200` is final even when the token's `exp` has passed or the app has since disabled public surfaces — the link belongs to the recipient. A blank token has no signature to verify and throws `MissingUnsubscribeTokenException` locally, before any request. Successful unsubscribes also revoke any ship-notification consent for the same address.
+
+### 5. Persistent Anonymous User Token
 
 The SDK generates a persistent client token (`cupthread_user_token_v1`) to attribute upvotes and feedback across app restarts, as well as persisting changelog seen status (`cupthread_seen_changelogs_v1`). Compatible with synchronous storage or asynchronous adapters like `@react-native-async-storage/async-storage`:
 
@@ -303,7 +314,7 @@ Notes:
 - An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
 - Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
 
-### 5. Remote Configuration & Error Recovery
+### 6. Remote Configuration & Error Recovery
 
 `<CupThreadProvider>` fetches remote application settings and theme branding at mount. If the initial fetch fails (e.g. offline launch or flaky connection), the provider automatically retries once after a short 2-second delay. If the retry also fails, the error is surfaced via `useCupThreadContext().configError` while falling back safely to the `'system'` theme:
 
@@ -370,7 +381,7 @@ All public methods accept an optional `AbortSignal` or `RequestOptions` (`{ sign
 | `listChangelog(options?)`                                   | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch one cursor-paginated page of release notes (`limit` 1–100, `cursor`; returns `entries`, `hasMore`, `nextCursor`)                                                    |
 | `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                                                                                       |
 | `subscribeToChangelog(email, userToken, options?)`          | `POST /api/v1/public/apps/{appKey}/changelog/subscribe`   | Subscribe email to changelog                                                                                                                                              |
-| `unsubscribeFromChangelog(email, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe email from changelog                                                                                                                                          |
+| `unsubscribeFromChangelog(token, options?)`                 | `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` | Unsubscribe with the per-subscriber token from the email link (blank tokens throw `MissingUnsubscribeTokenException`)                                                      |
 | `updateUserAttributes(options)`                             | `PUT /api/v1/public/apps/{appKey}/user`                   | Report user attributes (supports `signal`, `timeoutMs`)                                                                                                                   |
 | `fetchUserProfile(userId, options?)`                        | `GET /api/v1/users/{userId}/profile`                      | Fetch public user profile                                                                                                                                                 |
 

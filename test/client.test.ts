@@ -233,7 +233,7 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
       },
       {
         label: 'unsubscribeFromChangelog',
-        run: () => client.unsubscribeFromChangelog('user@example.com'),
+        run: () => client.unsubscribeFromChangelog('unsub.token.value'),
         expected: `https://api.cupthread.com/api/v1/public/apps/${HOSTILE_SEGMENT_ENCODED}/changelog/unsubscribe`,
       },
       {
@@ -347,7 +347,7 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       },
       {
         label: 'unsubscribeFromChangelog',
-        run: () => client.unsubscribeFromChangelog('user@example.com'),
+        run: () => client.unsubscribeFromChangelog('unsub.token.value'),
         expected: 'https://api.cupthread.com/api/v1/public/apps/app_key_abc/changelog/unsubscribe',
       },
       {

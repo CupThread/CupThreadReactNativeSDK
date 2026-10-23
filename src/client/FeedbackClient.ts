@@ -26,6 +26,7 @@ import {
   AuthenticationRequiredException,
   InactiveSubscriptionException,
   InvalidResponseException,
+  MissingUnsubscribeTokenException,
   PaymentRequiredException,
   QuotaExceededException,
   RateLimitedException,
@@ -1130,24 +1131,46 @@ export class FeedbackClient {
   }
 
   /**
-   * Unsubscribes an email address from changelog notification emails.
+   * Unsubscribes a changelog email subscription using the per-subscriber token
+   * from the unsubscribe link in a changelog or confirmation email.
    *
-   * @param email - Email address to remove.
+   * @remarks
+   * `POST /api/v1/public/apps/{appKey}/changelog/unsubscribe` is token-gated:
+   * the former bare-email payload was removed (SEC-14), because an
+   * unauthenticated destructive call keyed on an address was both a
+   * membership oracle and a way to unsubscribe anyone. The token travels in
+   * the JSON body, and `Accept: application/json` is pinned so the endpoint
+   * answers JSON instead of its browser HTML landing page.
+   *
+   * A token whose signature verifies for this app unsubscribes even after its
+   * `exp` and even when the app has since disabled public surfaces, so a `200`
+   * is final in both cases. A blank token has no signature to verify and is
+   * rejected locally before any network round trip.
+   *
+   * @param token - Signed unsubscribe token from the email footer.
    * @returns Confirmation result.
+   * @throws {@link MissingUnsubscribeTokenException} If `token` is blank.
    *
    * @example
    * ```ts
-   * await client.unsubscribeFromChangelog('user@example.com');
+   * // `token` comes from the unsubscribe link: .../changelog/unsubscribe?token=...
+   * await client.unsubscribeFromChangelog(tokenFromEmail);
    * ```
    */
   public async unsubscribeFromChangelog(
-    email: string,
+    token: string,
     options?: RequestOptions | AbortSignal
   ): Promise<ChangelogUnsubscribeResult> {
+    const trimmed = typeof token === 'string' ? token.trim() : '';
+    if (!trimmed) {
+      throw new MissingUnsubscribeTokenException();
+    }
+
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/unsubscribe`,
-      body: { email: email.trim() },
+      body: { token: trimmed },
+      accept: 'application/json',
       accepted: [200],
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
@@ -1230,6 +1253,7 @@ export class FeedbackClient {
     path: string;
     body?: any;
     userToken?: string;
+    accept?: string;
     accepted?: number[];
     signal?: AbortSignal;
     timeoutMs?: number;
@@ -1247,6 +1271,11 @@ export class FeedbackClient {
     }
     if (options.userToken) {
       headers['X-User-Token'] = options.userToken;
+    }
+    // Some public endpoints content-negotiate: the changelog unsubscribe route
+    // renders an HTML landing page for browsers unless JSON is requested.
+    if (options.accept) {
+      headers['Accept'] = options.accept;
     }
 
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
