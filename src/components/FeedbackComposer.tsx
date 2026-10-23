@@ -32,7 +32,7 @@ import { isSurfaceEnabled } from '../utils/featureFlags';
 import { createFeedbackComposerState, resetFeedbackComposerState } from '../utils/composer-state';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
-import { userFacingErrorMessage } from '../utils/errors';
+import { uploadErrorMessage, userFacingErrorMessage } from '../utils/errors';
 import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
 
 /** React Native global; `undefined` outside dev bundles (tests, web previews). */
@@ -228,13 +228,22 @@ export function FeedbackComposer({
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
+      const effectiveToken = await resolveEffectiveUserToken(userToken);
       const { succeeded, failed, unsupported } = await processPickedAttachments(items, {
         upload: async (options) => {
           if (isSubmittingRef.current || isSubmitting) {
             throw new Error('Upload cancelled: submission in progress');
           }
-          const effectiveToken = await resolveEffectiveUserToken(userToken);
           return client.uploadAttachment({ ...options, userToken: effectiveToken });
+        },
+        // One session for the whole pick: a multi-file pick reserves every slot
+        // in a single round trip instead of spending the upload budget per file.
+        uploadBatch: async (batch) => {
+          if (isSubmittingRef.current || isSubmitting) {
+            throw new Error('Upload cancelled: submission in progress');
+          }
+          const uploaded = await client.uploadAttachments(batch, { userToken: effectiveToken });
+          return uploaded.map((attachment) => ({ ok: true as const, attachment }));
         },
       });
 
@@ -264,9 +273,7 @@ export function FeedbackComposer({
       }
     } catch (err: any) {
       if (!isSubmittingRef.current && !isSubmitting) {
-        setErrorMessage(
-          userFacingErrorMessage(err, strings.feedbackComposer.uploadFailed, strings.common)
-        );
+        setErrorMessage(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
       }
     } finally {
       setIsUploadingAttachment(false);

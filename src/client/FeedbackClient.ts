@@ -20,6 +20,9 @@ import type {
   PublicUserProfileResult,
   RequestOptions,
   SdkAppearance,
+  UploadSession,
+  UploadSessionFileSpec,
+  UploadSessionSlot,
   UserAttributesUpdateResult,
   VoteResult,
 } from '../types';
@@ -35,6 +38,8 @@ import {
   TurnstileRequiredException,
   UnexpectedStatusException,
   UnreadableUploadResponseException,
+  UploadRejectedException,
+  UploadValidationException,
 } from './FeedbackException';
 import { getRuntimePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
@@ -56,6 +61,89 @@ export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
  * Server-side default (and maximum) page size for the public changelog endpoint.
  */
 export const DEFAULT_CHANGELOG_PAGE_SIZE = 100;
+
+/**
+ * Maximum number of files one upload session may reserve (API limit).
+ */
+export const MAX_UPLOAD_FILES = 8;
+
+/**
+ * Response shape of `POST /api/v1/uploads/sessions` for the fields this client
+ * consumes. Kept private: callers get the normalized {@link UploadSession}.
+ */
+interface CreateUploadSessionResponse {
+  session?: {
+    sessionId: string;
+    sessionToken: string;
+    expiresAt: string;
+    maxFileSizeBytes: number;
+    maxFiles: number;
+  };
+  files?: Array<{
+    clientFileId: string;
+    uploadId: string;
+    uploadUrl?: string;
+    maxSizeBytes: number;
+  }>;
+}
+
+/**
+ * Response shape of `PUT /api/v1/uploads/{uploadId}`.
+ */
+interface UploadedFileResponse {
+  uploadId?: string;
+  filename?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  downloadUrl?: string | null;
+}
+
+/**
+ * One validated upload, paired with the bytes to send to its reserved slot.
+ */
+interface UploadDeclaration {
+  spec: Required<UploadSessionFileSpec>;
+  size: number;
+  kind: 'image' | 'r2';
+  file: any;
+  filename: string;
+  mimeType: string;
+}
+
+/**
+ * Reads a declared byte size from the upload payload: an explicit `size` wins,
+ * then a `File`/`Blob`-shaped `.size`. A React Native `{ uri }` pick exposes
+ * neither, so it resolves to `undefined` and fails validation instead of
+ * guessing (quota is reserved from this number server-side).
+ */
+function resolveDeclaredSize(option: UploadAttachmentOptions): number | undefined {
+  const explicit = option.size;
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
+    return Math.ceil(explicit);
+  }
+  const payloadSize = option.file?.size;
+  if (typeof payloadSize === 'number' && Number.isFinite(payloadSize) && payloadSize > 0) {
+    return Math.ceil(payloadSize);
+  }
+  return undefined;
+}
+
+/**
+ * Options for {@link FeedbackClient.createUploadSession}.
+ */
+export interface CreateUploadSessionOptions extends RequestOptions {
+  /**
+   * Anonymous end-user token (`X-User-Token`). Defaults to
+   * {@link UserTokenStore.shared}; the same identity must submit the feedback.
+   */
+  userToken?: string;
+
+  /**
+   * Cloudflare Turnstile token for apps that gate uploads. Falls back to the
+   * client's `turnstileTokenProvider`.
+   */
+  turnstileToken?: string;
+}
 
 /**
  * Upper bound on pages {@link FeedbackClient.fetchChangelog} will follow before
@@ -268,12 +356,18 @@ async function executeWithTimeout<T>(
 /**
  * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
  *
+ * @remarks
+ * Uploads run through the governed upload-session flow, which reserves daily
+ * quota from the declared byte size — so a positive `size` (or a `File`/`Blob`
+ * payload whose `.size` is read automatically) is required.
+ *
  * @example
  * ```ts
  * const options: UploadAttachmentOptions = {
  *   file: { uri: 'file:///var/mobile/.../screenshot.png' },
  *   filename: 'screenshot.png',
  *   mimeType: 'image/png',
+ *   size: 204800,
  *   preferredKind: 'image',
  * };
  * ```
@@ -296,13 +390,32 @@ export interface UploadAttachmentOptions {
   mimeType: string;
 
   /**
-   * Preferred storage destination:
-   * - `'image'`: Routed to optimized image processing pipeline.
-   * - `'r2'`: Routed to Cloudflare R2 object storage for logs or diagnostic archives.
+   * Exact byte size of the file.
+   *
+   * Required for a bare `{ uri }` payload, which cannot expose a size without a
+   * native filesystem dependency; `File`/`Blob` payloads fall back to their
+   * `.size`. A blank or non-positive value fails locally with
+   * {@link UploadValidationException} (`file_size_required`) before any request.
+   */
+  size?: number;
+
+  /**
+   * Classification label for the uploaded attachment:
+   * - `'image'`: image file (drives the image icon in the composer).
+   * - `'r2'`: diagnostic or archive file.
+   *
+   * Both kinds upload through the same governed session; the server derives
+   * the actual storage handling from the declared MIME type.
    *
    * @defaultValue `'image'` if mimeType starts with `'image/'`, else `'r2'`
    */
   preferredKind?: 'image' | 'r2';
+
+  /**
+   * Optional Cloudflare Turnstile token for apps that gate uploads. When
+   * omitted, the client's `turnstileTokenProvider` is used.
+   */
+  turnstileToken?: string;
 
   /**
    * Optional abort signal to cancel the upload operation.
@@ -320,6 +433,12 @@ export interface UploadAttachmentOptions {
    * Optional persistent user token sent as the `X-User-Token` header so the
    * upload can be attributed to the uploading user, matching every other
    * authenticated API call.
+   *
+   * Upload sessions are always bound to an uploader identity (SEC-28): an
+   * anonymous caller must present a valid UUID token here, the same one the
+   * later feedback submission presents, or session creation fails with
+   * `uploader_identity_required`. When omitted, the client falls back to
+   * {@link UserTokenStore.shared}.
    */
   userToken?: string;
 }
@@ -440,6 +559,55 @@ export class FeedbackClient {
   }
 
   /**
+   * Maps an upload-session rejection to a deterministic exception carrying the
+   * API's machine-readable `code`.
+   *
+   * The upload routes answer with codes a host can act on — a too-large file,
+   * an unsupported MIME type, a prohibited executable extension, a missing or
+   * mismatched uploader identity, or a session that expired mid-upload — and
+   * flattening them into a generic status error would leave the caller unable
+   * to tell a retryable expiry from a file the server will never accept.
+   *
+   * Returns `null` for statuses the shared pipeline already maps (402 quota,
+   * 429 rate limit, 403 Turnstile, 401 sign-in) and for responses without a
+   * code, so an unclassified server failure still surfaces as
+   * {@link UnexpectedStatusException}.
+   */
+  private static mapUploadRejection(
+    status: number,
+    responseBody: string
+  ): UploadRejectedException | null {
+    if (status === 402 || status === 429) {
+      return null;
+    }
+    let code: string | undefined;
+    try {
+      const parsed = JSON.parse(responseBody);
+      if (parsed && typeof parsed === 'object' && typeof parsed.code === 'string') {
+        code = parsed.code;
+      }
+    } catch {
+      code = undefined;
+    }
+    if (status === 403 && (!code || /turnstile/i.test(code))) {
+      // The Turnstile gate keeps its dedicated exception (and its retry
+      // contract) rather than becoming a generic upload rejection.
+      return null;
+    }
+    if (status === 401 && (!code || code === 'authentication_required')) {
+      // Sign-in gating applies to the whole app surface, not to this file, so
+      // it keeps AuthenticationRequiredException. A session-scoped 401 (the
+      // token expired mid-upload) does carry a code and stays an upload
+      // rejection the host can retry.
+      return null;
+    }
+    if (!code && status !== 413) {
+      return null;
+    }
+    return new UploadRejectedException(status, code, responseBody);
+  }
+
+  /**
    * Resolves the Turnstile token to attach to an intake submission: a
    * draft-level `turnstileToken` wins over the configured provider so hosts can
    * force a specific token per submission.
@@ -494,6 +662,20 @@ export class FeedbackClient {
 
     const platform = draft.platform || this.config.defaultPlatform || getRuntimePlatform();
     const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
+    // Only session uploads can be submitted: the intake endpoint rejects raw
+    // storage keys and URLs (`direct_attachment_forbidden`), so legacy
+    // descriptors without an uploadId are omitted instead of failing the whole
+    // draft.
+    const uploadIds = (draft.attachments || [])
+      .map((attachment) => attachment.uploadId)
+      .filter((uploadId): uploadId is string => typeof uploadId === 'string' && !!uploadId);
+    // SEC-28: the intake endpoint finalizes uploads only for the identity that
+    // created their session. When a draft carries session uploads and no token
+    // was passed, fall back to the same store identity `uploadAttachment` uses
+    // so a direct caller cannot trip `uploader_mismatch` by omission.
+    const submissionToken =
+      resolvedUserToken ||
+      (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
     const payload = {
       appKey: this.config.appKey,
       title: draft.title.trim(),
@@ -509,7 +691,7 @@ export class FeedbackClient {
         platform,
         submittedAt: iso8601Now(),
       },
-      attachments: draft.attachments || [],
+      ...(uploadIds.length > 0 ? { uploadIds } : {}),
       ...(turnstileToken ? { turnstileToken } : {}),
     };
 
@@ -517,27 +699,131 @@ export class FeedbackClient {
       method: 'POST',
       path: '/api/v1/feedback',
       body: payload,
-      userToken: resolvedUserToken,
+      userToken: submissionToken,
       accepted: [200, 201, 202],
+      // Attachment submissions can be rejected for upload-specific reasons
+      // (`uploader_mismatch`, `direct_attachment_forbidden`,
+      // `already_finalized`, `scan_rejected`); keep those codes actionable.
+      uploadRequest: uploadIds.length > 0,
       signal: extractSignal(resolvedOptions),
       timeoutMs: extractTimeoutMs(resolvedOptions),
     });
   }
 
   /**
-   * Uploads a file, image, or log attachment to CupThread storage.
+   * Creates an upload session that reserves one slot per file.
    *
    * @remarks
-   * Direct callers of `uploadAttachment` should supply `options.userToken`
-   * (e.g. from {@link useCupThreadUserToken}) so uploads are properly attributed
-   * to the user's session and authenticated via the `X-User-Token` header.
+   * The governed upload flow replaced both legacy direct-upload endpoints. A
+   * session reserves daily workspace quota from the declared byte sizes, so
+   * every file must declare a positive {@link UploadSessionFileSpec.sizeBytes};
+   * an undeclared size would otherwise be rejected by the API with
+   * `400 file_size_required`.
    *
-   * @param options - Attachment file payload, filename, MIME type, and optional user token options.
-   * @returns The uploaded attachment descriptor ready to attach to {@link FeedbackDraft.attachments}.
-   * @throws {@link AuthenticationRequiredException} If the request is rejected as unauthenticated (401).
-   * @throws {@link RequestTimeoutException} If upload times out.
-   * @throws {@link UnexpectedStatusException} If upload endpoint responds with an error.
-   * @throws {@link UnreadableUploadResponseException} If response body is malformed.
+   * Anonymous callers must be bound to an identity: pass `options.userToken`
+   * (the same UUID the later feedback submission presents) or configure
+   * {@link UserTokenStore.shared}. Without one the API answers
+   * `400 uploader_identity_required`, and a later submission carrying a
+   * different identity fails with `uploader_mismatch` (SEC-28).
+   *
+   * @param files - Between 1 and 8 file specifications.
+   * @param options - Optional identity, Turnstile token, signal, and timeout overrides.
+   * @returns The session token plus one reserved slot per file, in order.
+   * @throws {@link UploadValidationException} If `files` is empty, longer than 8 entries, or declares a blank filename/MIME type or a non-positive size.
+   * @throws {@link UploadRejectedException} If the API rejects the session (oversized file, unsupported MIME type, prohibited extension, missing identity, or exceeded storage quota).
+   * @throws {@link AuthenticationRequiredException} If sign-in is required for uploads and no identity was presented (401).
+   * @throws {@link RateLimitedException} If the upload rate limit or daily storage quota is exceeded (429).
+   * @throws {@link TurnstileRequiredException} If human verification is required and no valid token was supplied (403).
+   * @throws {@link RequestTimeoutException} If session creation times out.
+   *
+   * @example
+   * ```ts
+   * const session = await client.createUploadSession(
+   *   [{ filename: 'crash.log', mimeType: 'text/plain', sizeBytes: 20480 }],
+   *   { userToken }
+   * );
+   * ```
+   */
+  public async createUploadSession(
+    files: readonly UploadSessionFileSpec[],
+    options: CreateUploadSessionOptions = {}
+  ): Promise<UploadSession> {
+    const specs = this.normalizeUploadFileSpecs(files);
+    const userToken = await this.resolveUploadUserToken(options.userToken);
+    const turnstileToken = await this.resolveTurnstileToken(options.turnstileToken);
+    const timeoutMs = options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+
+    const json = await this.request<CreateUploadSessionResponse>({
+      method: 'POST',
+      path: '/api/v1/uploads/sessions',
+      body: {
+        appKey: this.config.appKey,
+        purpose: 'feedback_attachment',
+        files: specs,
+        ...(turnstileToken ? { turnstileToken } : {}),
+      },
+      userToken,
+      accepted: [200, 201],
+      uploadRequest: true,
+      signal: options.signal,
+      timeoutMs,
+      timeoutMessage: `Upload session creation timed out after ${timeoutMs}ms`,
+    });
+
+    const session = json?.session;
+    const slots = json?.files;
+    if (
+      !session ||
+      typeof session.sessionToken !== 'string' ||
+      !session.sessionToken ||
+      !Array.isArray(slots)
+    ) {
+      throw new UnreadableUploadResponseException();
+    }
+
+    return {
+      sessionId: session.sessionId,
+      sessionToken: session.sessionToken,
+      expiresAt: session.expiresAt,
+      maxFileSizeBytes: session.maxFileSizeBytes,
+      maxFiles: session.maxFiles,
+      files: slots.map((slot) => ({
+        clientFileId: slot.clientFileId,
+        uploadId: slot.uploadId,
+        uploadUrl: slot.uploadUrl || `/api/v1/uploads/${slot.uploadId}`,
+        maxSizeBytes: slot.maxSizeBytes,
+      })),
+    };
+  }
+
+  /**
+   * Uploads one attachment through the governed upload-session flow.
+   *
+   * @remarks
+   * Creates a single-file session and streams the bytes to its reserved slot
+   * with the session bearer token. Both images and diagnostic files use this
+   * path: the legacy `POST /api/v1/uploads/images` route now requires a session
+   * too, and `POST /api/v1/uploads/r2` is a `410 Gone` tombstone.
+   *
+   * `options.file` may be a React Native `{ uri, name, type }` pick or a
+   * `Blob`/`File`. The declared byte size comes from `options.size`, or from the
+   * payload's `.size` for `File`/`Blob` inputs; a bare `{ uri }` pick without a
+   * size fails locally with {@link UploadValidationException} because no
+   * native filesystem dependency is allowed to read it.
+   *
+   * Direct callers should supply `options.userToken` (e.g. from
+   * {@link useCupThreadUserToken}) so the session is bound to the same identity
+   * the feedback submission later presents.
+   *
+   * @param options - Attachment file payload, filename, MIME type, size, and optional user token options.
+   * @returns The uploaded attachment descriptor, carrying the `uploadId` that {@link FeedbackDraft.attachments} submits.
+   * @throws {@link UploadValidationException} If the file declares no positive size, or its filename/MIME type is blank.
+   * @throws {@link UploadRejectedException} If the API rejects the session or the file bytes (size, MIME type, extension, identity, or an expired session).
+   * @throws {@link AuthenticationRequiredException} If sign-in is required for uploads and no identity was presented (401).
+   * @throws {@link RateLimitedException} If the upload rate limit or daily storage quota is exceeded (429).
+   * @throws {@link TurnstileRequiredException} If human verification is required and no valid token was supplied (403).
+   * @throws {@link RequestTimeoutException} If the upload times out.
+   * @throws {@link UnreadableUploadResponseException} If a response body is malformed.
    * @throws {@link InvalidResponseException} If network transport fails.
    *
    * @example
@@ -546,51 +832,257 @@ export class FeedbackClient {
    *   file: { uri: 'file:///path/to/screenshot.jpg' },
    *   filename: 'screenshot.jpg',
    *   mimeType: 'image/jpeg',
+   *   size: asset.fileSize,
    *   userToken,
    * });
    * ```
    */
   public async uploadAttachment(options: UploadAttachmentOptions): Promise<FeedbackAttachment> {
-    const kind = options.preferredKind || (options.mimeType.startsWith('image/') ? 'image' : 'r2');
-    const path = kind === 'image' ? '/api/v1/uploads/images' : '/api/v1/uploads/r2';
+    const [attachment] = await this.uploadAttachments([options]);
+    return attachment;
+  }
 
-    const formData = new FormData();
-    formData.append('appKey', this.config.appKey);
-
-    if (options.file && typeof options.file === 'object' && 'uri' in options.file) {
-      formData.append('file', {
-        uri: options.file.uri,
-        name: options.filename,
-        type: options.mimeType,
-      } as any);
-    } else {
-      formData.append('file', options.file, options.filename);
+  /**
+   * Uploads several attachments through one shared upload session.
+   *
+   * @remarks
+   * Batching reserves every slot in a single session-creation round trip, so a
+   * multi-file pick spends the upload budget once instead of per file. Files
+   * are uploaded sequentially in pick order, which keeps a slow uplink from
+   * saturating the connection and bounds memory to one file at a time.
+   *
+   * The batch is transactional: the first failure aborts it and rejects with
+   * that error, and the descriptors already returned for earlier slots are not
+   * included in the rejection. Callers that need per-file isolation should use
+   * {@link FeedbackClient.createUploadSession} and retry the failed slots.
+   *
+   * @param options - One entry per attachment (1–8 files per session).
+   * @returns Uploaded descriptors in the same order as `options`.
+   * @throws {@link UploadValidationException} If any entry declares no positive size or the batch is empty or longer than 8 entries.
+   * @throws {@link UploadRejectedException} If the API rejects the session or any file.
+   *
+   * @example
+   * ```ts
+   * const attachments = await client.uploadAttachments([
+   *   { file: { uri: shot.uri }, filename: 'shot.png', mimeType: 'image/png', size: shot.fileSize },
+   *   { file: { uri: log.uri }, filename: 'crash.log', mimeType: 'text/plain', size: log.fileSize },
+   * ], { userToken });
+   * ```
+   */
+  public async uploadAttachments(
+    options: readonly UploadAttachmentOptions[],
+    shared: CreateUploadSessionOptions = {}
+  ): Promise<FeedbackAttachment[]> {
+    if (options.length === 0) {
+      throw new UploadValidationException(
+        'invalid_file_count',
+        'At least one attachment is required for an upload.'
+      );
+    }
+    if (options.length > MAX_UPLOAD_FILES) {
+      throw new UploadValidationException(
+        'invalid_file_count',
+        `A single upload session accepts at most ${MAX_UPLOAD_FILES} attachments (received ${options.length}).`
+      );
     }
 
-    // Uploads use the dedicated upload budget: an explicit global `timeoutMs`
-    // tuned for fail-fast JSON calls must not clamp large attachment uploads.
-    const timeoutMs = options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+    // Resolve every precondition before creating the session: a doomed file
+    // must not consume a reserved slot or any of the daily quota.
+    const declarations = options.map((option) => this.describeUpload(option));
+    const explicitToken =
+      shared.userToken ?? options.find((option) => option.userToken)?.userToken;
+    const userToken = await this.resolveUploadUserToken(explicitToken);
+    const signal = shared.signal ?? options.find((option) => option.signal)?.signal;
+    const timeoutMs = shared.timeoutMs ?? options.find((option) => option.timeoutMs)?.timeoutMs;
+    const turnstileToken = shared.turnstileToken ?? options[0].turnstileToken;
 
-    const json = await this.request<Record<string, any>>({
+    const session = await this.createUploadSession(
+      declarations.map((declaration) => declaration.spec),
+      {
+        userToken,
+        turnstileToken,
+        signal,
+        timeoutMs: timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
+      }
+    );
+
+    const uploaded: FeedbackAttachment[] = [];
+    for (let index = 0; index < declarations.length; index += 1) {
+      const declaration = declarations[index];
+      const slot = session.files[index];
+      if (!slot) {
+        throw new UnreadableUploadResponseException();
+      }
+      if (declaration.size > slot.maxSizeBytes) {
+        throw new UploadRejectedException(
+          413,
+          'file_too_large',
+          `File "${declaration.spec.filename}" exceeds the ${slot.maxSizeBytes}-byte slot limit.`
+        );
+      }
+      uploaded.push(
+        await this.putUploadSlot({
+          slot,
+          sessionToken: session.sessionToken,
+          declaration,
+          signal,
+          timeoutMs: timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS,
+        })
+      );
+    }
+
+    return uploaded;
+  }
+
+  /**
+   * Normalizes and validates the file specs sent to session creation.
+   */
+  private normalizeUploadFileSpecs(
+    files: readonly UploadSessionFileSpec[]
+  ): Array<Required<UploadSessionFileSpec>> {
+    if (files.length === 0) {
+      throw new UploadValidationException(
+        'invalid_file_count',
+        'At least one file is required to create an upload session.'
+      );
+    }
+    if (files.length > MAX_UPLOAD_FILES) {
+      throw new UploadValidationException(
+        'invalid_file_count',
+        `An upload session accepts at most ${MAX_UPLOAD_FILES} files (received ${files.length}).`
+      );
+    }
+
+    return files.map((file) => {
+      const filename = typeof file.filename === 'string' ? file.filename.trim() : '';
+      const mimeType = typeof file.mimeType === 'string' ? file.mimeType.trim() : '';
+      if (!filename || !mimeType) {
+        throw new UploadValidationException(
+          'invalid_field',
+          'Each upload file requires a filename and a MIME type.'
+        );
+      }
+      if (!Number.isFinite(file.sizeBytes) || file.sizeBytes <= 0) {
+        throw new UploadValidationException(
+          'file_size_required',
+          `File "${filename}" must declare its size in bytes (received ${String(file.sizeBytes)}).`
+        );
+      }
+      const clientFileId =
+        typeof file.clientFileId === 'string' && file.clientFileId.trim()
+          ? file.clientFileId.trim()
+          : filename;
+      return { filename, mimeType, sizeBytes: Math.ceil(file.sizeBytes), clientFileId };
+    });
+  }
+
+  /**
+   * Turns one upload option into the slot spec plus the payload the slot
+   * upload later sends, failing locally when the size cannot be determined.
+   */
+  private describeUpload(option: UploadAttachmentOptions): UploadDeclaration {
+    const filename = typeof option.filename === 'string' ? option.filename.trim() : '';
+    const mimeType = typeof option.mimeType === 'string' ? option.mimeType.trim() : '';
+    if (!filename || !mimeType) {
+      throw new UploadValidationException(
+        'invalid_field',
+        'Each upload requires a filename and a MIME type.'
+      );
+    }
+
+    const size = resolveDeclaredSize(option);
+    if (size === undefined) {
+      throw new UploadValidationException(
+        'file_size_required',
+        `File "${filename}" must declare its size: pass \`size\` (the picker's fileSize) for a { uri } payload.`
+      );
+    }
+
+    const kind = option.preferredKind || (mimeType.startsWith('image/') ? 'image' : 'r2');
+    return {
+      spec: { filename, mimeType, sizeBytes: size, clientFileId: filename },
+      size,
+      kind,
+      file: option.file,
+      filename,
+      mimeType,
+    };
+  }
+
+  /**
+   * Resolves the identity an upload session binds to. The API requires a
+   * UUID for anonymous callers and rejects an unbound session, so the shared
+   * store is the fallback that keeps a direct `uploadAttachment()` call and a
+   * later `submit()` attributed to the same identity (SEC-28).
+   */
+  private async resolveUploadUserToken(explicit?: string): Promise<string | undefined> {
+    const trimmed = typeof explicit === 'string' ? explicit.trim() : '';
+    if (trimmed) return trimmed;
+    return UserTokenStore.shared.getToken();
+  }
+
+  /**
+   * Sends one attachment's bytes to its reserved slot.
+   *
+   * Uses the documented multipart twin of `PUT /api/v1/uploads/{uploadId}`,
+   * which React Native's `FormData` can send for both a `{ uri }` pick and a
+   * `Blob`; a raw-body PUT would need the bytes in memory and an explicit
+   * file MIME `Content-Type`, neither of which the RN bridge offers for a
+   * `{ uri }` pick.
+   */
+  private async putUploadSlot(params: {
+    slot: UploadSessionSlot;
+    sessionToken: string;
+    declaration: UploadDeclaration;
+    signal?: AbortSignal;
+    timeoutMs: number;
+  }): Promise<FeedbackAttachment> {
+    const { slot, sessionToken, declaration, timeoutMs } = params;
+    const timeoutMessage = `Upload timed out after ${timeoutMs}ms`;
+
+    const json = await this.request<UploadedFileResponse>({
       method: 'POST',
-      path,
-      body: formData,
-      userToken: options.userToken,
-      accepted: [200, 201, 202],
+      path: `/api/v1/uploads/${FeedbackClient.encodeSegment(slot.uploadId)}`,
+      body: this.uploadBody(declaration),
+      headers: { Authorization: `Bearer ${sessionToken}` },
+      uploadRequest: true,
+      accepted: [200, 201],
       uploadResponse: true,
-      signal: options.signal,
+      signal: params.signal,
       timeoutMs,
-      timeoutMessage: `Upload timed out after ${timeoutMs}ms`,
+      timeoutMessage,
     });
 
     return {
-      kind: json.kind || kind,
-      key: json.key || json.id,
-      url: json.url,
-      filename: json.filename || options.filename,
-      mimeType: json.mimeType || options.mimeType,
-      size: json.size,
+      kind: declaration.kind,
+      uploadId: json?.uploadId || slot.uploadId,
+      key: json?.uploadId || slot.uploadId,
+      url: json?.downloadUrl || slot.uploadUrl,
+      filename: json?.filename || declaration.filename,
+      mimeType: json?.contentType || declaration.mimeType,
+      size: json?.sizeBytes ?? declaration.size,
     };
+  }
+
+  /**
+   * Builds the slot request body. React Native's `FormData` accepts a
+   * `{ uri, name, type }` part and streams the file natively, while hosts that
+   * hold real bytes send a `Blob`. `Content-Type` is left for fetch to set
+   * with its multipart boundary.
+   */
+  private uploadBody(declaration: UploadDeclaration): any {
+    const formData = new FormData();
+    const { file, filename, mimeType } = declaration;
+    if (file && typeof file === 'object' && 'uri' in file) {
+      formData.append('file', {
+        uri: (file as { uri: string }).uri,
+        name: filename,
+        type: mimeType,
+      } as any);
+    } else {
+      formData.append('file', file, filename);
+    }
+    return formData;
   }
 
   /**
@@ -1288,10 +1780,19 @@ export class FeedbackClient {
     timeoutMs?: number;
     timeoutMessage?: string;
     uploadResponse?: boolean;
+    /**
+     * Extra request headers. Session slot uploads add their bearer token here.
+     */
+    headers?: Record<string, string>;
+    /**
+     * Marks the request as an upload surface so a rejected response keeps the
+     * API's machine-readable `code` (see {@link UploadRejectedException}).
+     */
+    uploadRequest?: boolean;
   }): Promise<T> {
     const url = `${this.config.baseUrl}${options.path}`;
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...(options.headers || {}) };
 
     // FormData bodies must not carry an explicit Content-Type: the fetch
     // implementation sets the multipart boundary header itself.
@@ -1344,6 +1845,12 @@ export class FeedbackClient {
 
         const accepted = options.accepted || [200];
         if (!accepted.includes(response.status)) {
+          if (options.uploadRequest) {
+            const uploadError = FeedbackClient.mapUploadRejection(response.status, text);
+            if (uploadError) {
+              throw uploadError;
+            }
+          }
           if (response.status === 401) {
             throw new AuthenticationRequiredException();
           }

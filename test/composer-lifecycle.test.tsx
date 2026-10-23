@@ -153,7 +153,9 @@ test(
       assert.equal(feedbackSubmits.length, 2);
       assert.equal(feedbackSubmits[1].title, 'Second Bug Report');
       assert.equal(feedbackSubmits[1].description, 'New issue encountered');
-      assert.deepEqual(feedbackSubmits[1].attachments, []);
+      // Attachments submit as upload-session ids; the first submission's
+      // attachments must not leak into the second.
+      assert.equal(feedbackSubmits[1].uploadIds, undefined);
     } finally {
       restoreFetch();
       renderer.unmount();

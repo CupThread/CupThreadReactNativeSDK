@@ -295,3 +295,93 @@ test('legacy fileUri upload failure keeps the original picker item in failed', a
   assert.equal(result.failed.length, 1);
   assert.equal(result.failed[0].item, legacy, 'the raw item is preserved for host-side debugging');
 });
+
+// ---------------------------------------------------------------------------
+// Issue #115 — one upload session per pick
+// ---------------------------------------------------------------------------
+
+test('uploadBatch reserves the whole pick in one call and keeps pick order', async () => {
+  const batches: string[][] = [];
+  const result = await processPickedAttachments(
+    [makeUploadOptions('first'), makeDescriptor('already'), makeUploadOptions('second')],
+    {
+      upload: async () => {
+        throw new Error('the single-item seam must not run when uploadBatch is provided');
+      },
+      uploadBatch: async (batch) => {
+        batches.push(batch.map((options) => options.filename));
+        return batch.map((options) => ({
+          ok: true as const,
+          attachment: makeDescriptor(options.filename.replace('.png', '')),
+        }));
+      },
+    }
+  );
+
+  assert.deepEqual(batches, [['first.png', 'second.png']], 'one batch for the pending items');
+  assert.deepEqual(result.succeeded, [
+    makeDescriptor('first'),
+    makeDescriptor('already'),
+    makeDescriptor('second'),
+  ]);
+  assert.equal(result.failed.length, 0);
+});
+
+test('uploadBatch reports per-item failures without discarding the successes', async () => {
+  const result = await processPickedAttachments(
+    [makeUploadOptions('good'), makeUploadOptions('bad')],
+    {
+      upload: async () => {
+        throw new Error('unused');
+      },
+      uploadBatch: async (batch) =>
+        batch.map((options, index) =>
+          index === 1
+            ? { ok: false as const, error: new Error('rejected by the server') }
+            : { ok: true as const, attachment: makeDescriptor('good') }
+        ),
+    }
+  );
+
+  assert.deepEqual(result.succeeded, [makeDescriptor('good')]);
+  assert.equal(result.failed.length, 1);
+  assert.equal((result.failed[0].error as Error).message, 'rejected by the server');
+});
+
+test('a session-level uploadBatch failure marks every pending item failed', async () => {
+  const doomed = [makeUploadOptions('a'), makeUploadOptions('b')];
+
+  const result = await processPickedAttachments(
+    [doomed[0], makeDescriptor('kept'), doomed[1]],
+    {
+      upload: async () => {
+        throw new Error('unused');
+      },
+      uploadBatch: async () => {
+        throw new Error('daily quota exceeded');
+      },
+    }
+  );
+
+  assert.deepEqual(result.succeeded, [makeDescriptor('kept')], 'descriptors still pass through');
+  assert.equal(result.failed.length, 2);
+  assert.equal((result.failed[0].error as Error).message, 'daily quota exceeded');
+  assert.equal(result.failed[0].item, doomed[0]);
+});
+
+test('uploadBatch is skipped when nothing pending remains', async () => {
+  let batchCalls = 0;
+
+  const result = await processPickedAttachments([makeDescriptor('only')], {
+    upload: async () => {
+      throw new Error('unused');
+    },
+    uploadBatch: async () => {
+      batchCalls += 1;
+      return [];
+    },
+  });
+
+  assert.equal(batchCalls, 0, 'a pick of only pre-uploaded descriptors opens no session');
+  assert.deepEqual(result.succeeded, [makeDescriptor('only')]);
+});

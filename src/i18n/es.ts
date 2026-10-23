@@ -54,6 +54,9 @@ export const esStrings: CupThreadStrings = {
       count === 1
         ? 'Se omitió 1 archivo: formato de adjunto no compatible.'
         : `Se omitieron ${count} archivos: formato de adjunto no compatible.`,
+    uploadSizeMissing: 'Este archivo no indicó su tamaño, por lo que no se puede subir.',
+    uploadTooLarge: 'Este archivo es demasiado grande para subirlo.',
+    uploadUnsupportedType: 'Este tipo de archivo no se admite como adjunto.',
     submitFailed: 'Error al enviar los comentarios. Por favor, inténtalo de nuevo.',
     sectionUnavailable: 'Los comentarios no están disponibles en este momento.',
   },

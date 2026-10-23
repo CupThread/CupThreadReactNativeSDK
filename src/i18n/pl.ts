@@ -55,6 +55,9 @@ export const plStrings: CupThreadStrings = {
       count === 1
         ? 'Pominięto 1 plik: nieobsługiwany format załącznika.'
         : `Pominięto ${count} plików: nieobsługiwany format załącznika.`,
+    uploadSizeMissing: 'Ten plik nie zgłosił swojego rozmiaru, więc nie można go przesłać.',
+    uploadTooLarge: 'Ten plik jest zbyt duży, aby go przesłać.',
+    uploadUnsupportedType: 'Ten typ pliku nie jest obsługiwany jako załącznik.',
     submitFailed: 'Nie udało się wysłać opinii. Spróbuj ponownie.',
     sectionUnavailable: 'Opinie są obecnie niedostępne.',
   },

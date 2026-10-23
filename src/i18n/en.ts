@@ -51,6 +51,9 @@ export const enStrings: CupThreadStrings = {
       `${count} attachment${count === 1 ? '' : 's'} failed to upload.`,
     unsupportedAttachment: (count: number) =>
       `${count} selected file${count === 1 ? '' : 's'} skipped: unsupported attachment format.`,
+    uploadSizeMissing: 'This file did not report its size, so it cannot be uploaded.',
+    uploadTooLarge: 'This file is too large to upload.',
+    uploadUnsupportedType: 'This file type is not supported as an attachment.',
     submitFailed: 'Failed to submit feedback. Please try again.',
     sectionUnavailable: 'Feedback is currently unavailable.',
   },

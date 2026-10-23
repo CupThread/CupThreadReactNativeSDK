@@ -49,6 +49,9 @@ export const trStrings: CupThreadStrings = {
     someUploadsFailed: (count: number) => `${count} ek yüklenemedi.`,
     unsupportedAttachment: (count: number) =>
       `${count} dosya desteklenmeyen ek formatı nedeniyle atlandı.`,
+    uploadSizeMissing: 'Bu dosya boyutunu bildirmediği için yüklenemiyor.',
+    uploadTooLarge: 'Bu dosya yüklemek için çok büyük.',
+    uploadUnsupportedType: 'Bu dosya türü ek olarak desteklenmiyor.',
     submitFailed: 'Geri bildirim gönderilemedi. Lütfen tekrar deneyin.',
     sectionUnavailable: 'Geri bildirim şu anda kullanılamıyor.',
   },

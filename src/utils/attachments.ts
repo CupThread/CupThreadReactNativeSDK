@@ -34,6 +34,13 @@ export interface FileUriAttachment {
    * Optional storage routing hint mapped to `preferredKind`.
    */
   kind?: 'image' | 'r2';
+
+  /**
+   * Optional declared byte size, forwarded to {@link UploadAttachmentOptions.size}.
+   * Required for this shape to upload: the session API reserves quota from the
+   * size and rejects an undeclared one.
+   */
+  size?: number;
 }
 
 /**
@@ -75,7 +82,27 @@ export interface AttachmentBatchResult {
  */
 export interface ProcessPickedAttachmentsOptions {
   upload: (options: UploadAttachmentOptions) => Promise<FeedbackAttachment>;
+
+  /**
+   * Optional batch upload seam. When provided, every pending item is handed to
+   * this function in one call so the uploader can reserve a single session for
+   * the whole pick; results are matched back to their items by position.
+   *
+   * Implementations may return either a descriptor array aligned with
+   * `batch`, or per-item outcomes. When it throws, every item in the batch is
+   * reported as failed.
+   */
+  uploadBatch?: (
+    batch: readonly UploadAttachmentOptions[]
+  ) => Promise<AttachmentBatchOutcome[]>;
 }
+
+/**
+ * Per-item outcome of a batch upload, matched to the item by position.
+ */
+export type AttachmentBatchOutcome =
+  | { ok: true; attachment: FeedbackAttachment }
+  | { ok: false; error: unknown };
 
 /**
  * Classification of a single picker item, extracted as a pure helper so the
@@ -88,9 +115,18 @@ export type PickedAttachmentClassification =
 
 /**
  * Narrows a picked attachment to a pre-uploaded {@link FeedbackAttachment} descriptor.
+ *
+ * `key` is the discriminator: upload-session descriptors carry it, while a raw
+ * {@link UploadAttachmentOptions} payload is keyed by `file`/`filename`. `url`
+ * is no longer required, because private attachments carry no public delivery
+ * URL; when an object also carries `url`, the legacy descriptor precedence is
+ * preserved so a picker that shipped both shapes keeps its previous meaning.
  */
 export function isFeedbackAttachment(item: unknown): item is FeedbackAttachment {
-  return typeof item === 'object' && item !== null && 'url' in item && 'key' in item;
+  if (typeof item !== 'object' || item === null) return false;
+  const key = (item as { key?: unknown }).key;
+  if (typeof key !== 'string' || key.length === 0) return false;
+  return 'url' in item || !('file' in item);
 }
 
 /**
@@ -101,12 +137,12 @@ export function isUploadAttachmentOptions(item: unknown): item is UploadAttachme
 }
 
 /**
- * Maps the legacy `{ fileUri, filename?, mimeType?, kind? }` shape onto
+ * Maps the legacy `{ fileUri, filename?, mimeType?, kind?, size? }` shape onto
  * {@link UploadAttachmentOptions}. Returns `null` for objects without a
  * usable `fileUri` string so they can be classified as unsupported instead.
  */
 function normalizeFileUriAttachment(item: object): UploadAttachmentOptions | null {
-  const { fileUri, filename, mimeType, kind } = item as FileUriAttachment;
+  const { fileUri, filename, mimeType, kind, size } = item as FileUriAttachment;
   if (typeof fileUri !== 'string' || fileUri.length === 0) {
     return null;
   }
@@ -120,6 +156,9 @@ function normalizeFileUriAttachment(item: object): UploadAttachmentOptions | nul
   };
   if (kind === 'image' || kind === 'r2') {
     options.preferredKind = kind;
+  }
+  if (typeof size === 'number' && Number.isFinite(size) && size > 0) {
+    options.size = size;
   }
   return options;
 }
@@ -157,36 +196,85 @@ export function classifyPickedAttachment(item: unknown): PickedAttachmentClassif
  * Processes a batch of picked attachments with per-item error isolation.
  *
  * Pre-uploaded descriptors pass through untouched; raw payloads (including the
- * legacy `fileUri` alias) are uploaded one at a time in pick order. A failure
- * only affects its own item — the batch never throws, and everything that
- * succeeded (including descriptors collected before a failing item) is returned
- * in {@link AttachmentBatchResult.succeeded}. Items matching no known shape are
- * reported in {@link AttachmentBatchResult.unsupported} so callers can warn.
+ * legacy `fileUri` alias) are uploaded in pick order. When
+ * {@link ProcessPickedAttachmentsOptions.uploadBatch} is supplied, every
+ * pending item goes through one batched call so a multi-file pick reserves a
+ * single upload session; otherwise items fall back to the single-item
+ * {@link ProcessPickedAttachmentsOptions.upload} seam.
+ *
+ * A failure only affects its own item — the batch never throws, and everything
+ * that succeeded (including descriptors collected before a failing item) is
+ * returned in {@link AttachmentBatchResult.succeeded}. Items matching no known
+ * shape are reported in {@link AttachmentBatchResult.unsupported} so callers
+ * can warn.
  */
 export async function processPickedAttachments(
   items: readonly unknown[],
   options: ProcessPickedAttachmentsOptions
 ): Promise<AttachmentBatchResult> {
-  const succeeded: FeedbackAttachment[] = [];
   const failed: AttachmentBatchFailure[] = [];
   const unsupported: unknown[] = [];
 
-  for (const item of items) {
+  // One slot per picked item, so uploads run batch-first while `succeeded`
+  // still reports descriptors in pick order.
+  const results: Array<FeedbackAttachment | undefined> = new Array(items.length).fill(undefined);
+
+  // Every pending item keeps its original object and index so a failed upload
+  // can be reported against the pick the host handed in.
+  const pending: Array<{
+    item: unknown;
+    options: UploadAttachmentOptions;
+    index: number;
+  }> = [];
+
+  items.forEach((item, index) => {
     const classification = classifyPickedAttachment(item);
     if (classification.type === 'unsupported') {
       unsupported.push(item);
-      continue;
+      return;
     }
     if (classification.type === 'uploaded') {
-      succeeded.push(classification.attachment);
-      continue;
+      results[index] = classification.attachment;
+      return;
     }
+    pending.push({ item, options: classification.options, index });
+  });
+
+  if (options.uploadBatch && pending.length > 0) {
     try {
-      succeeded.push(await options.upload(classification.options));
+      const outcomes = await options.uploadBatch(pending.map((entry) => entry.options));
+      pending.forEach((entry, position) => {
+        const outcome = outcomes[position];
+        if (outcome?.ok) {
+          results[entry.index] = outcome.attachment;
+          return;
+        }
+        failed.push({
+          item: entry.item,
+          error: outcome ? outcome.error : new Error('Batch upload returned no result'),
+        });
+      });
     } catch (error) {
-      failed.push({ item, error });
+      // A session-level failure (quota, identity, rejected file) dooms the
+      // whole pick: report each item independently so the caller can surface an
+      // accurate count.
+      for (const entry of pending) {
+        failed.push({ item: entry.item, error });
+      }
+    }
+  } else {
+    for (const entry of pending) {
+      try {
+        results[entry.index] = await options.upload(entry.options);
+      } catch (error) {
+        failed.push({ item: entry.item, error });
+      }
     }
   }
+
+  const succeeded = results.filter(
+    (attachment): attachment is FeedbackAttachment => attachment !== undefined
+  );
 
   return { succeeded, failed, unsupported };
 }

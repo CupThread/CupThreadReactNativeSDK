@@ -162,6 +162,69 @@ export class MissingUnsubscribeTokenException extends FeedbackException {
 }
 
 /**
+ * Thrown before any network round trip when an attachment upload cannot even
+ * be described to the upload-session API.
+ *
+ * The session endpoint reserves quota from the declared byte size, so an
+ * undeclared size is a client error (`file_size_required`) rather than a
+ * request the server could recover from. React Native pickers that hand back
+ * a bare `{ uri }` carry no size; hosts must forward the picker's `fileSize`.
+ */
+export class UploadValidationException extends FeedbackException {
+  /**
+   * Machine-readable reason:
+   * - `file_size_required`: the attachment declared no positive byte size.
+   * - `invalid_file_count`: a session was requested for 0 or more than 8 files.
+   * - `invalid_field`: a filename or MIME type was blank.
+   */
+  readonly code: 'file_size_required' | 'invalid_file_count' | 'invalid_field';
+
+  constructor(
+    code: 'file_size_required' | 'invalid_file_count' | 'invalid_field',
+    message: string
+  ) {
+    super(message);
+    this.name = 'UploadValidationException';
+    this.code = code;
+  }
+}
+
+/**
+ * Thrown when the upload-session API rejects a session or a file slot.
+ *
+ * The public upload endpoints answer with a deterministic `code`; this class
+ * keeps it alongside the HTTP status so hosts can distinguish an oversized
+ * file (`file_too_large`, HTTP 413) from an unsupported MIME type, a prohibited
+ * executable extension, a missing anonymous identity, or a session that
+ * expired mid-upload.
+ */
+export class UploadRejectedException extends FeedbackException {
+  readonly status: number;
+
+  /**
+   * Server-provided machine-readable code (e.g. `file_too_large`,
+   * `unsupported_mime_type`, `executable_extension_prohibited`,
+   * `uploader_identity_required`, `uploader_mismatch`,
+   * `session_invalid_or_expired`), when the response carried one.
+   */
+  readonly code?: string;
+
+  readonly responseBody: string;
+
+  constructor(status: number, code?: string, responseBody: string = '') {
+    super(
+      code
+        ? `Upload rejected by CupThread API (HTTP ${status}, ${code}).`
+        : `Upload rejected by CupThread API (HTTP ${status}).`
+    );
+    this.name = 'UploadRejectedException';
+    this.status = status;
+    this.code = code;
+    this.responseBody = responseBody;
+  }
+}
+
+/**
  * Thrown when an HTTP request or file upload times out before completion.
  */
 export class RequestTimeoutException extends FeedbackException {

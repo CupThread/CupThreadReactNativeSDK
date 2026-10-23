@@ -163,14 +163,17 @@ export interface FetchUserProfileOptions extends RequestOptions {
  *
  * @remarks
  * Attachments are uploaded via {@link FeedbackClient.uploadAttachment} prior
- * to submitting a feedback draft.
+ * to submitting a feedback draft. Uploads run through the governed
+ * upload-session flow, so the descriptor carries the `uploadId` the intake
+ * endpoint references; raw storage keys and URLs are rejected server-side
+ * (`direct_attachment_forbidden`).
  *
  * @example
  * ```ts
  * const attachment: FeedbackAttachment = {
  *   kind: 'image',
- *   key: 'uploads/2026/09/screen-01.png',
- *   url: 'https://cdn.cupthread.com/uploads/2026/09/screen-01.png',
+ *   uploadId: 'upl_8f2c1d',
+ *   key: 'upl_8f2c1d',
  *   filename: 'screen-01.png',
  *   mimeType: 'image/png',
  *   size: 204800,
@@ -179,21 +182,42 @@ export interface FetchUserProfileOptions extends RequestOptions {
  */
 export interface FeedbackAttachment {
   /**
-   * Storage backend driver kind:
-   * - `'image'`: Standard image CDN optimization pipeline.
-   * - `'r2'`: Cloudflare R2 object storage for logs, archives, and diagnostics.
+   * Classification label for the attachment:
+   * - `'image'`: an image file.
+   * - `'r2'`: a diagnostic, log, or archive file.
+   *
+   * Attachments are stored privately regardless of kind; the server chooses
+   * storage handling from the declared MIME type.
    */
   kind: 'image' | 'r2';
 
   /**
-   * Unique storage identifier or object key on the remote storage cluster.
+   * Upload-session file id that submits this attachment's bytes.
+   *
+   * Sent to the intake endpoint as `uploadIds`. Descriptors created before the
+   * upload-session flow (or by a host that only has a legacy storage
+   * reference) omit it and are not submitted.
+   */
+  uploadId?: string;
+
+  /**
+   * Server-assigned identifier for the upload; equals {@link FeedbackAttachment.uploadId}
+   * for session uploads and is kept as a display/fallback key.
    */
   key: string;
 
   /**
-   * Direct, publicly-accessible URL for viewing or downloading the attachment.
+   * Authorized download URL when the server issued one, otherwise the
+   * session's opaque slot upload URL.
+   *
+   * Attachments are stored privately: this is never a publicly fetchable
+   * asset, and the server returns no delivery URL until the feedback
+   * submission finalizes. Treat the value as opaque.
+   *
+   * @deprecated the intake endpoint no longer accepts this value; submit
+   * `uploadId` instead. Kept for display fallbacks on existing descriptors.
    */
-  url: string;
+  url?: string;
 
   /**
    * Original file name as reported by the client filesystem or picker.
@@ -209,6 +233,120 @@ export interface FeedbackAttachment {
    * File payload size in bytes.
    */
   size?: number;
+}
+
+/**
+ * One file to pre-allocate in an upload session.
+ *
+ * @example
+ * ```ts
+ * const spec: UploadSessionFileSpec = {
+ *   filename: 'crash.log',
+ *   mimeType: 'text/plain',
+ *   sizeBytes: 20480,
+ * };
+ * ```
+ */
+export interface UploadSessionFileSpec {
+  /**
+   * Name recorded on the reserved slot, including its extension. The server
+   * screens executable extensions (`.exe`, `.sh`, `.php`, …) and rejects them.
+   */
+  filename: string;
+
+  /**
+   * MIME type declared for the slot. PNG, JPEG, WebP, and GIF are accepted for
+   * images; diagnostic text and archive types are accepted for `r2` uploads.
+   */
+  mimeType: string;
+
+  /**
+   * Exact byte size of the file, in bytes (must be positive).
+   *
+   * The value is load-bearing: the API reserves daily quota from it and
+   * rejects an undeclared size with `400 file_size_required`. React Native
+   * pickers report it as `fileSize`; `File`/`Blob` inputs expose `.size`.
+   */
+  sizeBytes: number;
+
+  /**
+   * Optional client-side correlation id echoed back on the reserved slot.
+   * Defaults to the `filename`.
+   */
+  clientFileId?: string;
+}
+
+/**
+ * A slot reserved by {@link FeedbackClient.createUploadSession}, addressed by
+ * the returned session token when the bytes are sent.
+ */
+export interface UploadSessionSlot {
+  /**
+   * Client-side correlation id, echoed from {@link UploadSessionFileSpec.clientFileId}
+   * (defaults to the filename).
+   */
+  clientFileId: string;
+
+  /**
+   * Server-assigned upload id for this slot; the resulting
+   * {@link FeedbackAttachment.uploadId}.
+   */
+  uploadId: string;
+
+  /**
+   * Session-scoped upload target (`/api/v1/uploads/{uploadId}`).
+   */
+  uploadUrl: string;
+
+  /**
+   * Maximum number of bytes the slot accepts, as reserved by the server.
+   */
+  maxSizeBytes: number;
+}
+
+/**
+ * A created upload session: the bearer token that authorizes slot uploads plus
+ * one reserved slot per file.
+ *
+ * @example
+ * ```ts
+ * const session = await client.createUploadSession([
+ *   { filename: 'crash.log', mimeType: 'text/plain', sizeBytes: 20480 },
+ * ]);
+ * console.log(`Upload slots: ${session.files.length}`);
+ * ```
+ */
+export interface UploadSession {
+  /**
+   * Upload session id (`ups_…`).
+   */
+  sessionId: string;
+
+  /**
+   * Bearer token authorizing `PUT /api/v1/uploads/{uploadId}`. Treat it as a
+   * credential and never log it.
+   */
+  sessionToken: string;
+
+  /**
+   * ISO 8601 timestamp after which the session and its slots are rejected.
+   */
+  expiresAt: string;
+
+  /**
+   * Per-file size ceiling the server applies to every slot in this session.
+   */
+  maxFileSizeBytes: number;
+
+  /**
+   * Maximum number of files a session may reserve.
+   */
+  maxFiles: number;
+
+  /**
+   * Reserved slots, in the order the files were submitted.
+   */
+  files: UploadSessionSlot[];
 }
 
 /**
@@ -273,6 +411,10 @@ export interface FeedbackDraft {
 
   /**
    * Array of previously uploaded file attachments to associate with this submission.
+   *
+   * Only attachments carrying an {@link FeedbackAttachment.uploadId} are sent;
+   * the intake endpoint references their reserved session slots and rejects
+   * raw storage keys or URLs (`direct_attachment_forbidden`).
    */
   attachments?: FeedbackAttachment[];
 
