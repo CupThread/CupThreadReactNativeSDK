@@ -673,6 +673,91 @@ test('useChangelogEntries forces hasMore off when a page is empty despite hasMor
   }
 });
 
+test('useChangelogEntries clears hasMore when the server sends no cursor to follow', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: null,
+        },
+      },
+    ],
+    ['cur-2', { status: 500, body: 'must never be requested' }],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1']
+    );
+    assert.equal(
+      harness.result.hasMore,
+      false,
+      'a page without a next cursor must not offer a load-more affordance'
+    );
+    await harness.result.loadMore();
+    assert.equal(fetchMock.requests.length, 1, 'loadMore must no-op without a cursor');
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('useChangelogEntries clears hasMore when a later page sends no cursor', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+    [
+      'cur-2',
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e2', '2026-08-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: null,
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    await harness.result.loadMore();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1', 'e2']
+    );
+    assert.equal(harness.result.hasMore, false, 'a cursorless page ends pagination');
+    await harness.result.loadMore();
+    assert.equal(fetchMock.requests.length, 2, 'loadMore must no-op after a cursorless page');
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('useChangelogEntries surfaces first-page failures and recovers via reload', async () => {
   const pages = new Map<string | null, { status: number; body?: unknown }>([
     [null, { status: 500, body: 'server error' }],

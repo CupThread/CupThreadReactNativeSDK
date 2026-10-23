@@ -84,6 +84,19 @@ export interface UseChangelogEntriesResult {
   reload: () => Promise<void>;
 }
 
+/**
+ * A page can only be followed when the server reports more entries, the page
+ * was non-empty, and it handed back a cursor to follow. Without the cursor the
+ * load-more affordance would stay visible but could never fetch anything.
+ */
+function pageHasMore(page: {
+  entries: ChangelogEntry[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}): boolean {
+  return page.hasMore && page.entries.length > 0 && page.nextCursor !== null;
+}
+
 function appendUniquePage(previous: ChangelogEntry[], page: ChangelogEntry[]): ChangelogEntry[] {
   if (page.length === 0) return previous;
   const seen = new Set(previous.map((entry) => entry.id));
@@ -139,8 +152,8 @@ export function useChangelogEntries(
         nextCursorRef.current = page.nextCursor;
         setEntries(page.entries);
         // An empty page can never be followed by another one, even if a
-        // buggy server left `hasMore` set.
-        setHasMore(page.hasMore && page.entries.length > 0);
+        // buggy server left `hasMore` set; neither can a page without a cursor.
+        setHasMore(pageHasMore(page));
         setError(null);
         // A fresh first page replaces the whole list, so a load-more failure
         // against the previous list no longer applies.
@@ -203,7 +216,7 @@ export function useChangelogEntries(
       if (nextCursorRef.current !== cursor) return;
       nextCursorRef.current = page.nextCursor;
       setEntries((prev) => appendUniquePage(prev, page.entries));
-      setHasMore(page.hasMore && page.entries.length > 0);
+      setHasMore(pageHasMore(page));
       setLoadMoreError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
