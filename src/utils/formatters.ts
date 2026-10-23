@@ -8,12 +8,30 @@ import type { CommonStrings } from '../i18n';
  */
 const FUTURE_DATE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
-function formatCalendarDate(date: Date, now: Date): string {
-  return date.toLocaleDateString(undefined, {
+function formatCalendarDate(date: Date, now: Date, locale?: string): string {
+  const options: Intl.DateTimeFormatOptions = {
     year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     month: 'short',
     day: 'numeric',
-  });
+  };
+
+  if (locale && typeof Intl !== 'undefined') {
+    try {
+      return date.toLocaleDateString(locale, options);
+    } catch {
+      // Unknown BCP 47 tag or a runtime without Intl date data: fall through to
+      // the runtime default instead of failing the render.
+    }
+  }
+
+  try {
+    return date.toLocaleDateString(undefined, options);
+  } catch {
+    // Last resort for engines without a usable toLocaleDateString.
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+      date.getDate()
+    ).padStart(2, '0')}`;
+  }
 }
 
 /**
@@ -21,16 +39,20 @@ function formatCalendarDate(date: Date, now: Date): string {
  *
  * @param isoDateString - ISO 8601 timestamp string.
  * @param commonStrings - Optional localized relative time strings.
+ * @param locale - Optional BCP 47 locale tag for calendar dates (e.g. `'de'`, `'zh-Hans'`).
+ * When omitted, the calendar branches keep the runtime default locale.
  * @returns Human-friendly relative date representation (e.g. `'Just now'`, `'5m ago'`).
  *
  * @remarks
  * Small device clock skew is clamped, so a timestamp a few seconds or minutes
  * ahead still renders as `'Just now'`. Dates more than {@link FUTURE_DATE_TOLERANCE_MS}
  * ahead fall through to the calendar rendering rather than showing a relative label forever.
+ * Relative labels are driven by `commonStrings`; only calendar dates use `locale`.
  */
 export function formatDate(
   isoDateString?: string | null,
-  commonStrings?: CommonStrings
+  commonStrings?: CommonStrings,
+  locale?: string
 ): string {
   if (!isoDateString) return '';
   const date = new Date(isoDateString);
@@ -40,7 +62,7 @@ export function formatDate(
   const diffMs = now.getTime() - date.getTime();
 
   if (diffMs < -FUTURE_DATE_TOLERANCE_MS) {
-    return formatCalendarDate(date, now);
+    return formatCalendarDate(date, now, locale);
   }
 
   const diffSec = Math.floor(Math.max(0, diffMs) / 1000);
@@ -53,7 +75,7 @@ export function formatDate(
   if (diffHours < 24) return commonStrings?.hoursAgo ? commonStrings.hoursAgo(diffHours) : `${diffHours}h ago`;
   if (diffDays < 7) return commonStrings?.daysAgo ? commonStrings.daysAgo(diffDays) : `${diffDays}d ago`;
 
-  return formatCalendarDate(date, now);
+  return formatCalendarDate(date, now, locale);
 }
 
 /**

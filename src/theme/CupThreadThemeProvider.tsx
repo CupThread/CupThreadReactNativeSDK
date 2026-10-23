@@ -520,6 +520,30 @@ export function useCupThreadStrings(): CupThreadStrings {
 }
 
 /**
+ * Hook retrieving the resolved locale tag from the enclosing provider.
+ *
+ * @returns The active BCP 47 locale (e.g. `'en'`, `'zh-Hans'`), or `undefined`
+ * when rendered outside a {@link CupThreadProvider}.
+ *
+ * @remarks
+ * Pass the returned value to locale-aware formatters such as `formatDate` so
+ * calendar dates follow the same language as the SDK strings:
+ *
+ * @example
+ * ```tsx
+ * function CommentDate({ createdAt }: { createdAt: string }) {
+ *   const strings = useCupThreadStrings();
+ *   const locale = useCupThreadLocale();
+ *   return <Text>{formatDate(createdAt, strings.common, locale)}</Text>;
+ * }
+ * ```
+ */
+export function useCupThreadLocale(): string | undefined {
+  const ctx = useContext(CupThreadContext);
+  return ctx?.locale;
+}
+
+/**
  * Hook providing the currently active theme name and resolved design color tokens.
  *
  * @returns An object containing `themeName` (e.g. `'midnight'`) and full `colors` tokens.

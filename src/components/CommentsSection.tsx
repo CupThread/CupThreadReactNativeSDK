@@ -13,6 +13,7 @@ import {
   useCupThreadUserToken,
   useCupThreadTokenReadiness,
   useCupThreadStrings,
+  useCupThreadLocale,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestComment, CommentDraft } from '../types';
 import { Avatar } from './Avatar';
@@ -59,6 +60,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const userToken = useCupThreadUserToken();
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
+  const locale = useCupThreadLocale();
 
   const fetchComments = useCallback(
     (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
@@ -168,7 +170,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
                     {item.authorName || strings.common.anonymous}
                   </Text>
                   <Text style={[styles.timeText, { color: colors.textMuted }]}>
-                    {formatDate(item.createdAt, strings.common)}
+                    {formatDate(item.createdAt, strings.common, locale)}
                   </Text>
                 </View>
               </View>

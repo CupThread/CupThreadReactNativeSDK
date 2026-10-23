@@ -13,6 +13,7 @@ import {
   useCupThreadClient,
   useCupThreadUserToken,
   useCupThreadStrings,
+  useCupThreadLocale,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem } from '../types';
 import { VoteButton } from './VoteButton';
@@ -96,6 +97,7 @@ export function FeatureRequestDetail({
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
   const strings = useCupThreadStrings();
+  const locale = useCupThreadLocale();
 
   const [item, setItem] = useState<FeatureRequestItem>(initialItem);
 
@@ -208,7 +210,7 @@ export function FeatureRequestDetail({
             </Text>
             <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
             <Text style={[styles.dateText, { color: colors.textMuted }]}>
-              {formatDate(item.createdAt, strings.common)}
+              {formatDate(item.createdAt, strings.common, locale)}
             </Text>
           </View>
 
