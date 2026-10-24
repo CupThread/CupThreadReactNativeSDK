@@ -317,6 +317,10 @@ function HookProbe({ options, latest }: { options: any; latest: { current: Lates
 
 const FAST_LIMITER = { minSpacingMs: 0, cooldownMs: 80 };
 
+// Long cooldown for tests that assert suppression without waiting it out, so a
+// slow runner cannot let the deferred search fire mid-assertion.
+const SUPPRESS_LIMITER = { minSpacingMs: 0, cooldownMs: 5000 };
+
 test('useFeatureRequests initial load populates items without rate limiting', async () => {
   const stub = makeSearchClient(() =>
     page([
@@ -764,6 +768,70 @@ test('deferred cooldown search still respects the minimum search spacing', async
   }
 });
 
+test('refresh during the cooldown does not cancel the deferred search', async () => {
+  const stub = makeSearchClient((call, index) => {
+    if (call.q === null)
+      return page([
+        { id: 'fr_1', title: 'A' },
+        { id: 'fr_2', title: 'B' },
+      ]);
+    return index === 1
+      ? new Response('{"error":"rate limited"}', { status: 429 })
+      : page([{ id: 'fr_9', title: 'Found' }]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 1);
+
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2);
+    assert.equal(latest.current!.isRateLimited, true);
+
+    // A query typed during the cooldown is deferred; pulling to refresh in the
+    // same window aborts the published load controller but must not cancel
+    // that deferred attempt.
+    options = { ...options, query: 'widget two' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await act(async () => {
+      await latest.current!.refresh();
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2, 'refresh during cooldown must not search');
+    assert.equal(latest.current!.isRefreshing, false);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, 'widget two');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_9');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
 test(
   'useFeatureRequests spaces consecutive searches using the limiter',
   { timeout: 5000 },
@@ -846,7 +914,7 @@ test('cooldown suppresses pagination when page-0 search 429s first', async () =>
       client,
       userToken: 'tok',
       query: 'widget',
-      searchRateLimiterOptions: FAST_LIMITER,
+      searchRateLimiterOptions: SUPPRESS_LIMITER,
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -912,7 +980,7 @@ test('429 from loadMore engages the cooldown and suppresses subsequent page-0 se
       client,
       userToken: 'tok',
       query: 'widget',
-      searchRateLimiterOptions: FAST_LIMITER,
+      searchRateLimiterOptions: SUPPRESS_LIMITER,
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;

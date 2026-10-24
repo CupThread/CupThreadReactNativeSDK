@@ -412,7 +412,6 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     }
 
     const controller = new AbortController();
-    loadControllerRef.current = controller;
 
     // Debounce first, then the search spacing/cooldown window so a query typed
     // during either wait is deferred to its turn instead of being dropped.
@@ -425,6 +424,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           scheduleLoad(limiter.waitTime());
           return;
         }
+        // Publish the controller only when the fetch starts: a manual
+        // refresh()/reload() during the wait aborts `loadControllerRef` and
+        // its own load skips while the limiter blocks, so assigning it early
+        // would cancel the only deferred attempt for this query.
+        loadControllerRef.current = controller;
         setIsLoading(true);
         loadPage0(controller.signal);
       }, waitMs);
