@@ -281,9 +281,13 @@ test(
       );
       assert.equal(
         harness.voteChangeCalls.length,
-        1,
-        "A's late response must not notify the host again"
+        2,
+        "A's late server truth must still reach the host list"
       );
+      const reconciledA = harness.voteChangeCalls[1];
+      assert.equal(reconciledA.id, 'fr_A');
+      assert.equal(reconciledA.hasVoted, true);
+      assert.equal(reconciledA.voteCount, 99, 'host must receive the server count for A');
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
@@ -292,7 +296,7 @@ test(
 );
 
 test(
-  'late vote rejection for a previously displayed item must not roll back the newly shown one',
+  'late vote rejection for a previously displayed item rolls back the host list',
   renderTestOptions,
   async () => {
     const deferredA = createDeferred<VoteResult>();
@@ -315,9 +319,92 @@ test(
         "A's late rollback must not clobber B's vote fields"
       );
       assert.deepEqual(harness.client.voteCalls, ['fr_A']);
+      assert.equal(harness.voteChangeCalls.length, 2, 'A rollback must reach the host list');
+      const rolledBackA = harness.voteChangeCalls[1];
+      assert.equal(rolledBackA.id, 'fr_A');
+      assert.equal(rolledBackA.hasVoted, false);
+      assert.equal(rolledBackA.voteCount, 5, 'host must restore the pre-vote count for A');
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'vote rollback reaches the host list after the detail unmounts',
+  renderTestOptions,
+  async () => {
+    const deferredA = createDeferred<VoteResult>();
+    const harness = await renderDetail(makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }), true);
+    harness.client.deferredVotes.set('fr_A', deferredA);
+    let unmounted = false;
+    try {
+      await act(async () => {
+        harness.renderer.root.findByType(VoteButton).props.onPress();
+      });
+      await flush();
+      assert.equal(harness.voteChangeCalls.length, 1, 'optimistic vote notifies the host');
+      assert.equal(harness.voteChangeCalls[0].voteCount, 6);
+
+      await act(async () => {
+        harness.renderer.unmount();
+      });
+      unmounted = true;
+
+      deferredA.reject(new Error('network gone'));
+      await flush();
+
+      assert.equal(
+        harness.voteChangeCalls.length,
+        2,
+        'rollback must reach the host after the detail unmounts'
+      );
+      const rolledBack = harness.voteChangeCalls[1];
+      assert.equal(rolledBack.id, 'fr_A');
+      assert.equal(rolledBack.hasVoted, false);
+      assert.equal(rolledBack.voteCount, 5);
+    } finally {
+      harness.restoreFetch();
+      if (!unmounted) harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'server vote truth reaches the host list after the detail unmounts',
+  renderTestOptions,
+  async () => {
+    const deferredA = createDeferred<VoteResult>();
+    const harness = await renderDetail(makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }), true);
+    harness.client.deferredVotes.set('fr_A', deferredA);
+    let unmounted = false;
+    try {
+      await act(async () => {
+        harness.renderer.root.findByType(VoteButton).props.onPress();
+      });
+      await flush();
+
+      await act(async () => {
+        harness.renderer.unmount();
+      });
+      unmounted = true;
+
+      deferredA.resolve({ voted: true, voteCount: 99 });
+      await flush();
+
+      assert.equal(
+        harness.voteChangeCalls.length,
+        2,
+        'server truth must reach the host after the detail unmounts'
+      );
+      const reconciled = harness.voteChangeCalls[1];
+      assert.equal(reconciled.id, 'fr_A');
+      assert.equal(reconciled.hasVoted, true);
+      assert.equal(reconciled.voteCount, 99);
+    } finally {
+      harness.restoreFetch();
+      if (!unmounted) harness.renderer.unmount();
     }
   }
 );
