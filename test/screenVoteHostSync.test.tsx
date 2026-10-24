@@ -52,10 +52,6 @@ if (supportsModuleMocks) {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
-const { VoteButton } = await import('../src/components/VoteButton');
-
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
   : {
@@ -168,6 +164,12 @@ test(
   'late vote settlement merges vote fields into a row refreshed while the detail was open',
   renderTestOptions,
   async () => {
+    // Imported here rather than at module scope so a run without module
+    // mocking (where this test is skipped) never evaluates react-native.
+    const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+    const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
+    const { VoteButton } = await import('../src/components/VoteButton');
+
     flatListProps.length = 0;
     const routes = {
       page0: ok({
