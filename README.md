@@ -565,7 +565,7 @@ The production API rate-limits feature-request searches to **30 requests / 60s p
 
 - Query-bearing searches wait out a **2.5s spacing window** between fetches (the screen's 250ms text debounce runs first); plain listings are unaffected.
 - Re-submitting the **same trimmed query + version filter** never refetches.
-- An HTTP 429 (surfaced as `RateLimitedException`, with the server's `Retry-After` hint in `retryAfterMs`) starts a **60s cooldown** during which further query-triggered searches are suppressed. Already-loaded results stay on screen behind a localized rate-limit notice instead of a full-screen error.
+- An HTTP 429 (surfaced as `RateLimitedException`, with the server's `Retry-After` hint in `retryAfterMs`) starts a **60s cooldown**. A query typed during the cooldown is **deferred**, not dropped: its fetch is issued once the cooldown elapses (the final query wins if the user re-types), so the list never shows the previous query's results as the answer to the new one. Already-loaded results stay on screen behind a localized rate-limit notice instead of a full-screen error.
 - Limits are tunable via `useFeatureRequests({ searchRateLimiterOptions: { minSpacingMs, cooldownMs } })` — defaults keep the client strictly under the server budget.
 
 ---
