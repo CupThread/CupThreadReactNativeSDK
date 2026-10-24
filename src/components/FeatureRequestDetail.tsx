@@ -113,36 +113,50 @@ export function FeatureRequestDetail({
     setItem(initialItem);
   }
 
-  // State updaters must stay pure (React may run them during render and twice
-  // under StrictMode), so vote changes are staged here and the host
-  // `onVoteChange` notification is flushed in an effect after commit.
-  const pendingVoteNotifyRef = useRef<FeatureRequestItem | null>(null);
-
-  const applyVoteChange = useCallback<VoteChangeApplier>(
-    (itemId, transform) => {
-      // Use functional state updater like list/board so transforms always land
-      // on the freshest state and rollback reconciles against current item
-      // instead of closing over a stale snapshot or the initialItem prop.
-      setItem((prev) => {
-        // Only apply transforms issued for the request on screen; a late
-        // success or rollback for a previously displayed item must not
-        // mutate the newly shown one.
-        if (prev.id !== itemId) return prev;
-        const next = transform(prev);
-        pendingVoteNotifyRef.current = next;
-        return next;
-      });
-    },
-    []
-  );
+  // Latest snapshot per request id. A vote settlement can arrive after this
+  // component unmounts or after the host swaps `item`, when local state no
+  // longer holds the request that was voted on. The snapshot keeps the host
+  // reconciliation independent of this component's lifecycle.
+  const knownItemsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
+  const onVoteChangeRef = useRef(onVoteChange);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    const pending = pendingVoteNotifyRef.current;
-    if (pending) {
-      pendingVoteNotifyRef.current = null;
-      onVoteChange?.(pending);
+    onVoteChangeRef.current = onVoteChange;
+  }, [onVoteChange]);
+
+  useEffect(() => {
+    knownItemsRef.current.set(item.id, item);
+  }, [item]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
+    // Notify the host from the snapshot rather than from the state updater:
+    // React drops updates for unmounted components, so a rollback or server
+    // result that settles after unmount would otherwise never reach the host
+    // list. The host applier is by id, which also keeps a late result for a
+    // previously displayed item from mutating the newly shown one.
+    const known = knownItemsRef.current.get(itemId);
+    if (known) {
+      const next = transform(known);
+      knownItemsRef.current.set(itemId, next);
+      onVoteChangeRef.current?.(next);
     }
-  }, [item, onVoteChange]);
+
+    // Use a functional state updater like list/board so transforms land on
+    // the freshest state. The id guard covers an item swap between the
+    // settlement and this update: local state must keep the newly shown item
+    // untouched even though the host was just notified for the old one.
+    if (mountedRef.current) {
+      setItem((prev) => (prev.id === itemId ? transform(prev) : prev));
+    }
+  }, []);
   const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
     client,
     userToken,
