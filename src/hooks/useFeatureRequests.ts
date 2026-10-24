@@ -411,28 +411,30 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       return;
     }
 
-    // After a 429, query-triggered fetches stay suppressed for the cooldown;
-    // the screen shows a localized notice until it elapses.
-    if (isSearch && limiter.cooldownRemaining() > 0) {
-      return;
-    }
-
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
-    // Debounce first, then the search spacing window so a typing burst waits
-    // for its turn instead of silently dropping the final query.
-    const searchWaitMs = isSearch ? limiter.waitTime() : 0;
-    const timer = setTimeout(
-      () => {
+    // Debounce first, then the search spacing/cooldown window so a query typed
+    // during either wait is deferred to its turn instead of being dropped.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleLoad = (waitMs: number) => {
+      timer = setTimeout(() => {
+        // Timers can fire marginally before the limiter's clock reaches the
+        // boundary; wait out the remainder instead of dropping the query.
+        if (isSearch && !limiter.canFetch()) {
+          scheduleLoad(limiter.waitTime());
+          return;
+        }
         setIsLoading(true);
         loadPage0(controller.signal);
-      },
-      (debounceMs > 0 ? debounceMs : 0) + searchWaitMs
-    );
+      }, waitMs);
+    };
+
+    const searchWaitMs = isSearch ? limiter.waitTime() : 0;
+    scheduleLoad((debounceMs > 0 ? debounceMs : 0) + searchWaitMs);
 
     return () => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       controller.abort();
     };
   }, [loadPage0, debounceMs, isTokenReady, query, versionId, userToken, enabled]);

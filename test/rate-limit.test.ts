@@ -529,7 +529,8 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     // Non-destructive: the previously loaded results stay on screen.
     assert.equal(latest.current!.items.length, 2);
 
-    // While the cooldown is active, further query changes do not fetch.
+    // While the cooldown is active, no fetch fires immediately; the pending
+    // query is deferred to the end of the cooldown instead.
     options = { ...options, query: 'widget two' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
@@ -537,9 +538,19 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     await flush();
     assert.equal(stub.calls.length, 2, 'cooldown must suppress further searches');
 
-    // After the injected 80ms cooldown elapses, searching resumes and clears
-    // the rate-limit flag on success.
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    // After the injected 80ms cooldown elapses the deferred query runs on its
+    // own and its results replace the prior list.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, 'widget two');
+    assert.equal(latest.current!.isRateLimited, false);
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_9');
+
+    // A search typed after the cooldown fetches immediately.
     options = { ...options, query: 'widget three' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
@@ -549,7 +560,204 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     assert.equal(latest.current!.isRateLimited, false);
     assert.equal(latest.current!.items.length, 1);
     assert.equal(latest.current!.items[0].id, 'fr_9');
+    assert.equal(stub.calls.length, 4);
+    assert.equal(stub.calls[3].q, 'widget three');
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests defers a query typed during the post-429 cooldown and runs it once the cooldown ends', async () => {
+  const stub = makeSearchClient((call, index) => {
+    if (call.q === null)
+      return page([
+        { id: 'fr_1', title: 'A' },
+        { id: 'fr_2', title: 'B' },
+      ]);
+    return index === 1
+      ? new Response('{"error":"rate limited"}', { status: 429 })
+      : page([{ id: 'fr_9', title: 'Found' }]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 1);
+
+    // First search trips the 429 and starts the 150ms cooldown.
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.ok(latest.current!.error instanceof RateLimitedException);
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(stub.calls.length, 2);
+    assert.equal(stub.calls[1].q, 'widget');
+
+    // Type a new query while the cooldown is still active: the fetch must be
+    // deferred, not dropped, and nothing may fire before the cooldown ends.
+    options = { ...options, query: 'widget two' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    assert.equal(stub.calls.length, 2, 'deferred search must not fire during the cooldown');
+    assert.equal(latest.current!.isRateLimited, true);
+    // Prior results stay on screen while the new query waits.
+    assert.equal(latest.current!.items.length, 2);
+
+    // No further query change: the deferred search fires on its own once the
+    // cooldown elapses and its results replace the list.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    await flush();
+
+    assert.equal(stub.calls.length, 3, 'exactly one deferred search must run');
+    assert.equal(stub.calls[2].q, 'widget two');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_9');
+    assert.equal(latest.current!.isRateLimited, false);
+    assert.equal(latest.current!.isLoading, false);
+    assert.equal(latest.current!.error, null);
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('useFeatureRequests fetches only the final query when re-typed during the cooldown', async () => {
+  const stub = makeSearchClient((call, index) => {
+    if (call.q === null) return page([{ id: 'fr_1', title: 'A' }]);
+    return index === 1
+      ? new Response('{"error":"rate limited"}', { status: 429 })
+      : page([{ id: 'fr_9', title: `Result for ${call.q}` }]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2);
+    assert.equal(latest.current!.isRateLimited, true);
+
+    // Two query changes while the cooldown is active: each must re-arm the
+    // deferred timer so only the last one is fetched.
+    options = { ...options, query: 'widget two' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    options = { ...options, query: 'widget three' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2, 'no search may fire during the cooldown');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    await flush();
+
+    assert.deepEqual(
+      stub.calls.map((call) => call.q),
+      [null, 'widget', 'widget three']
+    );
+    assert.ok(
+      !stub.calls.some((call) => call.q === 'widget two'),
+      'intermediate query must be superseded before it is ever sent'
+    );
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].title, 'Result for widget three');
+    assert.equal(latest.current!.isRateLimited, false);
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('deferred cooldown search still respects the minimum search spacing', async () => {
+  const stub = makeSearchClient((call, index) => {
+    if (call.q === null) return page([{ id: 'fr_1', title: 'A' }]);
+    return index === 1
+      ? new Response('{"error":"rate limited"}', { status: 429 })
+      : page([{ id: 'fr_9', title: 'Found' }]);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      searchRateLimiterOptions: { minSpacingMs: 300, cooldownMs: 80 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    options = { ...options, query: 'widget' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2);
+    assert.equal(latest.current!.isRateLimited, true);
+
+    // The 80ms cooldown ends before the 300ms spacing window measured from the
+    // 429'd search; the deferred fetch must wait for the later of the two.
+    options = { ...options, query: 'widget two' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    assert.equal(stub.calls.length, 2, 'spacing window must still gate the deferred search');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    await flush();
+
     assert.equal(stub.calls.length, 3);
+    assert.equal(stub.calls[2].q, 'widget two');
+    assert.equal(latest.current!.items.length, 1);
+    assert.equal(latest.current!.items[0].id, 'fr_9');
     renderer.unmount();
   } finally {
     stub.restore();
