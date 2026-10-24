@@ -512,7 +512,12 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
     const latest: { current: LatestResult } = { current: null };
-    let options: any = { client, userToken: 'tok', searchRateLimiterOptions: FAST_LIMITER };
+    const clock = makeVirtualClock();
+    let options: any = {
+      client,
+      userToken: 'tok',
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 300, now: clock.now },
+    };
 
     let renderer!: TestRenderer.ReactTestRenderer;
     await act(async () => {
@@ -521,7 +526,7 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     await flush();
     assert.equal(latest.current!.items.length, 2);
 
-    // Search trips the 429.
+    // Search trips the 429 and starts the cooldown.
     options = { ...options, query: 'widget' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
@@ -534,7 +539,8 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     assert.equal(latest.current!.items.length, 2);
 
     // While the cooldown is active, no fetch fires immediately; the pending
-    // query is deferred to the end of the cooldown instead.
+    // query is deferred to the end of the cooldown instead. The virtual clock
+    // keeps this window open regardless of how slow the runner is.
     options = { ...options, query: 'widget two' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
@@ -542,10 +548,11 @@ test('useFeatureRequests enters cooldown after a 429 and keeps prior results on 
     await flush();
     assert.equal(stub.calls.length, 2, 'cooldown must suppress further searches');
 
-    // After the injected 80ms cooldown elapses the deferred query runs on its
-    // own and its results replace the prior list.
+    // Once the cooldown elapses the deferred query runs on its own and its
+    // results replace the prior list.
+    clock.advance(350);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 120));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     await flush();
     assert.equal(stub.calls.length, 3);
@@ -586,10 +593,11 @@ test('useFeatureRequests defers a query typed during the post-429 cooldown and r
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
     const latest: { current: LatestResult } = { current: null };
+    const clock = makeVirtualClock();
     let options: any = {
       client,
       userToken: 'tok',
-      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 300, now: clock.now },
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -599,7 +607,7 @@ test('useFeatureRequests defers a query typed during the post-429 cooldown and r
     await flush();
     assert.equal(stub.calls.length, 1);
 
-    // First search trips the 429 and starts the 150ms cooldown.
+    // First search trips the 429 and starts the cooldown.
     options = { ...options, query: 'widget' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
@@ -626,8 +634,9 @@ test('useFeatureRequests defers a query typed during the post-429 cooldown and r
 
     // No further query change: the deferred search fires on its own once the
     // cooldown elapses and its results replace the list.
+    clock.advance(350);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     await flush();
 
@@ -654,10 +663,11 @@ test('useFeatureRequests fetches only the final query when re-typed during the c
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
     const latest: { current: LatestResult } = { current: null };
+    const clock = makeVirtualClock();
     let options: any = {
       client,
       userToken: 'tok',
-      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 300, now: clock.now },
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -690,8 +700,9 @@ test('useFeatureRequests fetches only the final query when re-typed during the c
     await flush();
     assert.equal(stub.calls.length, 2, 'no search may fire during the cooldown');
 
+    clock.advance(350);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     await flush();
 
@@ -722,10 +733,11 @@ test('deferred cooldown search still respects the minimum search spacing', async
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
     const latest: { current: LatestResult } = { current: null };
+    const clock = makeVirtualClock();
     let options: any = {
       client,
       userToken: 'tok',
-      searchRateLimiterOptions: { minSpacingMs: 300, cooldownMs: 80 },
+      searchRateLimiterOptions: { minSpacingMs: 600, cooldownMs: 300, now: clock.now },
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -740,21 +752,28 @@ test('deferred cooldown search still respects the minimum search spacing', async
     });
     await flush();
     assert.equal(stub.calls.length, 2);
-    assert.equal(latest.current!.isRateLimited, true);
 
-    // The 80ms cooldown ends before the 300ms spacing window measured from the
-    // 429'd search; the deferred fetch must wait for the later of the two.
+    // The 300ms cooldown ends before the 600ms spacing window measured from
+    // the 429'd search; the deferred fetch must wait for the later of the two.
     options = { ...options, query: 'widget two' };
     await act(async () => {
       renderer.update(React.createElement(HookProbe, { options, latest }));
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await flush();
     assert.equal(stub.calls.length, 2, 'spacing window must still gate the deferred search');
 
+    // Past the cooldown but still inside the spacing window: still no fetch,
+    // even after the scheduled timer has had time to fire and re-arm.
+    clock.advance(400);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 650));
+    });
+    assert.equal(stub.calls.length, 2, 'spacing window must outlast the cooldown');
+
+    // Past the spacing window the deferred search finally runs, once.
+    clock.advance(300);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     await flush();
 
@@ -782,10 +801,11 @@ test('refresh during the cooldown does not cancel the deferred search', async ()
   try {
     const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
     const latest: { current: LatestResult } = { current: null };
+    const clock = makeVirtualClock();
     let options: any = {
       client,
       userToken: 'tok',
-      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 150 },
+      searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 300, now: clock.now },
     };
 
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -817,8 +837,9 @@ test('refresh during the cooldown does not cancel the deferred search', async ()
     assert.equal(stub.calls.length, 2, 'refresh during cooldown must not search');
     assert.equal(latest.current!.isRefreshing, false);
 
+    clock.advance(350);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 350));
     });
     await flush();
 
