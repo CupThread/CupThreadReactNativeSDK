@@ -459,7 +459,14 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
           visible={!!selectedItem}
           onClose={() => setSelectedItem(null)}
           onVoteChange={(updated) => {
-            applyItemChange(updated.id, () => updated);
+            // A settlement can arrive after the host refreshed this request,
+            // so merge only the vote fields into the current row instead of
+            // replacing it with the detail's older snapshot.
+            applyItemChange(updated.id, (current) => ({
+              ...current,
+              hasVoted: updated.hasVoted,
+              voteCount: updated.voteCount,
+            }));
           }}
         />
       )}

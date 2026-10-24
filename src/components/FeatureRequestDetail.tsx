@@ -119,8 +119,11 @@ export function FeatureRequestDetail({
   // reconciliation independent of this component's lifecycle.
   const knownItemsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
   const onVoteChangeRef = useRef(onVoteChange);
-  onVoteChangeRef.current = onVoteChange;
   const mountedRef = useRef(true);
+
+  useEffect(() => {
+    onVoteChangeRef.current = onVoteChange;
+  }, [onVoteChange]);
 
   useEffect(() => {
     knownItemsRef.current.set(item.id, item);
