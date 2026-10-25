@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,10 @@ import {
   useCupThreadTokenReadiness,
   useCupThreadStrings,
   useCupThreadLocale,
+  useCupThreadCommentSession,
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestComment, CommentDraft } from '../types';
+import { AuthenticationRequiredException } from '../client/FeedbackException';
 import { Avatar } from './Avatar';
 import { ErrorState } from './ErrorState';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -44,6 +46,12 @@ export interface CommentsSectionProps {
  *
  * @param props - {@link CommentsSectionProps} containing the target feature request ID.
  *
+ * @remarks
+ * Comment writes require a signed-in session: the composer renders only when
+ * the host configured `commentSessionProvider` on `<CupThreadProvider>` (and
+ * the session check succeeds at submit time). Without a session source, a
+ * localized sign-in notice replaces the composer.
+ *
  * @example
  * ```tsx
  * import React from 'react';
@@ -61,6 +69,7 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const locale = useCupThreadLocale();
+  const commentSessionProvider = useCupThreadCommentSession();
 
   const fetchComments = useCallback(
     (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
@@ -90,35 +99,70 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const comments: FeatureRequestComment[] = commentsData ?? [];
 
   const [commentText, setCommentText] = useState<string>('');
-  const [authorName, setAuthorName] = useState<string>('');
   const [replyTo, setReplyTo] = useState<FeatureRequestComment | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const isSubmittingRef = useRef<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  // True when a submit was refused by the session check or rejected with 401:
+  // the composer yields to the sign-in notice until a session appears again.
+  const [requiresSignIn, setRequiresSignIn] = useState<boolean>(false);
+
+  const hasSessionSource = Boolean(commentSessionProvider);
+  const showComposer = hasSessionSource && !requiresSignIn;
+
+  // A host sign-in typically swaps the provider callback (new identity);
+  // re-check on the next submit instead of keeping the dead sign-in state.
+  useEffect(() => {
+    setRequiresSignIn(false);
+  }, [commentSessionProvider]);
+
+  const recheckSession = useCallback(async () => {
+    if (!commentSessionProvider) return;
+    try {
+      const token = await commentSessionProvider();
+      if (token && token.trim()) {
+        setRequiresSignIn(false);
+      }
+    } catch {
+      // Session source threw — stay signed out; the next submit re-checks.
+    }
+  }, [commentSessionProvider]);
 
   const handlePostComment = async () => {
     if (isSubmittingRef.current) return;
-    if (commentText.trim().length === 0 || !isTokenReady) return;
+    if (commentText.trim().length === 0 || !isTokenReady || !commentSessionProvider) return;
 
     isSubmittingRef.current = true;
     try {
       setIsSubmitting(true);
       setError(null);
 
+      const sessionToken = await commentSessionProvider();
+      if (!sessionToken || !sessionToken.trim()) {
+        setRequiresSignIn(true);
+        return;
+      }
+
       const effectiveToken = await resolveEffectiveUserToken(userToken);
       const draft: CommentDraft = {
         body: commentText.trim(),
-        authorName: authorName.trim() || undefined,
         parentId: replyTo?.id || undefined,
         replyToClerkId: replyTo?.authorClerkId || undefined,
         replyToAuthorName: replyTo?.authorName || undefined,
       };
 
-      const newComment = await client.postComment(featureRequestId, draft, effectiveToken);
+      const newComment = await client.postComment(featureRequestId, draft, effectiveToken, {
+        sessionToken: sessionToken.trim(),
+      });
       setCommentsData((prev) => [...(prev ?? []), newComment]);
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
+      if (err instanceof AuthenticationRequiredException) {
+        // Keep the draft so the text survives until the host signs the user in.
+        setRequiresSignIn(true);
+        return;
+      }
       setError(userFacingErrorMessage(err, strings.comments.postFailed, strings.common));
     } finally {
       isSubmittingRef.current = false;
@@ -183,101 +227,107 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
 
               <MarkdownText content={item.body} style={{ fontSize: 13 }} />
 
-              <TouchableOpacity
-                onPress={() => setReplyTo(item)}
-                style={styles.replyButton}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.replyButtonText, { color: colors.primary }]}>
-                  {strings.comments.replyButton}
-                </Text>
-              </TouchableOpacity>
+              {showComposer && (
+                <TouchableOpacity
+                  onPress={() => setReplyTo(item)}
+                  style={styles.replyButton}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.replyButtonText, { color: colors.primary }]}>
+                    {strings.comments.replyButton}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           ))}
         </View>
       )}
 
-      <View
-        style={[
-          styles.inputContainer,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        {replyTo && (
-          <View style={[styles.replyingBar, { backgroundColor: colors.chipBg }]}>
-            <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
-              {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
-            </Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
-              <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
-                {strings.comments.cancelReply}
+      {showComposer ? (
+        <View
+          style={[
+            styles.inputContainer,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          {replyTo && (
+            <View style={[styles.replyingBar, { backgroundColor: colors.chipBg }]}>
+              <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
+                {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
+              </Text>
+              <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+                  {strings.comments.cancelReply}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {error && <Text style={[styles.inputError, { color: colors.danger }]}>{error}</Text>}
+
+          <TextInput
+            style={[
+              styles.bodyInput,
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder={strings.comments.inputPlaceholder}
+            placeholderTextColor={colors.textMuted}
+            value={commentText}
+            onChangeText={setCommentText}
+            multiline
+          />
+
+          <TouchableOpacity
+            onPress={handlePostComment}
+            disabled={isSubmitting || !isTokenReady || commentText.trim().length === 0}
+            style={[
+              styles.sendButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: isSubmitting || !isTokenReady || commentText.trim().length === 0 ? 0.5 : 1,
+              },
+            ]}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{
+              disabled: isSubmitting || !isTokenReady || commentText.trim().length === 0,
+            }}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={colors.primaryText} size="small" />
+            ) : (
+              <Text style={[styles.sendButtonText, { color: colors.primaryText }]}>
+                {strings.comments.postButton}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.signInContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.signInText, { color: colors.textMuted }]}>
+            {strings.comments.signInToComment}
+          </Text>
+          {requiresSignIn && (
+            <TouchableOpacity
+              onPress={recheckSession}
+              accessibilityRole="button"
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.signInRetryText, { color: colors.primary }]}>
+                {strings.common.retry}
               </Text>
             </TouchableOpacity>
-          </View>
-        )}
-
-        {error && <Text style={[styles.inputError, { color: colors.danger }]}>{error}</Text>}
-
-        <TextInput
-          style={[
-            styles.nameInput,
-            {
-              backgroundColor: colors.inputBg,
-              borderColor: colors.inputBorder,
-              color: colors.textPrimary,
-            },
-          ]}
-          placeholder={strings.comments.namePlaceholder}
-          placeholderTextColor={colors.textMuted}
-          value={authorName}
-          onChangeText={setAuthorName}
-        />
-
-        <TextInput
-          style={[
-            styles.bodyInput,
-            {
-              backgroundColor: colors.inputBg,
-              borderColor: colors.inputBorder,
-              color: colors.textPrimary,
-            },
-          ]}
-          placeholder={strings.comments.inputPlaceholder}
-          placeholderTextColor={colors.textMuted}
-          value={commentText}
-          onChangeText={setCommentText}
-          multiline
-        />
-
-        <TouchableOpacity
-          onPress={handlePostComment}
-          disabled={isSubmitting || !isTokenReady || commentText.trim().length === 0}
-          style={[
-            styles.sendButton,
-            {
-              backgroundColor: colors.primary,
-              opacity: isSubmitting || !isTokenReady || commentText.trim().length === 0 ? 0.5 : 1,
-            },
-          ]}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityState={{
-            disabled: isSubmitting || !isTokenReady || commentText.trim().length === 0,
-          }}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color={colors.primaryText} size="small" />
-          ) : (
-            <Text style={[styles.sendButtonText, { color: colors.primaryText }]}>
-              {strings.comments.postButton}
-            </Text>
           )}
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -353,14 +403,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 6,
   },
-  nameInput: {
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 13,
-    marginBottom: 8,
-  },
   bodyInput: {
     borderWidth: 1,
     borderRadius: 6,
@@ -379,5 +421,20 @@ const styles = StyleSheet.create({
   sendButtonText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  signInContainer: {
+    padding: 14,
+    borderRadius: 10,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  signInText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  signInRetryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 8,
   },
 });

@@ -124,6 +124,7 @@ export const esStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Respondiendo a @${name}`,
     cancelReply: 'Cancelar respuesta',
     postFailed: 'Error al publicar el comentario',
+    signInToComment: 'Inicia sesión para comentar',
   },
   changelog: {
     overlayTitle: 'Novedades',

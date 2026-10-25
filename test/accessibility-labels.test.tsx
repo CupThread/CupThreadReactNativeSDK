@@ -231,7 +231,8 @@ function makeClient(): FeedbackClient {
 }
 
 async function renderWithProvider(
-  element: React.ReactElement
+  element: React.ReactElement,
+  options?: { commentSessionProvider?: () => string }
 ): Promise<TestRenderer.ReactTestRenderer> {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -239,6 +240,9 @@ async function renderWithProvider(
       React.createElement(CupThreadProvider, {
         client: makeClient(),
         userToken: 'usr_tok_1',
+        ...(options?.commentSessionProvider
+          ? { commentSessionProvider: options.commentSessionProvider }
+          : {}),
         children: element,
       })
     );
@@ -554,7 +558,10 @@ test(
           item: ITEM,
           visible: true,
           onClose: () => {},
-        })
+        }),
+        // The reply control renders only when a comment session source is
+        // configured; supply one so its accessibility contract is exercised.
+        { commentSessionProvider: () => 'clerk_jwt_a11y' }
       );
       assertIconOnlyPressablesAreLabeled('FeatureRequestDetail');
       assertModalIsAccessible('FeatureRequestDetail');

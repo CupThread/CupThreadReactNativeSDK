@@ -121,6 +121,7 @@ export const enStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Replying to @${name}`,
     cancelReply: 'Cancel',
     postFailed: 'Failed to post comment',
+    signInToComment: 'Sign in to comment',
   },
   changelog: {
     overlayTitle: "What's New",

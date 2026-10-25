@@ -126,6 +126,7 @@ export const frStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Réponse à @${name}`,
     cancelReply: 'Annuler la réponse',
     postFailed: 'Échec de la publication du commentaire',
+    signInToComment: 'Connectez-vous pour commenter',
   },
   changelog: {
     overlayTitle: 'Nouveautés',

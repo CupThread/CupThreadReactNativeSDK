@@ -119,6 +119,7 @@ export const koStrings: CupThreadStrings = {
     replyingTo: (name: string) => `@${name}님에게 답글`,
     cancelReply: '답글 취소',
     postFailed: '댓글 게시에 실패했습니다',
+    signInToComment: '댓글을 달려면 로그인하세요',
   },
   changelog: {
     overlayTitle: '새로운 소식',

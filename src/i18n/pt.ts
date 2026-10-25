@@ -123,6 +123,7 @@ export const ptStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Respondendo a @${name}`,
     cancelReply: 'Cancelar resposta',
     postFailed: 'Falha ao publicar comentário',
+    signInToComment: 'Entre na sua conta para comentar',
   },
   changelog: {
     overlayTitle: 'Novidades',

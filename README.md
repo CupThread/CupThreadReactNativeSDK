@@ -360,6 +360,34 @@ Notes:
 - An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
 - Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
 
+#### Comment Writes Require a Clerk Session
+
+Commenting is the one surface the anonymous end-user token does **not** unlock: `POST /api/v1/feature-requests/{id}/comments` accepts a Clerk end-user session only and answers `401 authentication_required` to everything else. The anonymous `X-User-Token` identity applies to votes, feature-request proposals, feedback, uploads, and attribute sync — not to comment writes.
+
+To enable the comment composer in the SDK's own UI, give `<CupThreadProvider>` a `commentSessionProvider` that returns the signed-in user's current Clerk session token (called at submit time, may be async, may return `null` while signed out):
+
+```tsx
+<CupThreadProvider
+  client={client}
+  commentSessionProvider={() => clerk.session?.getToken() ?? null}
+>
+  <FeatureRequestsScreen />
+</CupThreadProvider>
+```
+
+While no provider is configured (or it resolves to `null`), `CommentsSection` renders a localized "sign in to comment" notice instead of a composer that could never succeed, and a `401` rejection (for example an expired session) swaps the composer for the same notice with the draft preserved. Direct API callers get the same contract from `postComment`:
+
+```ts
+const comment = await client.postComment(
+  'fr_123',
+  { body: 'Ship it!' },
+  userToken,
+  { sessionToken: clerkSessionJwt }
+);
+```
+
+With a `sessionToken` the request carries `Authorization: Bearer …` and no `X-User-Token`; the body sends only the fields the API accepts (`body`, `parentId`, `replyToAuthorName`) — author attribution (name, avatar, replied-to author) is resolved server-side from the signed-in profile, and client-sent values are ignored.
+
 ### 6. Remote Configuration & Error Recovery
 
 `<CupThreadProvider>` fetches remote application settings and theme branding at mount. If the initial fetch fails (e.g. offline launch or flaky connection), the provider automatically retries once after a short 2-second delay. If the retry also fails, the error is surfaced via `useCupThreadContext().configError` while falling back safely to the `'system'` theme:
@@ -429,7 +457,7 @@ Every outgoing request carries `X-SDK-Version: <version>`, and `submit()` record
 | `removeVote(featureRequestId, userToken, options?)`         | `DELETE /api/v1/feature-requests/{id}/vote`               | Remove an existing upvote from a feature request (idempotent)                                                                                                             |
 | `toggleVote(featureRequestId, userToken, options?)`         | `POST /api/v1/feature-requests/{id}/vote`                 | _(Deprecated)_ Compatibility alias for `castVote`; the backend `POST` endpoint is insert-only and no longer toggles                                                       |
 | `fetchComments(featureRequestId, options?)`                 | `GET /api/v1/feature-requests/{id}/comments`              | Fetch discussion comments                                                                                                                                                 |
-| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments`             | Post a comment or reply                                                                                                                                                   |
+| `postComment(featureRequestId, draft, userToken, options?)` | `POST /api/v1/feature-requests/{id}/comments`             | Post a comment or reply — requires a Clerk session: pass `options.sessionToken` (sent as `Authorization: Bearer …`); without it the anonymous credential is rejected with `AuthenticationRequiredException` |
 | `fetchChangelog(options?)`                                  | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch the full published release-note history (follows `nextCursor` across pages)                                                                                         |
 | `listChangelog(options?)`                                   | `GET /api/v1/public/apps/{appKey}/changelog`              | Fetch one cursor-paginated page of release notes (`limit` 1–100, `cursor`; returns `entries`, `hasMore`, `nextCursor`)                                                    |
 | `prepareChangelogOverlay(options?)`                         | `GET /api/v1/public/config & changelog`                   | Prepares changelog overlay with `onlyIfUnseen` and `signal` support                                                                                                       |

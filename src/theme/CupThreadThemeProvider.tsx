@@ -136,6 +136,20 @@ export function shouldRetryAfterFailure(attempt: number, error: unknown): boolea
 }
 
 /**
+ * Host-provided source for the signed-in user's Clerk session token used by
+ * surfaces that require an authenticated session (comment writes).
+ *
+ * Return the current session token, or `null`/`undefined` when the user is
+ * signed out. May be async. It is consulted at submit time, so the host can
+ * return a fresh short-lived JWT on every call.
+ */
+export type CommentSessionProvider = () =>
+  | string
+  | null
+  | undefined
+  | Promise<string | null | undefined>;
+
+/**
  * Context value provided by {@link CupThreadProvider} to descendant SDK components.
  */
 export interface CupThreadContextValue {
@@ -163,6 +177,13 @@ export interface CupThreadContextValue {
    * to avoid attributing early requests to a throwaway identity.
    */
   isTokenReady: boolean;
+
+  /**
+   * Host-provided source for the signed-in user's Clerk session token, or
+   * `null` when the host has not configured one. Comment surfaces stay in a
+   * sign-in state while this is `null`.
+   */
+  commentSessionProvider: CommentSessionProvider | null;
 
   /**
    * Resolved theme name (e.g. `'system'`, `'midnight'`, `'ocean'`).
@@ -244,6 +265,28 @@ export interface CupThreadProviderProps {
   userToken?: string;
 
   /**
+   * Optional source for the signed-in user's Clerk session token, consulted
+   * when a comment is submitted.
+   *
+   * @remarks
+   * Comment writes always require a Clerk end-user session — the anonymous
+   * `X-User-Token` surface does not apply to that route. Provide this callback
+   * to enable the comment composer in the SDK's own UI; it is called at submit
+   * time and may return a fresh short-lived JWT on every call. When omitted
+   * (or when it returns `null`/`undefined`), comment surfaces render a
+   * localized sign-in state instead of a composer that could never succeed.
+   *
+   * @example
+   * ```tsx
+   * <CupThreadProvider
+   *   client={client}
+   *   commentSessionProvider={() => clerk.session?.getToken() ?? null}
+   * >
+   * ```
+   */
+  commentSessionProvider?: CommentSessionProvider;
+
+  /**
    * Optional visual theme override (e.g., `'light'`, `'dark'`, `'midnight'`, `'ocean'`, `'forest'`, `'sunset'`, `'candy'`).
    * Defaults to remote app configuration or `'system'`.
    */
@@ -314,6 +357,7 @@ export interface CupThreadProviderProps {
 export function CupThreadProvider({
   client,
   userToken: explicitUserToken,
+  commentSessionProvider,
   theme: explicitTheme,
   locale = 'auto',
   strings: customStrings,
@@ -471,6 +515,7 @@ export function CupThreadProvider({
       client,
       userToken: resolvedUserToken,
       isTokenReady,
+      commentSessionProvider: commentSessionProvider ?? null,
       themeName: effectiveTheme,
       colors,
       appConfig: configState.appConfig,
@@ -484,6 +529,7 @@ export function CupThreadProvider({
       client,
       resolvedUserToken,
       isTokenReady,
+      commentSessionProvider,
       effectiveTheme,
       colors,
       configState.appConfig,
@@ -648,6 +694,29 @@ export function useCupThreadTokenReadiness(): boolean {
     return true;
   }
   return ctx.isTokenReady;
+}
+
+/**
+ * Hook retrieving the host-provided Clerk session source for authenticated
+ * surfaces (comment writes).
+ *
+ * @returns The active {@link CommentSessionProvider}, or `null` when rendered
+ * outside a `<CupThreadProvider>` or when the host has not configured one.
+ * Surfaces that require a session should render a sign-in state while this is
+ * `null`.
+ *
+ * @example
+ * ```tsx
+ * function CommentGate() {
+ *   const sessionProvider = useCupThreadCommentSession();
+ *   if (!sessionProvider) return <Text>Sign in to comment</Text>;
+ *   return <CommentsSection featureRequestId="fr_123" />;
+ * }
+ * ```
+ */
+export function useCupThreadCommentSession(): CommentSessionProvider | null {
+  const ctx = useContext(CupThreadContext);
+  return ctx?.commentSessionProvider ?? null;
 }
 
 /**

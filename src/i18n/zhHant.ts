@@ -116,6 +116,7 @@ export const zhHantStrings: CupThreadStrings = {
     replyingTo: (name: string) => `回覆 @${name}`,
     cancelReply: '取消回覆',
     postFailed: '發表留言失敗',
+    signInToComment: '登入後即可留言',
   },
   changelog: {
     overlayTitle: '最新消息',

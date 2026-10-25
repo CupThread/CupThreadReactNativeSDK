@@ -123,6 +123,7 @@ export const itStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Risposta a @${name}`,
     cancelReply: 'Annulla risposta',
     postFailed: 'Impossibile pubblicare il commento',
+    signInToComment: 'Accedi per commentare',
   },
   changelog: {
     overlayTitle: 'Novità',

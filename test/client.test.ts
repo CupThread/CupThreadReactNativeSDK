@@ -568,3 +568,158 @@ test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('FeedbackClient.postComment sends only schema-accepted body fields over the anonymous credential', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: Array<{ url: string; method?: string; headers: Record<string, string>; body?: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const headerBag = new Headers(init?.headers);
+    const headers: Record<string, string> = {};
+    headerBag.forEach((value: string, key: string) => {
+      headers[key.toLowerCase()] = value;
+    });
+    captured.push({
+      url: url.toString(),
+      method: init?.method,
+      headers,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return new Response(
+      JSON.stringify({ id: 'c_1', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    // Legacy call shape: the anonymous end-user token rides X-User-Token and no
+    // Authorization header is present.
+    await client.postComment(
+      'fr_123',
+      {
+        body: '  Shape check  ',
+        authorName: 'Ignored Name',
+        authorAvatarUrl: 'https://example.com/a.png',
+        parentId: 'c_parent',
+        replyToClerkId: 'user_ignored',
+        replyToAuthorName: '  Replied Author  ',
+      },
+      'usr_tok'
+    );
+
+    assert.equal(captured.length, 1);
+    assert.equal(
+      captured[0].url,
+      'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments'
+    );
+    assert.equal(captured[0].method, 'POST');
+    assert.equal(captured[0].headers['x-user-token'], 'usr_tok');
+    assert.equal(captured[0].headers['authorization'], undefined);
+    // Contract (CreateFeatureRequestCommentInput): only body / parentId /
+    // replyToAuthorName are accepted; author-naming fields are stripped
+    // server-side and must not even be sent.
+    assert.deepEqual(captured[0].body, {
+      body: 'Shape check',
+      parentId: 'c_parent',
+      replyToAuthorName: 'Replied Author',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment with a sessionToken sends Bearer auth and no X-User-Token', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: Array<{ headers: Record<string, string>; body?: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const headerBag = new Headers(init?.headers);
+    const headers: Record<string, string> = {};
+    headerBag.forEach((value: string, key: string) => {
+      headers[key.toLowerCase()] = value;
+    });
+    captured.push({ headers, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return new Response(
+      JSON.stringify({ id: 'c_2', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    await client.postComment(
+      'fr_123',
+      { body: 'Signed comment' },
+      'usr_tok_anonymous',
+      { sessionToken: '  clerk_jwt_token  ' }
+    );
+
+    assert.equal(captured.length, 1);
+    // The Clerk session is the only accepted credential on this route: it
+    // replaces the anonymous identity rather than stacking on top of it.
+    assert.equal(captured[0].headers['authorization'], 'Bearer clerk_jwt_token');
+    assert.equal(captured[0].headers['x-user-token'], undefined);
+    assert.deepEqual(captured[0].body, { body: 'Signed comment' });
+
+    // A blank/whitespace sessionToken falls back to the anonymous credential.
+    await client.postComment('fr_123', { body: 'Fallback' }, 'usr_tok_anonymous', {
+      sessionToken: '   ',
+    });
+    assert.equal(captured.length, 2);
+    assert.equal(captured[1].headers['authorization'], undefined);
+    assert.equal(captured[1].headers['x-user-token'], 'usr_tok_anonymous');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment maps a 401 authentication_required rejection to AuthenticationRequiredException', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+
+  globalThis.fetch = (async () => {
+    requestCount++;
+    return new Response(
+      JSON.stringify({ error: 'Sign-in required', code: 'authentication_required' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    await assert.rejects(
+      () => client.postComment('fr_123', { body: 'no session' }, 'usr_tok'),
+      (err: any) => {
+        assert.equal(err.name, 'AuthenticationRequiredException');
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      () =>
+        client.postComment('fr_123', { body: 'expired session' }, 'usr_tok', {
+          sessionToken: 'expired_jwt',
+        }),
+      (err: any) => {
+        assert.equal(err.name, 'AuthenticationRequiredException');
+        return true;
+      }
+    );
+    assert.equal(requestCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
