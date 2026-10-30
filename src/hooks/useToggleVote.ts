@@ -163,7 +163,10 @@ export interface UseToggleVoteResult {
   getVoteError: (itemId: string) => Error | null;
 
   /**
-   * Clears the active vote error state.
+   * Clears the active vote error state. With an `itemId`, clears only that
+   * item's error; the global `voteError` is untouched because it reports the
+   * most recent failure, which may belong to a different row. Without an
+   * argument, clears every per-item error and the global `voteError`.
    */
   clearVoteError: (itemId?: string) => void;
 }
@@ -226,7 +229,9 @@ export function useToggleVote(
         delete next[itemId];
         return next;
       });
-      setVoteError((prev) => (prev ? null : null));
+      // The global voteError intentionally stays untouched: it reports the
+      // most recent failure, which may belong to a different row (#163).
+      // Only a new attempt or an explicit global clear resets it.
     } else {
       setErrorsByItemId({});
       setVoteError(null);

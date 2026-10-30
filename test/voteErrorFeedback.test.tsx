@@ -318,6 +318,85 @@ test('acceptance 4: per-item isolation: failure on item A is not reported as err
   assert.equal(harness.result.getVoteError('item_A'), null);
 });
 
+test('acceptance 7 (#163): clearVoteError(itemId) leaves the global voteError untouched', async () => {
+  const mockClient = {
+    toggleVote: async (id: string) => {
+      if (id === 'item_A') {
+        throw new Error('Item A failed');
+      }
+      throw new Error('Item B failed');
+    },
+  } as any;
+
+  const itemsMap: Record<string, FeatureRequestItem> = {
+    item_A: makeItem({ id: 'item_A', voteCount: 1, hasVoted: false }),
+    item_B: makeItem({ id: 'item_B', voteCount: 2, hasVoted: false }),
+  };
+
+  const applyChange = (id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    itemsMap[id] = transform(itemsMap[id]);
+  };
+
+  const harness = renderTestHook(() => useToggleVote(mockClient, 'usr_token', applyChange));
+
+  // Both rows fail; B fails last, so the global error is B's.
+  harness.result.toggleVote(itemsMap.item_A);
+  await new Promise((r) => setTimeout(r, 10));
+  harness.result.toggleVote(itemsMap.item_B);
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.ok(harness.result.getVoteError('item_A') instanceof Error);
+  assert.ok(harness.result.getVoteError('item_B') instanceof Error);
+  assert.equal(harness.result.voteError?.message, 'Item B failed');
+
+  // Clearing one row's error must not dismiss the global banner (#163).
+  harness.result.clearVoteError('item_A');
+  assert.equal(harness.result.getVoteError('item_A'), null);
+  assert.equal(harness.result.getVoteError('item_B')?.message, 'Item B failed');
+  assert.equal(
+    harness.result.voteError?.message,
+    'Item B failed',
+    'global voteError must survive a per-item clear'
+  );
+
+  // The remaining row's error is still clearable per-item.
+  harness.result.clearVoteError('item_B');
+  assert.equal(harness.result.getVoteError('item_B'), null);
+  assert.equal(
+    harness.result.voteError?.message,
+    'Item B failed',
+    'global voteError must survive every per-item clear'
+  );
+
+  // A no-argument call resets everything, including the global error.
+  harness.result.clearVoteError();
+  assert.equal(harness.result.voteError, null);
+});
+
+test('acceptance 8 (#163): clearVoteError(itemId) on an unknown id is a no-op', async () => {
+  const mockClient = {
+    toggleVote: async () => {
+      throw new Error('boom');
+    },
+  } as any;
+
+  let stateItem = makeItem({ id: 'item_x', voteCount: 1, hasVoted: false });
+  const applyChange = (_id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    stateItem = transform(stateItem);
+  };
+
+  const harness = renderTestHook(() => useToggleVote(mockClient, 'usr_token', applyChange));
+
+  harness.result.toggleVote(stateItem);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(harness.result.voteError instanceof Error);
+
+  // Clearing an unrelated item must not disturb any error state.
+  harness.result.clearVoteError('item_unknown');
+  assert.equal(harness.result.getVoteError('item_x')?.message, 'boom');
+  assert.ok(harness.result.voteError instanceof Error);
+});
+
 test(
   'VoteButton renders danger styling and error accessibility label when error is passed',
   renderTestOptions,
