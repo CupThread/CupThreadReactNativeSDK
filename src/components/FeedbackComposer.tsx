@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,12 @@ import {
   QuotaExceededException,
   TurnstileRequiredException,
 } from '../client/FeedbackException';
-import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
+import type {
+  FeedbackAttachment,
+  FeedbackDraft,
+  FeedbackSubmissionResult,
+  SubmitSuccessContext,
+} from '../types';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
 import { isSurfaceEnabled } from '../utils/featureFlags';
@@ -47,9 +52,13 @@ declare const __DEV__: boolean | undefined;
  * <FeedbackComposer
  *   visible={isOpen}
  *   onClose={() => setIsOpen(false)}
- *   onSubmitSuccess={(result) => {
+ *   onSubmitSuccess={(result, { ownsForm }) => {
  *     console.log('Submitted:', result.submissionId);
- *     setIsOpen(false);
+ *     // Only close when the settled submit still owns the visible form; a
+ *     // stale settlement may land after the user reopened the composer.
+ *     if (ownsForm) {
+ *       setIsOpen(false);
+ *     }
  *   }}
  *   initialDraft={{ title: 'Report issue' }}
  *   onPickAttachment={async () => {
@@ -75,8 +84,14 @@ export interface FeedbackComposerProps {
 
   /**
    * Callback invoked when feedback is successfully submitted to the server.
+   *
+   * The second argument reports whether the settled submit still owns the
+   * currently visible form. Hosts that close the composer inside this callback
+   * must only do so when `context.ownsForm` is `true`: a stale success can
+   * settle after the composer was closed and reopened, and closing then would
+   * dismiss a form the user just re-engaged.
    */
-  onSubmitSuccess?: (result: FeedbackSubmissionResult) => void;
+  onSubmitSuccess?: (result: FeedbackSubmissionResult, context: SubmitSuccessContext) => void;
 
   /**
    * Pre-filled feedback fields (e.g. category, metadata, or screenshot attachments).
@@ -184,15 +199,32 @@ export function FeedbackComposer({
     setIsSubmitting(fresh.isSubmitting);
     setErrorMessage(fresh.errorMessage);
     setAttachmentNotice(null);
+    // The synchronous re-entrancy guard belongs to the visible form, not to an
+    // in-flight request: releasing it here keeps a close/reopen cycle from
+    // leaving a reopened, idle-looking form that silently swallows taps.
+    isSubmittingRef.current = false;
   }, []);
 
   const prevVisibleRef = useRef(visible);
   const prevInitialDraftRef = useRef(initialDraft);
   const hasSubmittedRef = useRef(false);
+  // Counts open sessions (every `visible` false → true transition). A submit
+  // records the session it started in so a settlement that lands after a
+  // close/reopen cycle can no longer wipe the user's re-typed draft.
+  const openSessionRef = useRef(0);
+  // Counts submit attempts so a late settlement can never clobber the busy
+  // state or form of a newer submission that started after a reopen.
+  const submitSeqRef = useRef(0);
 
-  useEffect(() => {
+  // Runs as a layout effect so the session token advances (and the reopen
+  // reset lands) before the reopened form paints: a passive effect can be
+  // deferred past first paint, and a submit tapped in that window would
+  // otherwise capture the previous session and lose ownership to its stale
+  // settlement.
+  useLayoutEffect(() => {
     const wasVisible = prevVisibleRef.current;
     if (!wasVisible && visible) {
+      openSessionRef.current += 1;
       const draftChanged = initialDraft !== prevInitialDraftRef.current;
       const shouldReset = !preserveDraftOnClose || hasSubmittedRef.current || draftChanged;
       if (shouldReset) {
@@ -202,6 +234,7 @@ export function FeedbackComposer({
         setErrorMessage(null);
         setIsUploadingAttachment(false);
         setIsSubmitting(false);
+        isSubmittingRef.current = false;
       }
       prevInitialDraftRef.current = initialDraft;
     }
@@ -336,6 +369,8 @@ export function FeedbackComposer({
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setErrorMessage(null);
+    const submitId = ++submitSeqRef.current;
+    const submitSession = openSessionRef.current;
 
     try {
       const candidatePlatform = initialDraft?.platform || client.config.defaultPlatform;
@@ -360,38 +395,59 @@ export function FeedbackComposer({
 
       const effectiveToken = await resolveEffectiveUserToken(userToken);
       const result = await client.submit(draft, effectiveToken);
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
-      hasSubmittedRef.current = true;
-      resetForm(initialDraft);
+      // A settlement may land after the composer was closed and reopened (or
+      // after a newer submission started). It may only touch the shared busy
+      // state and the form when it still owns them — otherwise it would wipe
+      // the user's re-typed draft or release a newer submit's guard.
+      const isLatest = submitId === submitSeqRef.current;
+      const ownsForm = isLatest && openSessionRef.current === submitSession;
+      if (ownsForm) {
+        hasSubmittedRef.current = true;
+        resetForm(initialDraft);
+      } else if (isLatest) {
+        // Same submit, but the composer was closed and reopened: release the
+        // busy state so the reopened form stays interactive, and keep the
+        // re-typed draft.
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
 
       if (onSubmitSuccess) {
-        onSubmitSuccess(result);
+        onSubmitSuccess(result, { ownsForm });
       } else {
         Alert.alert(strings.feedbackComposer.successTitle, strings.feedbackComposer.successMessage);
-        if (onClose) onClose();
+        // Closing is only safe while the composer still shows the session this
+        // submit belongs to; otherwise it would dismiss a form the user just
+        // re-engaged.
+        if (ownsForm && onClose) onClose();
       }
     } catch (err: any) {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
-      if (err instanceof TurnstileRequiredException) {
-        // The draft stays intact so the user can retry after the host's
-        // verification flow resolves a fresh token.
-        setErrorMessage(strings.common.verificationRequired);
-      } else if (err instanceof QuotaExceededException) {
-        setErrorMessage(strings.common.quotaExceeded || err.message);
-      } else if (err instanceof InactiveSubscriptionException) {
-        setErrorMessage(strings.common.subscriptionInactive || err.message);
-      } else if (err instanceof PaymentRequiredException) {
-        setErrorMessage(err.message || strings.feedbackComposer.submitFailed);
-      } else {
-        setErrorMessage(
-          userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
-        );
+      if (submitId === submitSeqRef.current) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        if (err instanceof TurnstileRequiredException) {
+          // The draft stays intact so the user can retry after the host's
+          // verification flow resolves a fresh token.
+          setErrorMessage(strings.common.verificationRequired);
+        } else if (err instanceof QuotaExceededException) {
+          setErrorMessage(strings.common.quotaExceeded || err.message);
+        } else if (err instanceof InactiveSubscriptionException) {
+          setErrorMessage(strings.common.subscriptionInactive || err.message);
+        } else if (err instanceof PaymentRequiredException) {
+          setErrorMessage(err.message || strings.feedbackComposer.submitFailed);
+        } else {
+          setErrorMessage(
+            userFacingErrorMessage(err, strings.feedbackComposer.submitFailed, strings.common)
+          );
+        }
       }
+      // A superseded failure leaves the newer submission in charge of the form
+      // state; its own outcome will surface.
     } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      if (submitId === submitSeqRef.current) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 

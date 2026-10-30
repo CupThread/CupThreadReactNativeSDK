@@ -662,6 +662,25 @@ export interface FeedbackSubmissionResult {
 }
 
 /**
+ * Form-ownership context passed as the second argument of a composer's
+ * `onSubmitSuccess` callback.
+ *
+ * @remarks
+ * A submission can settle after the composer was closed and reopened (or after
+ * a newer submission started). Hosts that close the composer inside
+ * `onSubmitSuccess` should only do so when `ownsForm` is `true`; otherwise the
+ * stale settlement would dismiss a form the user just re-engaged.
+ */
+export interface SubmitSuccessContext {
+  /**
+   * True when the settled submission still belongs to the currently visible
+   * composer session, and it is safe for the host to close the composer or
+   * navigate away.
+   */
+  ownsForm: boolean;
+}
+
+/**
  * Built-in visual themes supported across the CupThread design system and console.
  *
  * @remarks

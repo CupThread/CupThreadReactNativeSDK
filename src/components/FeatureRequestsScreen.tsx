@@ -482,8 +482,13 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
       <FeatureRequestComposeSheet
         visible={showCompose}
         onClose={() => setShowCompose(false)}
-        onSubmitSuccess={() => {
-          setShowCompose(false);
+        onSubmitSuccess={(_result, { ownsForm }) => {
+          // A stale success can settle after the composer was closed and
+          // reopened; only dismiss it when the settled submit still owns the
+          // visible form.
+          if (ownsForm) {
+            setShowCompose(false);
+          }
           reload();
         }}
       />
