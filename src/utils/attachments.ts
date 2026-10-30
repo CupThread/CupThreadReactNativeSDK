@@ -148,17 +148,14 @@ export interface ProcessPickedAttachmentsOptions {
    * aligned with `batch`. When it throws, every item in the batch is reported
    * as failed.
    */
-  uploadBatch?: (
-    batch: readonly UploadAttachmentOptions[]
-  ) => Promise<AttachmentBatchOutcome[]>;
+  uploadBatch?: (batch: readonly UploadAttachmentOptions[]) => Promise<AttachmentBatchOutcome[]>;
 }
 
 /**
  * Per-item outcome of a batch upload, matched to the item by position.
  */
 export type AttachmentBatchOutcome =
-  | { ok: true; attachment: FeedbackAttachment }
-  | { ok: false; error: unknown };
+  { ok: true; attachment: FeedbackAttachment } | { ok: false; error: unknown };
 
 /**
  * Classification of a single picker item, extracted as a pure helper so the
@@ -351,4 +348,115 @@ export async function processPickedAttachments(
   );
 
   return { succeeded, failed, unsupported, rejected };
+}
+
+/**
+ * Seams {@link uploadInSessionChunks} needs to move a pending batch through
+ * upload sessions: one batched session call, one single-item fallback, and the
+ * per-session file ceiling.
+ */
+export interface SessionChunkedUploadSeams {
+  /**
+   * Uploads one chunk (at most {@link SessionChunkedUploadSeams.chunkSize}
+   * items) through a single upload session, resolving to one descriptor per
+   * item in chunk order. A rejection aborts the whole chunk and sends its
+   * items to the per-item seam.
+   */
+  uploadBatch: (batch: readonly UploadAttachmentOptions[]) => Promise<FeedbackAttachment[]>;
+
+  /**
+   * Uploads a single item through its own session. Only consulted when a
+   * chunk is rejected at the session level, so valid siblings keep their
+   * descriptors and each item reports its own actionable error.
+   */
+  upload: (options: UploadAttachmentOptions) => Promise<FeedbackAttachment>;
+
+  /**
+   * Maximum number of files a single upload session accepts —
+   * `MAX_UPLOAD_FILES` from `FeedbackClient`, passed in so this module keeps
+   * no client dependency.
+   */
+  chunkSize: number;
+}
+
+/**
+ * Uploads a pending batch through session-sized chunks with per-item
+ * isolation for chunk-level rejections.
+ *
+ * The client's `uploadAttachments` is a single transactional session capped at
+ * `MAX_UPLOAD_FILES` (8): a longer pick is rejected wholesale before any
+ * request, and one file the session API rejects dooms every valid sibling.
+ * This helper keeps the batching optimization but restores isolation:
+ *
+ * 1. The batch is split into chunks of {@link SessionChunkedUploadSeams.chunkSize}
+ *    and each chunk goes through one `uploadBatch` call, sequentially, so a
+ *    10-file pick succeeds as 8 + 2.
+ * 2. When a chunk of two or more items is rejected at the session level
+ *    (unsupported MIME type, prohibited extension, quota, identity, timeout),
+ *    that chunk's items are retried one by one through
+ *    {@link SessionChunkedUploadSeams.upload}, so only the genuinely bad file
+ *    fails and its valid siblings keep their descriptors instead of being
+ *    reported — and re-uploaded on retry — as casualties of their neighbor.
+ *    A lone item skips the retry: a 1-file session has no siblings to doom,
+ *    so its session-level error is already the item's own actionable error
+ *    and a retry would only re-send identical bytes to an identical session.
+ *
+ * Descriptors always come back aligned to the input: exactly one outcome per
+ * item, in pick order, so `processPickedAttachments`' positional matching
+ * stays correct across chunks. A batch seam that resolves fewer descriptors
+ * than it was given items yields a failure outcome for the shortfall instead
+ * of shifting every later position.
+ *
+ * Errors thrown by the seams themselves (e.g. a host cancellation guard) are
+ * reported per item by the fallback, never escalated past this helper —
+ * callers that must abort outright should enforce that inside their seams
+ * before any request is sent.
+ */
+export async function uploadInSessionChunks(
+  batch: readonly UploadAttachmentOptions[],
+  seams: SessionChunkedUploadSeams
+): Promise<AttachmentBatchOutcome[]> {
+  const chunkSize =
+    Number.isFinite(seams.chunkSize) && seams.chunkSize >= 1 ? Math.floor(seams.chunkSize) : 1;
+  const outcomes: AttachmentBatchOutcome[] = [];
+
+  for (let start = 0; start < batch.length; start += chunkSize) {
+    const chunk = batch.slice(start, start + chunkSize);
+    let uploaded: FeedbackAttachment[];
+    try {
+      uploaded = await seams.uploadBatch(chunk);
+    } catch (error) {
+      if (chunk.length === 1) {
+        // A single-item chunk has no siblings to doom: its session-level
+        // rejection is already the item's own actionable error, so the
+        // per-item retry would only re-send identical bytes to an identical
+        // session and fail identically.
+        outcomes.push({ ok: false, error });
+        continue;
+      }
+      // The session for this chunk was rejected wholesale. Retry its items
+      // one by one so each file gets its own session and its own actionable
+      // error, and valid siblings keep their descriptors.
+      for (const options of chunk) {
+        try {
+          outcomes.push({ ok: true, attachment: await seams.upload(options) });
+        } catch (itemError) {
+          outcomes.push({ ok: false, error: itemError });
+        }
+      }
+      continue;
+    }
+    // One outcome per chunk item, positionally — an under-delivering batch
+    // seam must not shift the positions of later chunks.
+    outcomes.push(
+      ...chunk.map((_, position): AttachmentBatchOutcome => {
+        const attachment = uploaded[position];
+        return attachment !== undefined
+          ? { ok: true, attachment }
+          : { ok: false, error: new Error('Batch upload returned no result') };
+      })
+    );
+  }
+
+  return outcomes;
 }
