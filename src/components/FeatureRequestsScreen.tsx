@@ -142,11 +142,12 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     await Promise.allSettled(tasks);
   }, [refresh, versionsError, reloadVersions]);
 
-  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
-    client,
-    userToken,
-    applyItemChange
-  );
+  const {
+    toggleVote: handleToggleVote,
+    isVoting,
+    voteError,
+    getVoteError,
+  } = useToggleVote(client, userToken, applyItemChange);
 
   const renderItem = ({ item }: { item: FeatureRequestItem }) => (
     <TouchableOpacity
@@ -210,7 +211,12 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
           {onBack && (
-            <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={strings.common.back}>
+            <TouchableOpacity
+              onPress={onBack}
+              style={styles.backBtn}
+              accessibilityRole="button"
+              accessibilityLabel={strings.common.back}
+            >
               <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>←</Text>
             </TouchableOpacity>
           )}
@@ -466,15 +472,21 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           item={selectedItem}
           visible={!!selectedItem}
           onClose={() => setSelectedItem(null)}
-          onVoteChange={(updated) => {
+          onVoteChange={(updated, meta) => {
             // A settlement can arrive after the host refreshed this request,
             // so merge only the vote fields into the current row instead of
-            // replacing it with the detail's older snapshot.
-            applyItemChange(updated.id, (current) => ({
-              ...current,
-              hasVoted: updated.hasVoted,
-              voteCount: updated.voteCount,
-            }));
+            // replacing it with the detail's older snapshot. A rollback rides
+            // the meta so the pending mutation is released instead of pinning
+            // the pre-tap row over later refreshes (#139).
+            applyItemChange(
+              updated.id,
+              (current) => ({
+                ...current,
+                hasVoted: updated.hasVoted,
+                voteCount: updated.voteCount,
+              }),
+              meta
+            );
           }}
         />
       )}

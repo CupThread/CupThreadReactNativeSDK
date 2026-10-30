@@ -3,6 +3,7 @@ import type { FeedbackClient } from '../client/FeedbackClient';
 import { RateLimitedException } from '../client/FeedbackException';
 import type { FeatureRequestItem } from '../types';
 import { SearchRateLimiter } from '../utils/searchRateLimiter';
+import type { VoteChangeMeta } from './useToggleVote';
 
 /**
  * Tuning knobs passed through to the hook's {@link SearchRateLimiter}.
@@ -186,10 +187,17 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Applies a state transform to a specific item by ID (e.g. for optimistic votes).
+   *
+   * The change is remembered as a pending mutation so concurrent page-0 loads
+   * keep the optimistic row instead of blind-overwriting it with older server
+   * data. Pass {@link VoteChangeMeta.isRollback} to mark a change that reverts
+   * a failed vote: the pending entry is released so later server snapshots
+   * win for that row again.
    */
   applyItemChange: (
     itemId: string,
-    transform: (item: FeatureRequestItem) => FeatureRequestItem
+    transform: (item: FeatureRequestItem) => FeatureRequestItem,
+    meta?: VoteChangeMeta
   ) => void;
 }
 
@@ -268,13 +276,30 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
 
   const applyItemChange = useCallback(
-    (itemId: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
+    (
+      itemId: string,
+      transform: (item: FeatureRequestItem) => FeatureRequestItem,
+      meta?: VoteChangeMeta
+    ) => {
       localRevisionRef.current += 1;
+      if (meta?.isRollback) {
+        // A rollback ends the optimistic-vote lifecycle (#139): release the
+        // item's pending mutation so later server snapshots win for the row
+        // again. Released unconditionally and outside the state updater — a
+        // search or filter change may already have removed the row from
+        // `items` while the vote was in flight, and an entry stranded in the
+        // map would override the server row once the query is restored.
+        // Keeping the side effect out of the updater also keeps it
+        // single-shot under StrictMode's double-invoked updaters.
+        pendingItemMutationsRef.current.delete(itemId);
+      }
       setItems((prev) =>
         prev.map((item) => {
           if (item.id === itemId) {
             const updated = transform(item);
-            pendingItemMutationsRef.current.set(itemId, updated);
+            if (!meta?.isRollback) {
+              pendingItemMutationsRef.current.set(itemId, updated);
+            }
             return updated;
           }
           return item;

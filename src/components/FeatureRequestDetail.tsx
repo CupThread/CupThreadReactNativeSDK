@@ -22,7 +22,7 @@ import { Avatar } from './Avatar';
 import { MarkdownText } from './MarkdownText';
 import { CommentsSection } from './CommentsSection';
 import { formatDate } from '../utils/formatters';
-import { useToggleVote, type VoteChangeApplier } from '../hooks/useToggleVote';
+import { useToggleVote, type VoteChangeApplier, type VoteChangeMeta } from '../hooks/useToggleVote';
 
 /**
  * Props for configuring the {@link FeatureRequestDetail} modal view.
@@ -54,9 +54,12 @@ export interface FeatureRequestDetailProps {
   onClose: () => void;
 
   /**
-   * Optional callback notified whenever the user toggles an upvote inside the detail view.
+   * Optional callback notified whenever the user toggles an upvote inside the
+   * detail view. The second argument marks a rollback of a failed attempt, so
+   * a host that guards in-flight optimistic rows can release the item and let
+   * later server snapshots win (#139).
    */
-  onVoteChange?: (updated: FeatureRequestItem) => void;
+  onVoteChange?: (updated: FeatureRequestItem, meta?: VoteChangeMeta) => void;
 }
 
 /**
@@ -136,17 +139,19 @@ export function FeatureRequestDetail({
     };
   }, []);
 
-  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform) => {
+  const applyVoteChange = useCallback<VoteChangeApplier>((itemId, transform, meta) => {
     // Notify the host from the snapshot rather than from the state updater:
     // React drops updates for unmounted components, so a rollback or server
     // result that settles after unmount would otherwise never reach the host
     // list. The host applier is by id, which also keeps a late result for a
-    // previously displayed item from mutating the newly shown one.
+    // previously displayed item from mutating the newly shown one. The vote
+    // meta rides along so a rollback releases the host's pending mutation for
+    // the item instead of re-pinning the pre-tap snapshot (#139).
     const known = knownItemsRef.current.get(itemId);
     if (known) {
       const next = transform(known);
       knownItemsRef.current.set(itemId, next);
-      onVoteChangeRef.current?.(next);
+      onVoteChangeRef.current?.(next, meta);
     }
 
     // Use a functional state updater like list/board so transforms land on
@@ -157,11 +162,12 @@ export function FeatureRequestDetail({
       setItem((prev) => (prev.id === itemId ? transform(prev) : prev));
     }
   }, []);
-  const { toggleVote: handleToggleVote, isVoting, voteError, getVoteError } = useToggleVote(
-    client,
-    userToken,
-    applyVoteChange
-  );
+  const {
+    toggleVote: handleToggleVote,
+    isVoting,
+    voteError,
+    getVoteError,
+  } = useToggleVote(client, userToken, applyVoteChange);
 
   return (
     <Modal
@@ -178,7 +184,9 @@ export function FeatureRequestDetail({
             accessibilityRole="button"
             accessibilityLabel={strings.common.back}
           >
-            <Text style={[styles.backText, { color: colors.primary }]}>← {strings.common.back}</Text>
+            <Text style={[styles.backText, { color: colors.primary }]}>
+              ← {strings.common.back}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -187,12 +195,8 @@ export function FeatureRequestDetail({
             <View style={styles.titleArea}>
               <Text style={[styles.title, { color: colors.textPrimary }]}>{item.title}</Text>
               <View style={styles.badgesRow}>
-                {item.columnName && (
-                  <Badge label={item.columnName} color={item.columnColor} />
-                )}
-                {item.versionLabel && (
-                  <Badge label={`v${item.versionLabel}`} variant="outline" />
-                )}
+                {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
+                {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
               </View>
             </View>
             <VoteButton
@@ -228,7 +232,12 @@ export function FeatureRequestDetail({
             </Text>
           </View>
 
-          <View style={[styles.descCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.descCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
             <MarkdownText content={item.description} />
           </View>
 
