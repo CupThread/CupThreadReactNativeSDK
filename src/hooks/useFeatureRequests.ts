@@ -529,6 +529,16 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           scheduleLoad(limiter.waitTime());
           return;
         }
+        // A page-0 for this schedule already landed (a manual refresh() or
+        // reload() completed while the deferral was pending): the deferred
+        // attempt would only re-fetch the same query against the search
+        // budget, flash `isLoading` back on, and abort an in-flight loadMore
+        // — drop it instead (#166). A manual load skipped by the limiter
+        // publishes no generation, so this guard stays open and the deferred
+        // attempt still runs (#130/#132).
+        if (loadedGenerationRef.current === page0GenerationRef.current) {
+          return;
+        }
         // Publish the controller only when the fetch starts: a manual
         // refresh()/reload() during the wait aborts `loadControllerRef` and
         // its own load skips while the limiter blocks, so assigning it early
