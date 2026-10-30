@@ -646,6 +646,189 @@ test('useFeatureRequests clamps total to loaded items when a short page arrives'
   assert.equal(harness.result.hasMore, false);
 });
 
+// ---------------------------------------------------------------------------
+// Regression coverage for #159: offset pagination must track consumed server
+// windows (not the deduped display length) and must not read drift overlap
+// as end-of-data.
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests: an overlapped short page must not clamp total or disable load-more (#159)', async () => {
+  const offsetsSeen: number[] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      offsetsSeen.push(offset);
+      if (offset === 0) {
+        return {
+          requests: [1, 2, 3, 4].map((n) => makeMockItem(`fr_${n}`, n)),
+          total: 7,
+        };
+      }
+      if (offset === 4) {
+        // Drift: rows fr_3/fr_4 slid up into this window (e.g. new rows
+        // sorted ahead), so the offset-4 page re-reads two already-displayed
+        // rows and lands short (3 < pageSize 4) before the true end. That is
+        // drift evidence, not exhaustion — total must stay 7.
+        return {
+          requests: [makeMockItem('fr_3', 3), makeMockItem('fr_4', 4), makeMockItem('fr_5', 5)],
+          total: 7,
+        };
+      }
+      return { requests: [makeMockItem('fr_6', 6), makeMockItem('fr_7', 7)], total: 7 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 4,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 4);
+  assert.equal(harness.result.total, 7);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 5, 'only the fresh row appends');
+  assert.equal(
+    harness.result.total,
+    7,
+    'an overlapped short page is drift, not exhaustion — total must not clamp'
+  );
+  assert.equal(
+    harness.result.hasMore,
+    true,
+    'load-more must stay available while the server still holds unseen rows'
+  );
+
+  // The next request must continue from the second consumed window (2 × 4),
+  // not the deduped display length (5).
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(offsetsSeen, [0, 4, 8], 'offset must advance by consumed windows');
+  assert.equal(harness.result.items.length, 7);
+  assert.equal(harness.result.total, 7, 'clean short page still clamps, to the true total');
+  assert.equal(harness.result.hasMore, false);
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    ['fr_1', 'fr_2', 'fr_3', 'fr_4', 'fr_5', 'fr_6', 'fr_7'],
+    'every row is reachable through scrolling'
+  );
+});
+
+test('useFeatureRequests: deletion drift cannot stall load-more before the true end (#159)', async () => {
+  let serverRows = ['fr_0', 'fr_1', 'fr_2', 'fr_3', 'fr_4', 'fr_5', 'fr_6', 'fr_7', 'fr_8'];
+  // Rows vanish from the not-yet-paginated tail between page fetches (the
+  // deletions only touch positions at or after the next offset, so no live
+  // row slides up into an already-consumed window). The shrinking totals
+  // must never strand the affordance before every live row is displayed.
+  const deletionSchedule: string[][] = [['fr_4'], ['fr_7']];
+  const offsetsSeen: number[] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      offsetsSeen.push(offset);
+      if (offset > 0 && deletionSchedule.length > 0) {
+        const gone = new Set(deletionSchedule.shift());
+        serverRows = serverRows.filter((id) => !gone.has(id));
+      }
+      return {
+        requests: serverRows.slice(offset, offset + 3).map((id, i) => makeMockItem(id, i)),
+        total: serverRows.length,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 3,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 3);
+  assert.equal(harness.result.hasMore, true);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.hasMore, true, 'the load-more affordance must stay alive mid-drift');
+
+  // The clean short page at the drifted end is the real end-of-data: it
+  // clamps, every still-live row is on screen, and load-more retires exactly
+  // there.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(offsetsSeen, [0, 3, 6], 'offset must advance by consumed windows');
+  const displayed = new Set(harness.result.items.map((i) => i.id));
+  for (const id of serverRows) {
+    assert.ok(displayed.has(id), `live row ${id} must be reachable through scrolling`);
+  }
+  assert.equal(harness.result.hasMore, false, 'load-more retires only at the true end');
+
+  // The retired affordance must not fire another request.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(offsetsSeen.length, 3, 'no refetch once the drifted end is reached');
+});
+
+test('useFeatureRequests: pagination offset tracks consumed windows, not the deduped display length (#159)', async () => {
+  const offsetsSeen: number[] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      offsetsSeen.push(offset);
+      if (offset === 0) {
+        return {
+          requests: [makeMockItem('fr_a1', 1), makeMockItem('fr_a2', 2), makeMockItem('fr_a3', 3)],
+          total: 6,
+        };
+      }
+      if (offset === 3) {
+        // A full page (3 === pageSize) whose head re-reads displayed rows:
+        // the display list grows by one, but a whole window was consumed.
+        return {
+          requests: [makeMockItem('fr_a2', 2), makeMockItem('fr_a3', 3), makeMockItem('fr_a4', 4)],
+          total: 6,
+        };
+      }
+      return { requests: [makeMockItem('fr_a5', 5), makeMockItem('fr_a6', 6)], total: 6 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 3,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 3);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 4, 'only the fresh row appends to the display');
+
+  // The next request must skip past both consumed windows (offset 6), not
+  // rewind to the deduped display length (4) and re-read fr_a4.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    offsetsSeen,
+    [0, 3, 6],
+    'offset must be pages consumed × pageSize, never the deduped length'
+  );
+  assert.equal(harness.result.items.length, 6);
+  assert.equal(harness.result.total, 6);
+  assert.equal(harness.result.hasMore, false);
+});
+
 test('useFeatureRequests applyItemChange transforms specific item without refetching', async () => {
   const mockClient = {
     fetchFeatureRequests: async () => ({
