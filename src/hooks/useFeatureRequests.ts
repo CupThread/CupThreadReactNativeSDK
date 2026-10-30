@@ -432,15 +432,35 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        // A superseded (aborted) load must not reset the flags a newer
+        // refresh()/reload() just raised: the abort rejection lands on a
+        // microtask after the newer operation raised them, and an
+        // unconditional reset would clear them while the newer page-0 request
+        // is still on the wire, snapping RefreshControl shut mid-refresh
+        // (#137). Mirrors useChangelogEntries and useAsyncData.
+        if (!signal?.aborted) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
     [client, userToken, isTokenReady, versionId, query, pageSize, enabled, enterSearchCooldown]
   );
 
   useEffect(() => {
-    if (!isTokenReady || !enabled) return;
+    if (!isTokenReady || !enabled) {
+      // The previous effect's cleanup aborted only its own deferred
+      // controller; a manual refresh()/reload() may have replaced
+      // `loadControllerRef` with a live request the cleanup never saw. Abort
+      // it here so the hook cannot disable with a page-0 still on the wire,
+      // then clear the flags its guarded `finally` would otherwise skip
+      // (#137).
+      loadControllerRef.current?.abort();
+      loadMoreControllerRef.current?.abort();
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
 
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
@@ -460,9 +480,21 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       // superseded schedule (e.g. B scheduled, then back to A) can paginate
       // again instead of staying blocked forever.
       loadedGenerationRef.current = page0GenerationRef.current;
+      // The aborts above already killed any in-flight page-0 (including a
+      // refresh), and its guarded `finally` skips the reset for an aborted
+      // signal, while this branch schedules nothing that would reset them —
+      // clear the flags here so they cannot stick true (#137).
+      setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
+    // The replacement this effect schedules is a plain load, never a
+    // refresh: release the refresh flag now so a refresh aborted above
+    // cannot keep RefreshControl spinning through the debounce wait and the
+    // replacement's flight. The aborted load's guarded `finally` will not
+    // clear it, so this is the only chance to hand the flag back (#137).
+    setIsRefreshing(false);
     // A new page-0 is on its way (possibly deferred behind the debounce /
     // search-spacing window): until it lands, the on-screen list belongs to
     // the previous query/filter and loadMore must refuse to paginate it.
@@ -621,6 +653,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
+    // reload() supersedes any in-flight refresh with a plain load: release
+    // the refresh flag now, or isRefreshing would stay raised for the whole
+    // reload. The superseded refresh's guarded `finally` skips the reset, so
+    // this is the only chance to clear it (#137).
+    setIsRefreshing(false);
     setIsLoading(true);
     await loadPage0(controller.signal);
   }, [isTokenReady, enabled, loadPage0]);

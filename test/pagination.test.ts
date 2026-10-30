@@ -144,7 +144,18 @@ function renderTestHook<T>(hookFn: () => T) {
       return currentResult;
     },
     rerender() {
-      executeRender();
+      // Hold the same `isExecuting` guard `scheduleRender` holds: real React
+      // never re-enters a render mid-effect-flush — a setState during the
+      // flush is deferred to a follow-up render after the commit. Without
+      // the guard, a setState inside an effect body re-entered executeRender
+      // synchronously, ran the effect against not-yet-committed deps, and
+      // orphaned the cleanup of the inner run (#137).
+      isExecuting = true;
+      try {
+        executeRender();
+      } finally {
+        isExecuting = false;
+      }
     },
     unmount() {
       for (const e of effects) {
@@ -313,7 +324,11 @@ test('fetchFeatureRequests percent-encodes a real token on the query transport',
   );
   assert.equal(rawUrl.includes('userToken=tok en&x'), false, 'raw token is never written verbatim');
   assert.equal(parsed.searchParams.get('userToken'), token);
-  assert.equal(headers['X-User-Token'], undefined, 'query transport keeps the token out of headers');
+  assert.equal(
+    headers['X-User-Token'],
+    undefined,
+    'query transport keeps the token out of headers'
+  );
 });
 
 test('fetchFeatureRequests sends a real token in both places on the both transport', async () => {
@@ -1220,4 +1235,319 @@ test('useFeatureRequests: regression guards for refresh() and reload() loading f
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(harness.result.isLoading, false);
   assert.equal(harness.result.isRefreshing, false);
+});
+
+// ---------------------------------------------------------------------------
+// Regression coverage for #137: an aborted page-0 load must not reset the
+// loading flags of the newer in-flight refresh/reload.
+// ---------------------------------------------------------------------------
+
+type DeferredPage0 = { resolve: (v: any) => void; reject: (e: any) => void };
+
+/**
+ * Mock client whose in-flight page-0 fetches reject with an `AbortError` the
+ * moment their signal aborts — mirroring what a real `fetch` does. That
+ * rejection microtask is what races the newer refresh()/reload() and used to
+ * wipe the flags it had just raised.
+ */
+function makeAbortablePage0Client() {
+  const pending: DeferredPage0[] = [];
+  const abortError = () => Object.assign(new Error('Aborted'), { name: 'AbortError' });
+  const client = {
+    fetchFeatureRequests: (opts: { signal?: AbortSignal }) =>
+      new Promise((resolve, reject) => {
+        if (opts.signal?.aborted) {
+          reject(abortError());
+          return;
+        }
+        opts.signal?.addEventListener('abort', () => reject(abortError()), { once: true });
+        pending.push({ resolve, reject });
+      }),
+  } as unknown as FeedbackClient;
+  return {
+    client,
+    count: () => pending.length,
+    latest: (): DeferredPage0 => pending[pending.length - 1],
+  };
+}
+
+test('useFeatureRequests: refresh() over an in-flight load keeps isRefreshing raised for its whole flight (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  const harness = renderTestHook(() => useFeatureRequests({ client, userToken: 'test_token' }));
+
+  // The initial listing is on the wire.
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 1);
+  assert.equal(harness.result.isLoading, true);
+
+  // Pull to refresh while the initial load is still in flight: refresh()
+  // aborts it synchronously and raises isRefreshing before the aborted
+  // load's rejection microtask gets a chance to wipe the flags.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(
+    harness.result.isRefreshing,
+    true,
+    'isRefreshing must stay raised for the whole refresh flight'
+  );
+  assert.equal(
+    harness.result.isLoading,
+    true,
+    'isLoading must reflect the page-0 request still in flight'
+  );
+
+  latest().resolve({ requests: [makeMockItem('fr_refresh', 1)], total: 1 });
+  await refreshPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_refresh');
+});
+
+test('useFeatureRequests: reload() over an in-flight load keeps isLoading raised until it settles (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  const harness = renderTestHook(() => useFeatureRequests({ client, userToken: 'test_token' }));
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 1);
+  assert.equal(harness.result.isLoading, true);
+
+  const reloadPromise = harness.result.reload();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(
+    harness.result.isLoading,
+    true,
+    'isLoading must stay raised for the whole reload flight'
+  );
+  assert.equal(harness.result.isRefreshing, false, 'reload() must not raise isRefreshing');
+
+  latest().resolve({ requests: [makeMockItem('fr_reload', 1)], total: 1 });
+  await reloadPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_reload');
+});
+
+test('useFeatureRequests: flags clear when the hook is disabled while a load is in flight (#137)', async () => {
+  const { client } = makeAbortablePage0Client();
+  let enabled = true;
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client, userToken: 'test_token', enabled })
+  );
+
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, true);
+
+  // Disabling mid-flight aborts the in-flight load; the guarded `finally`
+  // skips its reset, so the disabled branch must clear the flags instead.
+  enabled = false;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(
+    harness.result.isLoading,
+    false,
+    'isLoading must not stick after the hook is disabled'
+  );
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stick after the hook is disabled'
+  );
+
+  // Re-enabling must start a fresh page-0 load.
+  enabled = true;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, true);
+});
+
+test('useFeatureRequests: returning to an already-loaded search key clears flags left by the aborted in-flight search (#137)', async () => {
+  const { client, latest } = makeAbortablePage0Client();
+  let query = '';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client,
+      userToken: 'test_token',
+      query,
+      debounceMs: 5,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // Initial listing lands.
+  await new Promise((r) => setTimeout(r, 15));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_list');
+
+  // Search "dup" lands and is remembered as the loaded key.
+  query = 'dup';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 20));
+  latest().resolve({ requests: [makeMockItem('fr_dup', 2)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_dup');
+
+  // A different query goes out and stays in flight.
+  query = 'other';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoading, true, 'the "other" search must be in flight');
+
+  // Back to "dup": the dedupe early-return fires, the cleanup aborts the
+  // in-flight "other" search, and the flags must end up clear.
+  query = 'dup';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(
+    harness.result.isLoading,
+    false,
+    'isLoading must not stick after the dedupe early-return'
+  );
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.items[0].id, 'fr_dup', 'the remembered "dup" results stay on screen');
+});
+
+test('useFeatureRequests: a query change aborting an in-flight refresh leaves no stuck isRefreshing (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  let query = '';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client,
+      userToken: 'test_token',
+      query,
+      debounceMs: 5,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // Initial listing lands.
+  await new Promise((r) => setTimeout(r, 15));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+
+  // Pull to refresh and let it reach the wire.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(harness.result.isRefreshing, true);
+
+  // Change the query mid-refresh: the effect cleanup aborts the refresh and
+  // schedules a new page-0 load.
+  query = 'next';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(count(), 3);
+  await refreshPromise;
+
+  // The refresh flag must be released as soon as the query change supersedes
+  // the refresh — not only once the replacement settles (#137).
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must release when the query change supersedes the refresh'
+  );
+  assert.equal(
+    harness.result.isLoading,
+    true,
+    'the replacement search is on the wire and owns isLoading'
+  );
+
+  // The scheduled search settles: no flag may remain stuck.
+  latest().resolve({ requests: [makeMockItem('fr_next', 2)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not remain stuck after the scheduled load settles'
+  );
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_next');
+});
+
+test('useFeatureRequests: reload() over an in-flight refresh releases isRefreshing for the whole reload (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  const harness = renderTestHook(() => useFeatureRequests({ client, userToken: 'test_token' }));
+
+  // Initial listing lands so the hook is idle.
+  await new Promise((r) => setTimeout(r, 10));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+
+  // Pull to refresh and let it reach the wire.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(harness.result.isRefreshing, true);
+
+  // A reload (e.g. ErrorState retry) mid-refresh supersedes it with a plain
+  // load: isRefreshing must drop at once instead of riding through reload().
+  const reloadPromise = harness.result.reload();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 3);
+  await refreshPromise;
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stay raised for the superseding reload'
+  );
+  assert.equal(harness.result.isLoading, true, 'isLoading must reflect the reload in flight');
+
+  latest().resolve({ requests: [makeMockItem('fr_reload', 1)], total: 1 });
+  await reloadPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_reload');
+});
+
+test('useFeatureRequests: disabling mid-flight aborts a manual refresh still on the wire (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  let enabled = true;
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client, userToken: 'test_token', enabled })
+  );
+
+  // Initial listing lands so the hook is idle.
+  await new Promise((r) => setTimeout(r, 10));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+
+  // A manual refresh reaches the wire: its controller now replaces the one
+  // the effect cleanup would abort, so only the disabled branch can stop it.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(harness.result.isRefreshing, true);
+
+  // Disable mid-refresh: the manual request must be aborted and its flags
+  // cleared, not left in flight with the flags cleared behind it.
+  enabled = false;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  await refreshPromise;
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stick after the hook is disabled mid-refresh'
+  );
+  assert.equal(
+    harness.result.isLoading,
+    false,
+    'isLoading must not stick after the hook is disabled mid-refresh'
+  );
+
+  // Re-enabling must start a fresh page-0 load.
+  enabled = true;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, true);
+  latest().resolve({ requests: [makeMockItem('fr_back', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.items[0].id, 'fr_back');
 });
