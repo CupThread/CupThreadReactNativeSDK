@@ -272,6 +272,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const page0GenerationRef = useRef<number>(0);
   const loadedGenerationRef = useRef<number>(-1);
 
+  // Offset bookkeeping for loadMore (#159): the next `offset` to request for
+  // the current query context, advanced by the *requested* window (pageSize)
+  // per consumed page. Deriving the offset from the deduped display length
+  // instead let any dedupe shrinkage rewind the request window, re-reading
+  // rows that were already consumed — which then surfaced as a short
+  // overlapped page and clamped `total` into a false end-of-data that
+  // permanently disabled load-more. A single slot is enough: the search-key
+  // dedupe only early-returns for the key remembered by the last successful
+  // page-0, and any successful page-0 in between re-loads that key's window
+  // from scratch, so the slot is always the right offset when loadMore runs.
+  const nextOffsetRef = useRef<number>(0);
+
   const localRevisionRef = useRef<number>(0);
   const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
 
@@ -414,6 +426,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // The on-screen list now belongs to this fetch's generation, so a
         // blocked loadMore may paginate again.
         loadedGenerationRef.current = generation;
+        // The page-0 window [0, pageSize) is consumed; the next pagination
+        // request starts at the second window, whatever the deduped display
+        // length of this page turns out to be (#159).
+        nextOffsetRef.current = pageSize;
         // A fresh page-0 result replaces the whole list, so a load-more
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
@@ -547,6 +563,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // splice the response into the old list's rows (#140).
     if (page0GenerationRef.current !== loadedGenerationRef.current) return;
     if (itemsRef.current.length >= totalRef.current) return;
+    // Residual gap (#159): the feature-requests endpoint is offset-based
+    // over a mutable sort, so rows that slide *into* already-consumed windows
+    // (new approvals, vote reorders) can still be skipped — unfixable from
+    // the client. The window-based offset and the overlap-aware end-of-data
+    // check below remove the self-inflicted half (rewound offsets, false
+    // exhaustion); a keyset cursor on the API would remove the rest, mirroring
+    // the changelog endpoint's cursor pagination.
 
     const trimmedQuery = query?.trim() || '';
     const isSearch = trimmedQuery.length > 0;
@@ -567,7 +590,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         limiter.markFetched();
       }
 
-      const currentOffset = itemsRef.current.length;
+      // Request the next unconsumed server window (#159), not the deduped
+      // display length: display shrinkage from dedupe would rewind the
+      // offset and re-read rows this list has already shown.
+      const currentOffset = nextOffsetRef.current;
       const res = await client.fetchFeatureRequests({
         userToken,
         versionId: versionId || undefined,
@@ -589,11 +615,23 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       const prevItems = itemsRef.current;
       const existingIds = new Set(prevItems.map((i) => i.id));
       const freshCount = newItems.filter((i) => !existingIds.has(i.id)).length;
-      if (newItems.length === 0 || newItems.length < pageSize) {
-        // Short page: server has no more data, so clamp total in case the
-        // reported count drifted (e.g. items deleted between page fetches).
+      // A short page is end-of-data only when it carried no overlap (#159):
+      // under the server's mutable sort, rows can slide between consumed
+      // windows so an offset page legitimately re-reads already-seen rows
+      // before the true end. Clamping total on such an overlapped short page
+      // disabled load-more while unseen rows remained. An empty page stays a
+      // clean end-of-data signal (the API returns nothing past the end).
+      const overlapped = freshCount < newItems.length;
+      if (newItems.length === 0 || (newItems.length < pageSize && !overlapped)) {
+        // Short page with nothing already seen: server has no more data, so
+        // clamp total in case the reported count drifted (e.g. items deleted
+        // between page fetches).
         nextTotal = Math.min(nextTotal, prevItems.length + freshCount);
       }
+      // Advance by the requested window, not the fresh count: dedupe
+      // shrinkage must never rewind the offset, or the next page re-reads
+      // consumed rows and reads as drift (#159).
+      nextOffsetRef.current = currentOffset + pageSize;
 
       setItems((prev) => {
         const ids = new Set(prev.map((i) => i.id));

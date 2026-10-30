@@ -1001,6 +1001,10 @@ test('429 from loadMore engages the cooldown and suppresses subsequent page-0 se
       client,
       userToken: 'tok',
       query: 'widget',
+      // Match the stub's 2-row first page so the loadMore offset assertion
+      // tracks the consumed request window rather than the default page
+      // size (#159).
+      pageSize: 2,
       searchRateLimiterOptions: SUPPRESS_LIMITER,
     };
 
