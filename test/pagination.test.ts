@@ -25,7 +25,7 @@ import {
 // Hook test harness with proper dependency caching and effect lifecycle
 // ---------------------------------------------------------------------------
 
-function renderTestHook<T>(hookFn: () => T) {
+function renderTestHook<T>(hookFn: () => T, onRender?: (result: T) => void) {
   const states: any[] = [];
   const stateSetters: Array<(val: any) => void> = [];
   const refs: any[] = [];
@@ -107,6 +107,7 @@ function renderTestHook<T>(hookFn: () => T) {
       currentResult = hookFn();
     } finally {
       reactInternals.ReactCurrentDispatcher.current = prev;
+      onRender?.(currentResult);
     }
 
     const effectsToRun = pendingEffects;
@@ -1759,15 +1760,21 @@ test('useFeatureRequests: a manual refresh that landed during the deferral stops
   } as unknown as FeedbackClient;
 
   const query = 'alpha';
-  const harness = renderTestHook(() =>
-    useFeatureRequests({
-      client: mockClient,
-      userToken: 'test_token',
-      query,
-      pageSize: 50,
-      debounceMs: 250,
-      searchRateLimiterOptions: { minSpacingMs: 0 },
-    })
+  // Record every committed render's isLoading: `harness.result` keeps only
+  // the latest render, and a transient flash can set and clear the flag
+  // between two wall-clock samples.
+  const renderedLoadingStates: boolean[] = [];
+  const harness = renderTestHook(
+    () =>
+      useFeatureRequests({
+        client: mockClient,
+        userToken: 'test_token',
+        query,
+        pageSize: 50,
+        debounceMs: 250,
+        searchRateLimiterOptions: { minSpacingMs: 0 },
+      }),
+    (result) => renderedLoadingStates.push(result.isLoading)
   );
 
   // The initial load defers behind the debounce window (isLoading starts
@@ -1782,18 +1789,22 @@ test('useFeatureRequests: a manual refresh that landed during the deferral stops
   assert.equal(harness.result.isLoading, false);
   assert.equal(harness.result.items.length, 50);
 
-  // Sample across the stale timer's fire boundary: it must be a silent no-op.
-  let sawLoadingFlash = false;
+  // From here on, no render may ever raise isLoading again — sample across
+  // the stale timer's fire boundary: it must be a silent no-op.
+  renderedLoadingStates.length = 0;
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 10));
-    if (harness.result.isLoading) sawLoadingFlash = true;
   }
   assert.deepEqual(
     requestsMade,
     [{ q: 'alpha', offset: 0 }],
     'the stale deferred page-0 must not re-fetch the already-loaded query'
   );
-  assert.equal(sawLoadingFlash, false, 'isLoading must stay down across the stale timer fire');
+  assert.equal(
+    renderedLoadingStates.includes(true),
+    false,
+    'isLoading must stay down across the stale timer fire'
+  );
   assert.equal(harness.result.items.length, 50);
   assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
 });
