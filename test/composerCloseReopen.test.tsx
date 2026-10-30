@@ -329,6 +329,73 @@ test(
   }
 );
 
+function collectText(renderer: TestRenderer.ReactTestRenderer): string[] {
+  return renderer.root
+    .findAll((node) => (node.type as any) === 'Text')
+    .map((node) => {
+      const children = node.props.children;
+      if (Array.isArray(children)) return children.join('');
+      return String(children ?? '');
+    })
+    .filter((text: string) => text.length > 0);
+}
+
+test(
+  'FeedbackComposer: a stale failure settling after close/reopen still surfaces its error and keeps the reopened form interactive',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<FeedbackSubmissionResult>();
+    const harness = createFeedbackHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ submissionId: 'sub_2', forwardedToGithub: false }),
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+      assert.equal(harness.submitCalls.length, 1);
+
+      harness.setVisible(false);
+      await flush();
+      harness.setVisible(true);
+      await flush();
+
+      // The stale attempt fails while the user is back on a fresh form. The
+      // failure must still be surfaced — suppressing it would silently lose
+      // the user's report — and the reopened form must stay interactive.
+      firstSubmit.reject(new Error('network down'));
+      await flush();
+
+      assert.ok(
+        collectText(harness.renderer).some((text) => text.includes('Failed to submit feedback')),
+        'the stale failure still surfaces its error in the reopened form'
+      );
+      assert.equal(
+        Boolean(harness.findSubmitButton().props.disabled),
+        false,
+        'the reopened form stays interactive after the stale failure'
+      );
+
+      // The user can immediately retry from the reopened form.
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+      assert.equal(harness.submitCalls.length, 2, 'the reopened form can resubmit');
+
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.reject(new Error('network down'));
+    }
+  }
+);
+
 test(
   'FeedbackComposer: after a mid-flight close/reopen, a synchronous double-tap still submits exactly once',
   renderTestOptions,
