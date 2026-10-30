@@ -170,3 +170,21 @@ test('resolveAllowedPlatform never returns a wire-invalid value', () => {
   // first allowed (wire-safe) entry.
   assert.equal(resolveAllowedPlatform('web', ['ios'], 'android'), 'ios');
 });
+
+test('resolveAllowedPlatform matches allowlist entries against their coerced wire values', () => {
+  const warnings: string[] = [];
+  const origWarn = console.warn;
+  console.warn = (...args: any[]) => warnings.push(args.join(' '));
+  try {
+    // A raw 'web' entry in the allowlist means 'universal': a 'web' request
+    // must match it instead of falling back to 'ios'.
+    assert.equal(resolveAllowedPlatform('web', ['ios', 'web'], 'android'), 'universal');
+    assert.equal(warnings.length, 0, 'a matched request must not warn');
+
+    // Same for the fallback when no request is present.
+    assert.equal(resolveAllowedPlatform(undefined, ['ios', 'web'], 'web'), 'universal');
+    assert.equal(warnings.length, 0, 'a matched fallback must not warn');
+  } finally {
+    console.warn = origWarn;
+  }
+});

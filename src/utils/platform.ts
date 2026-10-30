@@ -86,21 +86,24 @@ export function resolveAllowedPlatform(
 ): FeedbackPlatform {
   const wireRequested = requested ? toWirePlatform(requested) : undefined;
   const wireFallback = toWirePlatform(fallback);
+  // Normalize the allowlist too: a host entry of 'web' means the same target
+  // as 'universal', so membership must be tested against coerced values.
+  const wireAllowed = (allowed ?? []).map(toWirePlatform);
 
   if (!allowed || allowed.length === 0) {
     return wireRequested ?? wireFallback;
   }
 
-  if (wireRequested && allowed.includes(wireRequested)) {
+  if (wireRequested && wireAllowed.includes(wireRequested)) {
     return wireRequested;
   }
 
   // If requested is absent and fallback is in the allowlist, honor fallback without warning.
-  if (!wireRequested && allowed.includes(wireFallback)) {
+  if (!wireRequested && wireAllowed.includes(wireFallback)) {
     return wireFallback;
   }
 
-  const resolved = toWirePlatform(allowed[0] ?? fallback);
+  const resolved = wireAllowed[0] ?? wireFallback;
   if (isDev()) {
     const requestedStr = requested ? `"${requested}"` : `default/fallback "${fallback}"`;
     console.warn(
