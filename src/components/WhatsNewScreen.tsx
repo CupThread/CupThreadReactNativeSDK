@@ -28,6 +28,7 @@ import { ErrorState } from './ErrorState';
 import { formatDate } from '../utils/formatters';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import { userFacingErrorMessage } from '../utils/errors';
+import { isValidEmail } from '../utils/email';
 
 export interface WhatsNewScreenProps {
   onBack?: () => void;
@@ -65,7 +66,10 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
 
   const handleSubscribe = async () => {
     if (isSubscribingRef.current) return;
-    if (!email.trim() || !email.includes('@')) {
+    // Same shared shape check as the feedback composer: an unusable address
+    // would subscribe a contact the digest can never reach.
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
       Alert.alert(strings.common.error, strings.common.invalidEmail);
       return;
     }
@@ -75,7 +79,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
     try {
       setIsSubscribing(true);
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      await client.subscribeToChangelog(email.trim(), effectiveToken);
+      await client.subscribeToChangelog(trimmedEmail, effectiveToken);
       setIsSubscribed(true);
       Alert.alert(strings.changelog.subscribedSuccess);
     } catch (err: any) {

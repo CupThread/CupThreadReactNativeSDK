@@ -34,6 +34,7 @@ import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
 import { uploadErrorMessage, userFacingErrorMessage } from '../utils/errors';
 import { resolveAllowedPlatform, getRuntimePlatform } from '../utils/platform';
+import { isValidEmail } from '../utils/email';
 
 /** React Native global; `undefined` outside dev bundles (tests, web previews). */
 declare const __DEV__: boolean | undefined;
@@ -323,6 +324,14 @@ export function FeedbackComposer({
       setErrorMessage(strings.feedbackComposer.descriptionMinLengthError);
       return;
     }
+    // The email is optional, but a non-empty one must be usable — a malformed
+    // address would be accepted server-side and silently kill the reporter
+    // reply loop, so reject it before the network call and keep the draft.
+    const trimmedEmail = reporterEmail.trim();
+    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+      setErrorMessage(strings.common.invalidEmail);
+      return;
+    }
 
     isSubmittingRef.current = true;
     setIsSubmitting(true);
@@ -340,7 +349,7 @@ export function FeedbackComposer({
         title: title.trim(),
         description: description.trim(),
         reporterName: reporterName.trim() || undefined,
-        reporterEmail: reporterEmail.trim() || undefined,
+        reporterEmail: trimmedEmail || undefined,
         platform: resolvedPlatform,
         appVersion: initialDraft?.appVersion,
         buildNumber: initialDraft?.buildNumber,
