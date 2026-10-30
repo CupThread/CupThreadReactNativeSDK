@@ -25,7 +25,12 @@ import {
   QuotaExceededException,
   TurnstileRequiredException,
 } from '../client/FeedbackException';
-import type { FeedbackAttachment, FeedbackDraft, FeedbackSubmissionResult } from '../types';
+import type {
+  FeedbackAttachment,
+  FeedbackDraft,
+  FeedbackSubmissionResult,
+  SubmitSuccessContext,
+} from '../types';
 import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments } from '../utils/attachments';
 import { isSurfaceEnabled } from '../utils/featureFlags';
@@ -47,9 +52,13 @@ declare const __DEV__: boolean | undefined;
  * <FeedbackComposer
  *   visible={isOpen}
  *   onClose={() => setIsOpen(false)}
- *   onSubmitSuccess={(result) => {
+ *   onSubmitSuccess={(result, { ownsForm }) => {
  *     console.log('Submitted:', result.submissionId);
- *     setIsOpen(false);
+ *     // Only close when the settled submit still owns the visible form; a
+ *     // stale settlement may land after the user reopened the composer.
+ *     if (ownsForm) {
+ *       setIsOpen(false);
+ *     }
  *   }}
  *   initialDraft={{ title: 'Report issue' }}
  *   onPickAttachment={async () => {
@@ -75,8 +84,14 @@ export interface FeedbackComposerProps {
 
   /**
    * Callback invoked when feedback is successfully submitted to the server.
+   *
+   * The second argument reports whether the settled submit still owns the
+   * currently visible form. Hosts that close the composer inside this callback
+   * must only do so when `context.ownsForm` is `true`: a stale success can
+   * settle after the composer was closed and reopened, and closing then would
+   * dismiss a form the user just re-engaged.
    */
-  onSubmitSuccess?: (result: FeedbackSubmissionResult) => void;
+  onSubmitSuccess?: (result: FeedbackSubmissionResult, context: SubmitSuccessContext) => void;
 
   /**
    * Pre-filled feedback fields (e.g. category, metadata, or screenshot attachments).
@@ -393,7 +408,7 @@ export function FeedbackComposer({
       }
 
       if (onSubmitSuccess) {
-        onSubmitSuccess(result);
+        onSubmitSuccess(result, { ownsForm });
       } else {
         Alert.alert(strings.feedbackComposer.successTitle, strings.feedbackComposer.successMessage);
         // Closing is only safe while the composer still shows the session this

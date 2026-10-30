@@ -25,7 +25,11 @@ import {
   QuotaExceededException,
   TurnstileRequiredException,
 } from '../client/FeedbackException';
-import type { FeatureRequestDraft, FeatureRequestSubmissionResult } from '../types';
+import type {
+  FeatureRequestDraft,
+  FeatureRequestSubmissionResult,
+  SubmitSuccessContext,
+} from '../types';
 import { isSurfaceEnabled } from '../utils/featureFlags';
 import {
   createFeatureRequestComposeState,
@@ -52,8 +56,14 @@ export interface FeatureRequestComposeSheetProps {
 
   /**
    * Callback invoked when the feature request is successfully submitted to the server.
+   *
+   * The second argument reports whether the settled submit still owns the
+   * currently visible sheet. Hosts that close the sheet inside this callback
+   * must only do so when `context.ownsForm` is `true`: a stale success can
+   * settle after the sheet was closed and reopened, and closing then would
+   * dismiss a form the user just re-engaged.
    */
-  onSubmitSuccess?: (result: FeatureRequestSubmissionResult) => void;
+  onSubmitSuccess?: (result: FeatureRequestSubmissionResult, context: SubmitSuccessContext) => void;
 
   /**
    * Pre-filled initial values for the feature request proposal.
@@ -230,7 +240,7 @@ export function FeatureRequestComposeSheet({
       }
 
       if (onSubmitSuccess) {
-        onSubmitSuccess(result);
+        onSubmitSuccess(result, { ownsForm });
       } else if (ownsForm && onClose) {
         // Closing is only safe while the composer still shows the session this
         // submit belongs to; otherwise it would dismiss a form the user just

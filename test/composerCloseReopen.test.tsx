@@ -8,6 +8,7 @@ import type {
   FeedbackDraft,
   FeedbackSubmissionResult,
   FeatureRequestDraft,
+  SubmitSuccessContext,
 } from '../src/types';
 import type { PickedAttachmentInput } from '../src/utils/attachments';
 
@@ -95,7 +96,7 @@ function createFeedbackHarness(options: {
   submitFactory: (callNumber: number) => Promise<FeedbackSubmissionResult>;
   initialDraft?: Partial<FeedbackDraft>;
   onPickAttachment?: () => Promise<PickedAttachmentInput>;
-  onSubmitSuccess?: (result: FeedbackSubmissionResult) => void;
+  onSubmitSuccess?: (result: FeedbackSubmissionResult, context: SubmitSuccessContext) => void;
   onClose?: () => void;
 }): FeedbackHarness {
   const client = new FeedbackClient({
@@ -448,6 +449,74 @@ test(
   }
 );
 
+test(
+  'FeedbackComposer: a host that closes inside onSubmitSuccess is not closed by a stale success',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<FeedbackSubmissionResult>();
+    const successContexts: boolean[] = [];
+    let closeCalls = 0;
+    const harness = createFeedbackHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ submissionId: 'sub_2', forwardedToGithub: false }),
+      // Mirror a typical host: close the composer only while the settled
+      // submit still owns the visible form.
+      onSubmitSuccess: (_result, { ownsForm }) => {
+        successContexts.push(ownsForm);
+        if (ownsForm) {
+          closeCalls++;
+        }
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+      assert.equal(harness.submitCalls.length, 1);
+
+      harness.setVisible(false);
+      await flush();
+      harness.setVisible(true);
+      await flush();
+
+      // The stale submit settles in the reopened session: the host must learn
+      // it no longer owns the form and must not dismiss it.
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+      await flush();
+
+      assert.deepEqual(
+        successContexts,
+        [false],
+        'stale success reports ownsForm: false to the host'
+      );
+      assert.equal(closeCalls, 0, 'the host must not close the reopened composer');
+
+      // Submitting the reopened form reports ownership so the host can close.
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      assert.deepEqual(
+        successContexts,
+        [false, true],
+        'a success that owns the form reports ownsForm: true'
+      );
+      assert.equal(closeCalls, 1, 'the host closes on the owned success');
+
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+    }
+  }
+);
+
 interface SheetHarness {
   renderer: TestRenderer.ReactTestRenderer;
   submitCalls: FeatureRequestDraft[];
@@ -459,7 +528,7 @@ interface SheetHarness {
 function createSheetHarness(options: {
   submitFactory: (callNumber: number) => Promise<any>;
   initialDraft?: Partial<FeatureRequestDraft>;
-  onSubmitSuccess?: (result: any) => void;
+  onSubmitSuccess?: (result: any, context: SubmitSuccessContext) => void;
   onClose?: () => void;
 }): SheetHarness {
   const client = new FeedbackClient({
@@ -640,6 +709,71 @@ test(
       assert.equal(closeCalls, 0, 'stale success must not close the reopened sheet');
       assert.equal(successCalls, 1, 'onSubmitSuccess fires once for the settled submission');
       assert.equal(alertCalls.length, 1, 'success alert still informs the user');
+
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+    }
+  }
+);
+
+test(
+  'FeatureRequestComposeSheet: a host that closes inside onSubmitSuccess is not closed by a stale success',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<{ featureRequestId: string; pending: boolean }>();
+    const successContexts: boolean[] = [];
+    let closeCalls = 0;
+    const harness = createSheetHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ featureRequestId: 'fr_2', pending: false }),
+      // Mirror FeatureRequestsScreen: close the sheet on success, but only
+      // while the settled submit still owns the visible form.
+      onSubmitSuccess: (_result, { ownsForm }) => {
+        successContexts.push(ownsForm);
+        if (ownsForm) {
+          closeCalls++;
+        }
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+      assert.equal(harness.submitCalls.length, 1);
+
+      harness.setVisible(false);
+      await flush();
+      harness.setVisible(true);
+      await flush();
+
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+      await flush();
+
+      assert.deepEqual(
+        successContexts,
+        [false],
+        'stale success reports ownsForm: false to the host'
+      );
+      assert.equal(closeCalls, 0, 'the host must not close the reopened sheet');
+
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      assert.deepEqual(
+        successContexts,
+        [false, true],
+        'a success that owns the form reports ownsForm: true'
+      );
+      assert.equal(closeCalls, 1, 'the host closes on the owned success');
 
       harness.renderer.unmount();
     } finally {
