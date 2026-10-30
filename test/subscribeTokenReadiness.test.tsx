@@ -281,3 +281,68 @@ test(
     renderer.unmount();
   }
 );
+
+test(
+  'WhatsNewScreen rejects a malformed-but-has-@ address with the localized invalidEmail alert',
+  renderTestOptions,
+  async () => {
+    UserTokenStore.configure(makeSeededAdapter('tok_seeded'));
+    const { subscribeCalls } = installFetch();
+    touchableOpacityProps.length = 0;
+    textInputProps.length = 0;
+    alertCalls.length = 0;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={makeClient()} userToken="tok_ctx">
+          <WhatsNewScreen />
+        </CupThreadProvider>
+      );
+    });
+
+    const getButton = () => touchableOpacityProps[touchableOpacityProps.length - 1];
+
+    // Wait out the token bootstrap so the readiness gate cannot masquerade as
+    // the validation rejection under test.
+    let ready = false;
+    for (let i = 0; i < 30 && !ready; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      await act(async () => {});
+      ready = getButton().disabled === false;
+    }
+    assert.equal(ready, true, 'the button must be enabled before the validation assertions');
+
+    // `john@gmail` passes the old bare `includes('@')` gate but is a contact
+    // the digest can never reach; the shared shape check must stop it before
+    // the network call.
+    textInputProps[textInputProps.length - 1]?.onChangeText?.('john@gmail');
+    await act(async () => {});
+    await act(async () => {
+      await getButton().onPress?.();
+    });
+
+    assert.equal(
+      subscribeCalls.length,
+      0,
+      'a malformed address must never reach POST /changelog/subscribe'
+    );
+    assert.equal(alertCalls.length, 1, 'the rejection must be reported through an alert');
+    assert.equal(alertCalls[0][0], 'Error');
+    assert.equal(
+      alertCalls[0][1],
+      'Please enter a valid email address.',
+      'the alert must carry the localized invalidEmail message'
+    );
+
+    // The well-formed address still subscribes through the same handler.
+    textInputProps[textInputProps.length - 1]?.onChangeText?.('john@gmail.com');
+    await act(async () => {});
+    await act(async () => {
+      await getButton().onPress?.();
+    });
+    assert.equal(subscribeCalls.length, 1, 'a valid address must subscribe as before');
+    assert.deepEqual(JSON.parse(subscribeCalls[0].body as string), { email: 'john@gmail.com' });
+    renderer.unmount();
+  }
+);
