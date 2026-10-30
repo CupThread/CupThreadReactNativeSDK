@@ -92,10 +92,26 @@ if (supportsModuleMocks) {
         return React.createElement(
           React.Fragment,
           null,
-          ListHeaderComponent ? React.createElement(ListHeaderComponent) : null,
+          // VirtualizedList renders a component prop via
+          // `React.createElement(...)` but an element prop verbatim
+          // (`isValidElement`); mirror that branch so both header shapes
+          // reach the tree exactly like the real list renders them.
+          ListHeaderComponent
+            ? React.isValidElement(ListHeaderComponent)
+              ? ListHeaderComponent
+              : React.createElement(ListHeaderComponent)
+            : null,
           ...items,
-          ListFooterComponent ? React.createElement(ListFooterComponent) : null,
-          ListEmptyComponent ? React.createElement(ListEmptyComponent) : null
+          ListFooterComponent
+            ? React.isValidElement(ListFooterComponent)
+              ? ListFooterComponent
+              : React.createElement(ListFooterComponent)
+            : null,
+          ListEmptyComponent
+            ? React.isValidElement(ListEmptyComponent)
+              ? ListEmptyComponent
+              : React.createElement(ListEmptyComponent)
+            : null
         );
       },
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },

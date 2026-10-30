@@ -35,6 +35,106 @@ export interface WhatsNewScreenProps {
   headerTitle?: string;
 }
 
+interface SubscribeCardProps {
+  email: string;
+  setEmail: (value: string) => void;
+  isSubscribed: boolean;
+  isSubscribing: boolean;
+  isTokenReady: boolean;
+  onSubscribe: () => void;
+}
+
+/**
+ * The email-subscribe card shown above the changelog list.
+ *
+ * Lives at module scope on purpose: the screen hands it to `FlatList` as an
+ * element (`ListHeaderComponent={<SubscribeCard … />}`), which
+ * `VirtualizedList` renders verbatim (`React.isValidElement(prop) ? prop :
+ * React.createElement(prop)`). A component prop built from a fresh closure —
+ * the previous shape — became a new element type on every screen render, so
+ * React unmounted and remounted the whole header per keystroke, destroying
+ * the `TextInput` and dropping the keyboard after every typed character.
+ * With a stable component type the subtree reconciles in place and typing
+ * keeps focus.
+ */
+function SubscribeCard({
+  email,
+  setEmail,
+  isSubscribed,
+  isSubscribing,
+  isTokenReady,
+  onSubscribe,
+}: SubscribeCardProps) {
+  const { colors } = useCupThreadTheme();
+  const strings = useCupThreadStrings();
+  return (
+    <View
+      style={[
+        styles.subscribeCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+        },
+      ]}
+    >
+      <Text style={[styles.subscribeTitle, { color: colors.textPrimary }]}>
+        {strings.changelog.subscribeTitle}
+      </Text>
+      <Text style={[styles.subscribeSubtitle, { color: colors.textSecondary }]}>
+        {strings.changelog.subscribeSubtitle}
+      </Text>
+
+      {isSubscribed ? (
+        <View style={[styles.subscribedBanner, { backgroundColor: colors.chipBg }]}>
+          <Text style={[styles.subscribedText, { color: colors.primary }]}>
+            ✓ {strings.changelog.subscribedSuccess} ({email})
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.subscribeForm}>
+          <TextInput
+            style={[
+              styles.subscribeInput,
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: colors.inputBorder,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder={strings.changelog.emailPlaceholder}
+            placeholderTextColor={colors.textMuted}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            onPress={onSubscribe}
+            disabled={isSubscribing || !isTokenReady}
+            style={[
+              styles.subscribeButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: isSubscribing || !isTokenReady ? 0.6 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isSubscribing || !isTokenReady }}
+          >
+            {isSubscribing ? (
+              <ActivityIndicator color={colors.primaryText} size="small" />
+            ) : (
+              <Text style={[styles.subscribeButtonText, { color: colors.primaryText }]}>
+                {strings.changelog.subscribeButton}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
@@ -93,71 +193,19 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
     }
   };
 
-  const renderHeader = () => (
-    <View
-      style={[
-        styles.subscribeCard,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.cardBorder,
-        },
-      ]}
-    >
-      <Text style={[styles.subscribeTitle, { color: colors.textPrimary }]}>
-        {strings.changelog.subscribeTitle}
-      </Text>
-      <Text style={[styles.subscribeSubtitle, { color: colors.textSecondary }]}>
-        {strings.changelog.subscribeSubtitle}
-      </Text>
-
-      {isSubscribed ? (
-        <View style={[styles.subscribedBanner, { backgroundColor: colors.chipBg }]}>
-          <Text style={[styles.subscribedText, { color: colors.primary }]}>
-            ✓ {strings.changelog.subscribedSuccess} ({email})
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.subscribeForm}>
-          <TextInput
-            style={[
-              styles.subscribeInput,
-              {
-                backgroundColor: colors.inputBg,
-                borderColor: colors.inputBorder,
-                color: colors.textPrimary,
-              },
-            ]}
-            placeholder={strings.changelog.emailPlaceholder}
-            placeholderTextColor={colors.textMuted}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <TouchableOpacity
-            onPress={handleSubscribe}
-            disabled={isSubscribing || !isTokenReady}
-            style={[
-              styles.subscribeButton,
-              {
-                backgroundColor: colors.primary,
-                opacity: isSubscribing || !isTokenReady ? 0.6 : 1,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: isSubscribing || !isTokenReady }}
-          >
-            {isSubscribing ? (
-              <ActivityIndicator color={colors.primaryText} size="small" />
-            ) : (
-              <Text style={[styles.subscribeButtonText, { color: colors.primaryText }]}>
-                {strings.changelog.subscribeButton}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
+  // The header is an element, not a component reference: VirtualizedList
+  // instantiates a component prop with `React.createElement(ListHeaderComponent)`,
+  // so a closure identity would remount the header (and its TextInput) on
+  // every keystroke. See {@link SubscribeCard}.
+  const subscribeHeader = (
+    <SubscribeCard
+      email={email}
+      setEmail={setEmail}
+      isSubscribed={isSubscribed}
+      isSubscribing={isSubscribing}
+      isTokenReady={isTokenReady}
+      onSubscribe={handleSubscribe}
+    />
   );
 
   if (!isLoadingConfig && !isEnabled) {
@@ -217,7 +265,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
         <FlatList
           data={entries}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={subscribeHeader}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
