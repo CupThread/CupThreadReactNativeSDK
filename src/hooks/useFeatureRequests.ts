@@ -432,15 +432,31 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        // A superseded (aborted) load must not reset the flags a newer
+        // refresh()/reload() just raised: the abort rejection lands on a
+        // microtask after the newer operation raised them, and an
+        // unconditional reset would clear them while the newer page-0 request
+        // is still on the wire, snapping RefreshControl shut mid-refresh
+        // (#137). Mirrors useChangelogEntries and useAsyncData.
+        if (!signal?.aborted) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
     [client, userToken, isTokenReady, versionId, query, pageSize, enabled, enterSearchCooldown]
   );
 
   useEffect(() => {
-    if (!isTokenReady || !enabled) return;
+    if (!isTokenReady || !enabled) {
+      // When the hook is disabled mid-flight, the previous effect's cleanup
+      // has already aborted the in-flight page-0, and its guarded `finally`
+      // skips the reset for an aborted signal — clear the flags here so they
+      // cannot stick true (#137).
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
 
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
@@ -460,6 +476,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       // superseded schedule (e.g. B scheduled, then back to A) can paginate
       // again instead of staying blocked forever.
       loadedGenerationRef.current = page0GenerationRef.current;
+      // The aborts above already killed any in-flight page-0 (including a
+      // refresh), and its guarded `finally` skips the reset for an aborted
+      // signal, while this branch schedules nothing that would reset them —
+      // clear the flags here so they cannot stick true (#137).
+      setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
