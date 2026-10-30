@@ -144,7 +144,18 @@ function renderTestHook<T>(hookFn: () => T) {
       return currentResult;
     },
     rerender() {
-      executeRender();
+      // Hold the same `isExecuting` guard `scheduleRender` holds: real React
+      // never re-enters a render mid-effect-flush — a setState during the
+      // flush is deferred to a follow-up render after the commit. Without
+      // the guard, a setState inside an effect body re-entered executeRender
+      // synchronously, ran the effect against not-yet-committed deps, and
+      // orphaned the cleanup of the inner run (#137).
+      isExecuting = true;
+      try {
+        executeRender();
+      } finally {
+        isExecuting = false;
+      }
     },
     unmount() {
       for (const e of effects) {
@@ -1433,6 +1444,19 @@ test('useFeatureRequests: a query change aborting an in-flight refresh leaves no
   assert.equal(count(), 3);
   await refreshPromise;
 
+  // The refresh flag must be released as soon as the query change supersedes
+  // the refresh — not only once the replacement settles (#137).
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must release when the query change supersedes the refresh'
+  );
+  assert.equal(
+    harness.result.isLoading,
+    true,
+    'the replacement search is on the wire and owns isLoading'
+  );
+
   // The scheduled search settles: no flag may remain stuck.
   latest().resolve({ requests: [makeMockItem('fr_next', 2)], total: 1 });
   await new Promise((r) => setTimeout(r, 10));
@@ -1443,4 +1467,87 @@ test('useFeatureRequests: a query change aborting an in-flight refresh leaves no
   );
   assert.equal(harness.result.isLoading, false);
   assert.equal(harness.result.items[0].id, 'fr_next');
+});
+
+test('useFeatureRequests: reload() over an in-flight refresh releases isRefreshing for the whole reload (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  const harness = renderTestHook(() => useFeatureRequests({ client, userToken: 'test_token' }));
+
+  // Initial listing lands so the hook is idle.
+  await new Promise((r) => setTimeout(r, 10));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, false);
+
+  // Pull to refresh and let it reach the wire.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(harness.result.isRefreshing, true);
+
+  // A reload (e.g. ErrorState retry) mid-refresh supersedes it with a plain
+  // load: isRefreshing must drop at once instead of riding through reload().
+  const reloadPromise = harness.result.reload();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 3);
+  await refreshPromise;
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stay raised for the superseding reload'
+  );
+  assert.equal(harness.result.isLoading, true, 'isLoading must reflect the reload in flight');
+
+  latest().resolve({ requests: [makeMockItem('fr_reload', 1)], total: 1 });
+  await reloadPromise;
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items[0].id, 'fr_reload');
+});
+
+test('useFeatureRequests: disabling mid-flight aborts a manual refresh still on the wire (#137)', async () => {
+  const { client, latest, count } = makeAbortablePage0Client();
+  let enabled = true;
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client, userToken: 'test_token', enabled })
+  );
+
+  // Initial listing lands so the hook is idle.
+  await new Promise((r) => setTimeout(r, 10));
+  latest().resolve({ requests: [makeMockItem('fr_list', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+
+  // A manual refresh reaches the wire: its controller now replaces the one
+  // the effect cleanup would abort, so only the disabled branch can stop it.
+  const refreshPromise = harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(count(), 2);
+  assert.equal(harness.result.isRefreshing, true);
+
+  // Disable mid-refresh: the manual request must be aborted and its flags
+  // cleared, not left in flight with the flags cleared behind it.
+  enabled = false;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  await refreshPromise;
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stick after the hook is disabled mid-refresh'
+  );
+  assert.equal(
+    harness.result.isLoading,
+    false,
+    'isLoading must not stick after the hook is disabled mid-refresh'
+  );
+
+  // Re-enabling must start a fresh page-0 load.
+  enabled = true;
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.isLoading, true);
+  latest().resolve({ requests: [makeMockItem('fr_back', 1)], total: 1 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.items[0].id, 'fr_back');
 });

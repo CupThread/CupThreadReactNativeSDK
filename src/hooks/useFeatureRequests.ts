@@ -449,10 +449,14 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
   useEffect(() => {
     if (!isTokenReady || !enabled) {
-      // When the hook is disabled mid-flight, the previous effect's cleanup
-      // has already aborted the in-flight page-0, and its guarded `finally`
-      // skips the reset for an aborted signal — clear the flags here so they
-      // cannot stick true (#137).
+      // The previous effect's cleanup aborted only its own deferred
+      // controller; a manual refresh()/reload() may have replaced
+      // `loadControllerRef` with a live request the cleanup never saw. Abort
+      // it here so the hook cannot disable with a page-0 still on the wire,
+      // then clear the flags its guarded `finally` would otherwise skip
+      // (#137).
+      loadControllerRef.current?.abort();
+      loadMoreControllerRef.current?.abort();
       setIsLoading(false);
       setIsRefreshing(false);
       return;
@@ -485,6 +489,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       return;
     }
 
+    // The replacement this effect schedules is a plain load, never a
+    // refresh: release the refresh flag now so a refresh aborted above
+    // cannot keep RefreshControl spinning through the debounce wait and the
+    // replacement's flight. The aborted load's guarded `finally` will not
+    // clear it, so this is the only chance to hand the flag back (#137).
+    setIsRefreshing(false);
     // A new page-0 is on its way (possibly deferred behind the debounce /
     // search-spacing window): until it lands, the on-screen list belongs to
     // the previous query/filter and loadMore must refuse to paginate it.
@@ -643,6 +653,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
+    // reload() supersedes any in-flight refresh with a plain load: release
+    // the refresh flag now, or isRefreshing would stay raised for the whole
+    // reload. The superseded refresh's guarded `finally` skips the reset, so
+    // this is the only chance to clear it (#137).
+    setIsRefreshing(false);
     setIsLoading(true);
     await loadPage0(controller.signal);
   }, [isTokenReady, enabled, loadPage0]);
