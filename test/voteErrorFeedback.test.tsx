@@ -368,8 +368,16 @@ test('acceptance 7 (#163): clearVoteError(itemId) leaves the global voteError un
     'global voteError must survive every per-item clear'
   );
 
+  // Repopulate one item error so the no-argument clear must provably reset
+  // both states, not just the global one.
+  harness.result.toggleVote(itemsMap.item_B);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(harness.result.getVoteError('item_B')?.message, 'Item B failed');
+  assert.equal(harness.result.voteError?.message, 'Item B failed');
+
   // A no-argument call resets everything, including the global error.
   harness.result.clearVoteError();
+  assert.equal(harness.result.getVoteError('item_B'), null);
   assert.equal(harness.result.voteError, null);
 });
 
@@ -393,6 +401,12 @@ test('acceptance 8 (#163): clearVoteError(itemId) on an unknown id is a no-op', 
 
   // Clearing an unrelated item must not disturb any error state.
   harness.result.clearVoteError('item_unknown');
+  assert.equal(harness.result.getVoteError('item_x')?.message, 'boom');
+  assert.ok(harness.result.voteError instanceof Error);
+
+  // A supplied-but-unknown empty id is also a per-item no-op, not a global
+  // clear: only the undefined argument resets everything.
+  harness.result.clearVoteError('');
   assert.equal(harness.result.getVoteError('item_x')?.message, 'boom');
   assert.ok(harness.result.voteError instanceof Error);
 });

@@ -222,7 +222,10 @@ export function useToggleVote(
   const [errorsByItemId, setErrorsByItemId] = useState<Record<string, Error>>({});
 
   const clearVoteError = useCallback((itemId?: string) => {
-    if (itemId) {
+    // Any supplied id — including an empty string — takes the per-item branch:
+    // an id the hook never recorded is simply absent from the map, so the
+    // call is a no-op and neither error state changes.
+    if (itemId !== undefined) {
       setErrorsByItemId((prev) => {
         if (!prev[itemId]) return prev;
         const next = { ...prev };
