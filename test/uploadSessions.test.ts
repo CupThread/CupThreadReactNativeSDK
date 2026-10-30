@@ -604,6 +604,60 @@ test('uploadAttachments stops at a rejected slot and keeps earlier results usabl
   }
 });
 
+test('a per-item retry after an aborted batch opens its own fresh session', async () => {
+  const mocked = installUploadFetch({
+    slots: ['upl_1', 'upl_2'],
+    slotResponder: (uploadId) => {
+      if (uploadId === 'upl_2') {
+        return new Response(JSON.stringify({ error: 'bad type', code: 'unsupported_mime_type' }), {
+          status: 415,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ uploadId, sizeBytes: 10, stored: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+  });
+
+  try {
+    const client = makeClient();
+
+    // The composer's fallback seam relies on this: when a batched session is
+    // rejected mid-batch, retrying the item through uploadAttachment must open
+    // a new session instead of inheriting the aborted one.
+    await assert.rejects(
+      client.uploadAttachments([makeBlobOptions('one.png'), makeBlobOptions('two.png')], {
+        userToken: USER_TOKEN,
+      }),
+      (err: any) => err instanceof UploadRejectedException
+    );
+
+    const sessionCountBefore = mocked.requests.filter((request) =>
+      request.url.endsWith('/api/v1/uploads/sessions')
+    ).length;
+
+    const retried = await client.uploadAttachment({
+      ...makeBlobOptions('two.png'),
+      userToken: USER_TOKEN,
+    });
+
+    const sessionRequests = mocked.requests.filter((request) =>
+      request.url.endsWith('/api/v1/uploads/sessions')
+    );
+    assert.equal(
+      sessionRequests.length,
+      sessionCountBefore + 1,
+      'the retry must open a new session, not reuse the aborted one'
+    );
+    assert.equal(JSON.parse(sessionRequests[1].body as string).files.length, 1);
+    assert.equal(retried.uploadId, 'upl_1', 'the retried file lands in its own session slot');
+  } finally {
+    mocked.restore();
+  }
+});
+
 test('uploadAttachments rejects a file larger than its reserved slot before sending bytes', async () => {
   const originalFetch = globalThis.fetch;
   let slotCalls = 0;

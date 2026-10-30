@@ -32,7 +32,8 @@ import type {
   SubmitSuccessContext,
 } from '../types';
 import { formatFileSize } from '../utils/formatters';
-import { processPickedAttachments } from '../utils/attachments';
+import { processPickedAttachments, uploadInSessionChunks } from '../utils/attachments';
+import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../client/FeedbackClient';
 import { isSurfaceEnabled } from '../utils/featureFlags';
 import { createFeedbackComposerState, resetFeedbackComposerState } from '../utils/composer-state';
 import { resolveEffectiveUserToken } from '../utils/userToken';
@@ -267,25 +268,35 @@ export function FeedbackComposer({
 
       const items = Array.isArray(picked) ? picked : [picked];
       const effectiveToken = await resolveEffectiveUserToken(userToken);
+      const uploadSingle = async (options: UploadAttachmentOptions) => {
+        if (isSubmittingRef.current || isSubmitting) {
+          throw new Error('Upload cancelled: submission in progress');
+        }
+        return client.uploadAttachment({ ...options, userToken: effectiveToken });
+      };
       const { succeeded, failed, unsupported, rejected } = await processPickedAttachments(items, {
         // Reject known-oversized picks before an upload session is reserved, so
         // a doomed file never spends the upload timeout budget or user data.
         maxBytes: appConfig?.maxAttachmentBytes,
-        upload: async (options) => {
-          if (isSubmittingRef.current || isSubmitting) {
-            throw new Error('Upload cancelled: submission in progress');
-          }
-          return client.uploadAttachment({ ...options, userToken: effectiveToken });
-        },
+        upload: uploadSingle,
         // One session for the whole pick: a multi-file pick reserves every slot
-        // in a single round trip instead of spending the upload budget per file.
-        uploadBatch: async (batch) => {
-          if (isSubmittingRef.current || isSubmitting) {
-            throw new Error('Upload cancelled: submission in progress');
-          }
-          const uploaded = await client.uploadAttachments(batch, { userToken: effectiveToken });
-          return uploaded.map((attachment) => ({ ok: true as const, attachment }));
-        },
+        // in a single round trip instead of spending the upload budget per
+        // file. Sessions hold at most MAX_UPLOAD_FILES files, so a larger pick
+        // is chunked (10 files → 8 + 2), and a chunk the session API rejects
+        // wholesale (one bad MIME type or extension, quota, identity) falls
+        // back to the per-item seam — a single doomed file can no longer void
+        // its valid siblings.
+        uploadBatch: async (batch) =>
+          uploadInSessionChunks(batch, {
+            chunkSize: MAX_UPLOAD_FILES,
+            uploadBatch: async (chunk) => {
+              if (isSubmittingRef.current || isSubmitting) {
+                throw new Error('Upload cancelled: submission in progress');
+              }
+              return client.uploadAttachments(chunk, { userToken: effectiveToken });
+            },
+            upload: uploadSingle,
+          }),
       });
 
       if (isSubmittingRef.current || isSubmitting) {

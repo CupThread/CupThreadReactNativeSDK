@@ -5,10 +5,11 @@ import {
   classifyPickedAttachment,
   isFeedbackAttachment,
   isUploadAttachmentOptions,
+  uploadInSessionChunks,
   type PickedAttachment,
 } from '../src/utils/attachments';
 import type { FeedbackAttachment } from '../src/types';
-import type { UploadAttachmentOptions } from '../src/client/FeedbackClient';
+import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../src/client/FeedbackClient';
 
 function makeDescriptor(name: string): FeedbackAttachment {
   return {
@@ -355,17 +356,14 @@ test('uploadBatch reports per-item failures without discarding the successes', a
 test('a session-level uploadBatch failure marks every pending item failed', async () => {
   const doomed = [makeUploadOptions('a'), makeUploadOptions('b')];
 
-  const result = await processPickedAttachments(
-    [doomed[0], makeDescriptor('kept'), doomed[1]],
-    {
-      upload: async () => {
-        throw new Error('unused');
-      },
-      uploadBatch: async () => {
-        throw new Error('daily quota exceeded');
-      },
-    }
-  );
+  const result = await processPickedAttachments([doomed[0], makeDescriptor('kept'), doomed[1]], {
+    upload: async () => {
+      throw new Error('unused');
+    },
+    uploadBatch: async () => {
+      throw new Error('daily quota exceeded');
+    },
+  });
 
   assert.deepEqual(result.succeeded, [makeDescriptor('kept')], 'descriptors still pass through');
   assert.equal(result.failed.length, 2);
@@ -430,7 +428,11 @@ test('maxBytes leaves items without a declared size to the upload seam', async (
     maxBytes: 1,
   });
 
-  assert.deepEqual(uploadedNames, ['unknown-size.png'], 'the seam owns size validation for unsized items');
+  assert.deepEqual(
+    uploadedNames,
+    ['unknown-size.png'],
+    'the seam owns size validation for unsized items'
+  );
   assert.equal(result.rejected.length, 0);
 });
 
@@ -504,4 +506,187 @@ test('maxBytes ignores non-positive and non-finite limits', async () => {
     assert.deepEqual(uploadedNames, ['huge.png'], `maxBytes=${String(maxBytes)} is not a limit`);
     assert.equal(result.rejected.length, 0);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #138 — session chunking with per-item isolation at the batch seam
+// ---------------------------------------------------------------------------
+
+function makeOutcomeNames(outcomes: Awaited<ReturnType<typeof uploadInSessionChunks>>): string[] {
+  return outcomes.map((outcome) =>
+    outcome.ok ? (outcome.attachment.filename ?? '<unnamed>') : `<failed>`
+  );
+}
+
+test('uploadInSessionChunks splits a 10-file pick into 8 + 2 sessions in pick order', async () => {
+  const items = Array.from({ length: 10 }, (_, index) => makeUploadOptions(`file${index}`));
+  const chunkSizes: number[] = [];
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async (chunk) => {
+      chunkSizes.push(chunk.length);
+      return chunk.map((options) => makeDescriptor(options.filename.replace('.png', '')));
+    },
+    upload: async () => {
+      throw new Error('the per-item seam must not run when every chunk session succeeds');
+    },
+  });
+
+  assert.deepEqual(chunkSizes, [8, 2], 'a 10-file pick opens one 8-file and one 2-file session');
+  assert.equal(outcomes.length, 10);
+  assert.deepEqual(
+    makeOutcomeNames(outcomes),
+    items.map((options) => options.filename),
+    'descriptors come back one per item, in pick order'
+  );
+});
+
+test('uploadInSessionChunks retries a session-rejected chunk item by item', async () => {
+  const items = [makeUploadOptions('good1'), makeUploadOptions('bad'), makeUploadOptions('good2')];
+  const sessionRejection = new Error('executable_extension_prohibited');
+  let batchCalls = 0;
+  const perItem: string[] = [];
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      batchCalls += 1;
+      throw sessionRejection;
+    },
+    upload: async (options) => {
+      perItem.push(options.filename);
+      if (options.filename === 'bad.png') {
+        throw new Error('unsupported_mime_type');
+      }
+      return makeDescriptor(options.filename.replace('.png', ''));
+    },
+  });
+
+  assert.equal(batchCalls, 1, 'one chunk-level attempt before the fallback');
+  assert.deepEqual(
+    perItem,
+    ['good1.png', 'bad.png', 'good2.png'],
+    'every chunk item is retried through its own session'
+  );
+  assert.deepEqual(makeOutcomeNames(outcomes), ['good1.png', '<failed>', 'good2.png']);
+  assert.equal(outcomes[1].ok, false);
+  assert.equal(
+    outcomes[1].ok ? null : (outcomes[1].error as Error).message,
+    'unsupported_mime_type',
+    'the bad file carries its own actionable error, not the chunk-level one'
+  );
+});
+
+test('uploadInSessionChunks keeps earlier chunk descriptors when a later chunk fails everywhere', async () => {
+  const items = Array.from({ length: 10 }, (_, index) => makeUploadOptions(`file${index}`));
+  const quota = new Error('daily quota exceeded');
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async (chunk) => {
+      if (chunk.length === 2) {
+        throw quota;
+      }
+      return chunk.map((options) => makeDescriptor(options.filename.replace('.png', '')));
+    },
+    upload: async () => {
+      throw quota;
+    },
+  });
+
+  const succeeded = outcomes.filter((outcome) => outcome.ok);
+  const failed = outcomes.filter((outcome) => !outcome.ok);
+  assert.equal(succeeded.length, 8, 'the first chunk stays committed');
+  assert.deepEqual(
+    succeeded.map((outcome) => (outcome.ok ? outcome.attachment.filename : '')),
+    items.slice(0, 8).map((options) => options.filename),
+    'earlier descriptors keep pick order, so a host retry never re-uploads them'
+  );
+  assert.deepEqual(
+    failed.map((outcome) => (!outcome.ok ? outcome.error : '')),
+    [quota, quota]
+  );
+});
+
+test('uploadInSessionChunks reports every item failed when quota rejects both seams', async () => {
+  const items = [makeUploadOptions('a'), makeUploadOptions('b'), makeUploadOptions('c')];
+  const quota = new Error('daily quota exceeded');
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw quota;
+    },
+    upload: async () => {
+      throw quota;
+    },
+  });
+
+  assert.equal(outcomes.length, 3);
+  assert.ok(
+    outcomes.every((outcome) => !outcome.ok && outcome.error === quota),
+    'a genuine session-level failure that also fails per item fails every item'
+  );
+});
+
+test('uploadInSessionChunks keeps later chunks aligned when a batch seam under-delivers', async () => {
+  const items = Array.from({ length: 10 }, (_, index) => makeUploadOptions(`file${index}`));
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async (chunk) => {
+      // Contract violation: the 8-item chunk resolves one descriptor short.
+      const descriptors = chunk.map((options) =>
+        makeDescriptor(options.filename.replace('.png', ''))
+      );
+      return chunk.length === 8 ? descriptors.slice(0, 7) : descriptors;
+    },
+    upload: async () => {
+      throw new Error('unused');
+    },
+  });
+
+  assert.deepEqual(
+    makeOutcomeNames(outcomes),
+    [
+      'file0.png',
+      'file1.png',
+      'file2.png',
+      'file3.png',
+      'file4.png',
+      'file5.png',
+      'file6.png',
+      '<failed>',
+      'file8.png',
+      'file9.png',
+    ],
+    'the shortfall fails its own position; chunk 2 must not shift into it'
+  );
+  assert.equal(
+    outcomes[7].ok ? null : (outcomes[7].error as Error).message,
+    'Batch upload returned no result'
+  );
+});
+
+test('uploadInSessionChunks fails a lone item from its session error without retrying it', async () => {
+  const items = [makeUploadOptions('single')];
+  const sessionRejection = new Error('file_too_large');
+  let perItemCalls = 0;
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw sessionRejection;
+    },
+    upload: async () => {
+      perItemCalls += 1;
+      return makeDescriptor('single');
+    },
+  });
+
+  assert.equal(perItemCalls, 0, 'a 1-file session has no siblings; a retry is a duplicate request');
+  assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].ok, false);
+  assert.equal(outcomes[0].ok ? null : outcomes[0].error, sessionRejection);
 });
