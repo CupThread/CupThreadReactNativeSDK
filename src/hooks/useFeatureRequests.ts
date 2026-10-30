@@ -282,18 +282,22 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       meta?: VoteChangeMeta
     ) => {
       localRevisionRef.current += 1;
+      if (meta?.isRollback) {
+        // A rollback ends the optimistic-vote lifecycle (#139): release the
+        // item's pending mutation so later server snapshots win for the row
+        // again. Released unconditionally and outside the state updater — a
+        // search or filter change may already have removed the row from
+        // `items` while the vote was in flight, and an entry stranded in the
+        // map would override the server row once the query is restored.
+        // Keeping the side effect out of the updater also keeps it
+        // single-shot under StrictMode's double-invoked updaters.
+        pendingItemMutationsRef.current.delete(itemId);
+      }
       setItems((prev) =>
         prev.map((item) => {
           if (item.id === itemId) {
             const updated = transform(item);
-            if (meta?.isRollback) {
-              // A rollback ends the optimistic-vote lifecycle (#139): the
-              // reverted snapshot is no longer an in-flight optimistic state,
-              // so it must not stay as a pending mutation — that would pin the
-              // pre-tap row over every later server snapshot whose `hasVoted`
-              // disagrees, and the mismatch could never resolve on its own.
-              pendingItemMutationsRef.current.delete(itemId);
-            } else {
+            if (!meta?.isRollback) {
               pendingItemMutationsRef.current.set(itemId, updated);
             }
             return updated;

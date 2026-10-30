@@ -4,8 +4,9 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import { useFeatureRequests, type UseFeatureRequestsResult } from '../src/hooks/useFeatureRequests';
+import { useToggleVote } from '../src/hooks/useToggleVote';
 import { useAsyncData, type UseAsyncDataResult } from '../src/hooks/useAsyncData';
-import type { FeatureRequestComment, FeatureRequestItem } from '../src/types';
+import type { FeatureRequestComment, FeatureRequestItem, VoteResult } from '../src/types';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -529,4 +530,100 @@ test('useAsyncData: updates normally when no mid-flight mutation occurred', asyn
   assert.equal(latest.current!.data?.count, 20);
 
   renderer.unmount();
+});
+
+test('useFeatureRequests: a rollback releases the pending entry even when the row already left the list (#139)', async () => {
+  // A search or filter change can pull the voted row out of `items` while its
+  // vote request is still in flight. When that vote then fails, the rollback
+  // must still release the stranded pending mutation — otherwise the restored
+  // query resurrects the optimistic snapshot over the (correct) server row.
+  let plainLoads = 0;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_rollback',
+    title,
+    description: 'Rollback probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const rejected = new Error('vote rejected');
+
+  const voteAttempt = createDeferred<VoteResult>();
+  const mockClient = {
+    fetchFeatureRequests: async ({ query }: { query?: string }) => {
+      if (query) return { requests: [], total: 0 };
+      plainLoads += 1;
+      return plainLoads === 1
+        ? { requests: [makeRow('Original title', 10, false)], total: 1 }
+        : { requests: [makeRow('Restored title', 10, false)], total: 1 };
+    },
+    castVote: () => voteAttempt.promise,
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function VoteRollbackProbe({ client, query }: { client: FeedbackClient; query: string }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken: 'tok_rollback',
+      query,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, 'tok_rollback', requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<VoteRollbackProbe client={mockClient} query="" />);
+
+  try {
+    await flush();
+    assert.equal(latest.current!.requests.items.length, 1);
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+    // Tap the vote: the optimistic state lands and is remembered as a pending
+    // mutation while the request hangs.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+    // A search change removes the row from `items` mid-flight.
+    act(() => {
+      renderer.update(<VoteRollbackProbe client={mockClient} query="beta" />);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items.length, 0);
+
+    // The vote fails while the row is off-list: the rollback must release the
+    // stranded pending entry even though the updater maps over no matching row.
+    act(() => {
+      voteAttempt.reject(rejected);
+    });
+    await flush();
+
+    // The query is restored and the server answers with the truth — the vote
+    // was never counted, and the row was edited in the meantime.
+    act(() => {
+      renderer.update(<VoteRollbackProbe client={mockClient} query="" />);
+    });
+    await flush();
+
+    const row = latest.current!.requests.items[0];
+    assert.ok(row, 'the restored query must bring the row back');
+    assert.equal(
+      row.hasVoted,
+      false,
+      'the failed vote must not resurrect as a phantom vote over the restored row'
+    );
+    assert.equal(row.voteCount, 10);
+    assert.equal(
+      row.title,
+      'Restored title',
+      'no field of the stranded pre-tap snapshot may override the restored server row'
+    );
+  } finally {
+    renderer.unmount();
+  }
 });
