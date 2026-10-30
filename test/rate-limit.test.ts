@@ -1184,3 +1184,92 @@ test('plain loadMore without query stays unpaced and un-cooldowned', async () =>
     stub.restore();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #140: loadMore during the search-spacing deferral of a new query
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests refuses loadMore during a search-spacing deferral and re-arms it when the previous query returns', async () => {
+  const stub = makeSearchClient((call) => {
+    const offset = parseInt(call.offset || '0', 10);
+    const prefix = call.q === 'beta' ? 'beta' : 'alpha';
+    const count = Math.min(50, 120 - offset);
+    const requests = Array.from({ length: count }, (_, i) => ({
+      id: `${prefix}_${offset + i + 1}`,
+      title: `${prefix} #${offset + i + 1}`,
+    }));
+    return page(requests, 120);
+  });
+  try {
+    const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_key' });
+    const latest: { current: LatestResult } = { current: null };
+    let options: any = {
+      client,
+      userToken: 'tok',
+      query: 'alpha',
+      pageSize: 50,
+      // A long spacing window stands in for the production 2.5 s search gap;
+      // the beta page-0 stays deferred for the whole test.
+      searchRateLimiterOptions: { minSpacingMs: 60_000 },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+    assert.equal(stub.calls.length, 1, 'the first search is not spaced');
+    assert.equal(latest.current!.items.length, 50);
+
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2, 'alpha paginates normally');
+    assert.equal(latest.current!.items.length, 100);
+
+    // Switch to beta: page-0 defers behind the spacing window while the hook
+    // reports idle.
+    options = { ...options, query: 'beta' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    // onEndReached inside the window must be a no-op: no beta fetch at the
+    // alpha list's offset, no splice.
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+    assert.equal(stub.calls.length, 2, 'loadMore must not fetch the new query during deferral');
+    assert.equal(
+      latest.current!.items.filter((i) => i.id.startsWith('beta_')).length,
+      0,
+      'the deferred beta page-0 has not landed'
+    );
+
+    // Back to alpha: the dedupe branch keeps the on-screen list and re-arms
+    // loadMore on it instead of staying blocked with nothing scheduled.
+    options = { ...options, query: 'alpha' };
+    await act(async () => {
+      renderer.update(React.createElement(HookProbe, { options, latest }));
+    });
+    await flush();
+
+    await act(async () => {
+      await latest.current!.loadMore();
+    });
+    await flush();
+    assert.deepEqual(
+      stub.calls.map((c) => `${c.q}@${c.offset}`),
+      ['alpha@0', 'alpha@50', 'alpha@100'],
+      'pagination resumes on the still-current alpha list; beta never fetches'
+    );
+    assert.equal(latest.current!.items.length, 120);
+    assert.ok(latest.current!.items.every((i) => !i.id.startsWith('beta_')));
+    renderer.unmount();
+  } finally {
+    stub.restore();
+  }
+});

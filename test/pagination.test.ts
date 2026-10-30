@@ -661,6 +661,280 @@ test('useFeatureRequests applyItemChange transforms specific item without refetc
 });
 
 // ---------------------------------------------------------------------------
+// Issue #140: loadMore must not paginate a new query/filter at the previous
+// list's offset while that list is still on screen (deferred page-0 window)
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests: loadMore is a no-op during the deferred page-0 window of a new query (#140)', async () => {
+  const requestsMade: Array<{ q: string; offset: number }> = [];
+  const buildSet = (prefix: string) =>
+    Array.from({ length: 120 }, (_, i) => makeMockItem(`${prefix}_${i + 1}`, i + 1));
+  const datasets: Record<string, FeatureRequestItem[]> = {
+    alpha: buildSet('alpha'),
+    beta: buildSet('beta'),
+  };
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const q = opts.query || 'alpha';
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q, offset });
+      const set = datasets[q] || datasets.alpha;
+      return { requests: set.slice(offset, offset + (opts.limit ?? 50)), total: 120 };
+    },
+  } as unknown as FeedbackClient;
+
+  let query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      // A long debounce keeps the deferral window open well past runner jitter.
+      debounceMs: 250,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // Two pages of alpha are on screen (the initial search defers behind the
+  // same debounce window).
+  await new Promise((r) => setTimeout(r, 350));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
+
+  // Switch to beta: page-0 defers behind the debounce window while the hook
+  // reports fully idle.
+  query = 'beta';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(harness.result.isLoading, false, 'the deferred page-0 has not started yet');
+  assert.equal(harness.result.isLoadingMore, false);
+
+  // onEndReached fires inside the window: must be a no-op.
+  await harness.result.loadMore();
+  assert.deepEqual(
+    requestsMade.map((r) => `${r.q}@${r.offset}`),
+    ['alpha@0', 'alpha@50'],
+    'loadMore must not fetch the new query at the old list offset'
+  );
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
+  assert.equal(harness.result.loadMoreError, null);
+
+  // The deferred page-0 lands: the list is replaced by beta page-0, and
+  // loadMore paginates the fresh list at its own offset.
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(
+    requestsMade.map((r) => `${r.q}@${r.offset}`),
+    ['alpha@0', 'alpha@50', 'beta@0']
+  );
+  assert.equal(harness.result.items.length, 50);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('beta_')));
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(requestsMade[3], { q: 'beta', offset: 50 });
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('beta_')));
+});
+
+test('useFeatureRequests: an in-flight loadMore of the old query is discarded when the new page-0 lands (#140)', async () => {
+  let releaseHangingPage:
+    ((value: { requests: FeatureRequestItem[]; total: number }) => void) | null = null;
+  let hangArmed = true;
+  const alphaSet = Array.from({ length: 120 }, (_, i) => makeMockItem(`alpha_${i + 1}`, i + 1));
+  const betaSet = Array.from({ length: 120 }, (_, i) => makeMockItem(`beta_${i + 1}`, i + 1));
+
+  const mockClient = {
+    fetchFeatureRequests: (opts: any) => {
+      const q = opts.query || 'alpha';
+      const offset = opts.offset ?? 0;
+      if (q === 'beta') {
+        return Promise.resolve({
+          requests: betaSet.slice(offset, offset + (opts.limit ?? 50)),
+          total: 120,
+        });
+      }
+      if (offset === 50 && hangArmed) {
+        hangArmed = false;
+        return new Promise<{ requests: FeatureRequestItem[]; total: number }>((resolve) => {
+          releaseHangingPage = resolve;
+        });
+      }
+      return Promise.resolve({
+        requests: alphaSet.slice(offset, offset + (opts.limit ?? 50)),
+        total: 120,
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  let query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      debounceMs: 250,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 350));
+  assert.equal(harness.result.items.length, 50);
+
+  // Page 2 of alpha hangs in flight while the user switches to beta.
+  const pendingLoadMore = harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoadingMore, true);
+
+  query = 'beta';
+  harness.rerender();
+
+  // The deferred beta page-0 lands while alpha's page-2 is still hanging.
+  await new Promise((r) => setTimeout(r, 350));
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    betaSet.slice(0, 50).map((i) => i.id)
+  );
+
+  releaseHangingPage!({ requests: alphaSet.slice(50, 100), total: 120 });
+  await pendingLoadMore;
+  await new Promise((r) => setTimeout(r, 20));
+
+  // The late alpha response must not splice into beta's fresh list —
+  // otherwise beta_51..100 would be permanently skipped.
+  assert.ok(
+    harness.result.items.every((i) => i.id.startsWith('beta_')),
+    'a stale load-more response must never splice into the new query list'
+  );
+  assert.equal(harness.result.loadMoreError, null);
+
+  // Infinite scroll recovers from the fresh list's true offset.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('beta_')));
+});
+
+test('useFeatureRequests: loadMore does not paginate a new versionId at the previous filter offset (#140)', async () => {
+  const requestsMade: Array<{ v: string; offset: number }> = [];
+  const buildSet = (v: string) =>
+    Array.from({ length: 120 }, (_, i) => makeMockItem(`${v}_item_${i + 1}`, i + 1));
+  const datasets: Record<string, FeatureRequestItem[]> = {
+    v1: buildSet('v1'),
+    v2: buildSet('v2'),
+  };
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const v = opts.versionId || 'v1';
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ v, offset });
+      const set = datasets[v] || datasets.v1;
+      return { requests: set.slice(offset, offset + (opts.limit ?? 50)), total: 120 };
+    },
+  } as unknown as FeedbackClient;
+
+  let versionId: string | null = 'v1';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      versionId,
+      pageSize: 50,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 40));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('v1_')));
+
+  // Chip change to v2: a non-search page-0 defers only behind setTimeout(0),
+  // but a loadMore fired inside that same tick must still be refused.
+  versionId = 'v2';
+  harness.rerender();
+  await harness.result.loadMore();
+  assert.deepEqual(
+    requestsMade.map((r) => `${r.v}@${r.offset}`),
+    ['v1@0', 'v1@50'],
+    'loadMore must not fetch the new filter at the old list offset'
+  );
+
+  await new Promise((r) => setTimeout(r, 40));
+  assert.deepEqual(requestsMade[2], { v: 'v2', offset: 0 });
+  assert.equal(harness.result.items.length, 50);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(requestsMade[3], { v: 'v2', offset: 50 });
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('v2_')));
+});
+
+test('useFeatureRequests: returning to the previously loaded query re-arms loadMore on the on-screen list', async () => {
+  const requestsMade: Array<{ q: string; offset: number }> = [];
+  const buildSet = (prefix: string) =>
+    Array.from({ length: 120 }, (_, i) => makeMockItem(`${prefix}_${i + 1}`, i + 1));
+  const datasets: Record<string, FeatureRequestItem[]> = {
+    alpha: buildSet('alpha'),
+    beta: buildSet('beta'),
+  };
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const q = opts.query || 'alpha';
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q, offset });
+      const set = datasets[q] || datasets.alpha;
+      return { requests: set.slice(offset, offset + (opts.limit ?? 50)), total: 120 };
+    },
+  } as unknown as FeedbackClient;
+
+  let query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      debounceMs: 250,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 350));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 100);
+
+  // alpha -> beta schedules a deferred page-0 (generation advances), then the
+  // user returns to alpha before it fires. The dedupe branch keeps the
+  // on-screen alpha list and must re-publish the current generation, or
+  // loadMore would stay blocked forever with nothing scheduled to unblock it.
+  query = 'beta';
+  harness.rerender();
+  query = 'alpha';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 350));
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    requestsMade.map((r) => `${r.q}@${r.offset}`),
+    ['alpha@0', 'alpha@50', 'alpha@100'],
+    'loadMore paginates the still-current alpha list; beta must never fetch'
+  );
+  assert.equal(harness.result.items.length, 120);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
+});
+
+// ---------------------------------------------------------------------------
 // i18n: All 14 locales implement loadingMore and roadmap pagination strings
 // ---------------------------------------------------------------------------
 

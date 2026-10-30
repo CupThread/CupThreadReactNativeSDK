@@ -162,7 +162,10 @@ export interface UseFeatureRequestsResult {
   /**
    * Fetches the next page of items and appends them to `items`.
    * Safely no-ops if a request is already in flight, no more items remain,
-   * or the token is not ready.
+   * the token is not ready, or a page-0 load for the current query/filter has
+   * not landed yet (a deferred debounce / search-spacing window included) —
+   * the on-screen list then still belongs to the previous query/filter and
+   * must not be paginated with the new params.
    */
   loadMore: () => Promise<void>;
 
@@ -250,6 +253,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
 
+  // Generation token for page-0 loads. The main effect bumps
+  // `page0GenerationRef` every time it schedules a page-0 (initial load,
+  // query/filter change), and a successful load publishes its generation in
+  // `loadedGenerationRef`. While the two differ, a page-0 is scheduled,
+  // deferred, or in flight and the on-screen list still belongs to the
+  // previous query/filter — `loadMore` must not paginate it, or it would
+  // request the new query at the old list's offset and splice the response
+  // into the old list's rows (#140).
+  const page0GenerationRef = useRef<number>(0);
+  const loadedGenerationRef = useRef<number>(-1);
+
   const localRevisionRef = useRef<number>(0);
   const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
 
@@ -302,6 +316,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const loadPage0 = useCallback(
     async (signal?: AbortSignal) => {
       if (!isTokenReady || !enabled) return;
+      // The results of this fetch belong to the generation that was current
+      // when it started. The effect aborts any in-flight page-0 before
+      // bumping the generation, so a settled success can never publish a
+      // generation newer than its own.
+      const generation = page0GenerationRef.current;
       const trimmedQuery = query?.trim() || '';
       const isSearch = trimmedQuery.length > 0;
       const limiter = searchLimiterRef.current!;
@@ -367,6 +386,9 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         setItems(mergedItems);
         setTotal(reportedTotal);
         setError(null);
+        // The on-screen list now belongs to this fetch's generation, so a
+        // blocked loadMore may paginate again.
+        loadedGenerationRef.current = generation;
         // A fresh page-0 result replaces the whole list, so a load-more
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
@@ -408,8 +430,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       isSearch &&
       lastSearchKeyRef.current === buildSearchKey(userToken, trimmedQuery, versionId)
     ) {
+      // The on-screen list was loaded under exactly this key, so it is valid
+      // for the current generation: re-publish so a loadMore blocked by a
+      // superseded schedule (e.g. B scheduled, then back to A) can paginate
+      // again instead of staying blocked forever.
+      loadedGenerationRef.current = page0GenerationRef.current;
       return;
     }
+
+    // A new page-0 is on its way (possibly deferred behind the debounce /
+    // search-spacing window): until it lands, the on-screen list belongs to
+    // the previous query/filter and loadMore must refuse to paginate it.
+    page0GenerationRef.current += 1;
 
     const controller = new AbortController();
 
@@ -430,6 +462,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // would cancel the only deferred attempt for this query.
         loadControllerRef.current = controller;
         setIsLoading(true);
+        // Belt and braces: the effect body already aborts an in-flight
+        // load-more when the params change, and the generation guard keeps a
+        // new one from starting during the wait, so nothing should be in
+        // flight here — repeat the abort at deferred-start time anyway so a
+        // late load-more response can never splice into the fresh list.
+        loadMoreControllerRef.current?.abort();
         loadPage0(controller.signal);
       }, waitMs);
     };
@@ -446,6 +484,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // Load next page
   const loadMore = useCallback(async () => {
     if (!isTokenReady || !enabled || isLoading || isRefreshing || isLoadingMoreRef.current) return;
+    // A page-0 for the current query/filter is scheduled, deferred, or still
+    // in flight: the on-screen list belongs to the previous query/filter.
+    // Paginating it would request the new query at the old list's offset and
+    // splice the response into the old list's rows (#140).
+    if (page0GenerationRef.current !== loadedGenerationRef.current) return;
     if (itemsRef.current.length >= totalRef.current) return;
 
     const trimmedQuery = query?.trim() || '';
