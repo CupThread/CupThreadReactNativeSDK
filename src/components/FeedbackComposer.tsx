@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -216,7 +216,12 @@ export function FeedbackComposer({
   // state or form of a newer submission that started after a reopen.
   const submitSeqRef = useRef(0);
 
-  useEffect(() => {
+  // Runs as a layout effect so the session token advances (and the reopen
+  // reset lands) before the reopened form paints: a passive effect can be
+  // deferred past first paint, and a submit tapped in that window would
+  // otherwise capture the previous session and lose ownership to its stale
+  // settlement.
+  useLayoutEffect(() => {
     const wasVisible = prevVisibleRef.current;
     if (!wasVisible && visible) {
       openSessionRef.current += 1;
