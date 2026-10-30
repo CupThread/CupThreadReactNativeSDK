@@ -46,7 +46,7 @@ import {
   UploadRejectedException,
   UploadValidationException,
 } from './FeedbackException';
-import { getRuntimePlatform } from '../utils/platform';
+import { getRuntimePlatform, toWirePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
 import { resolveDeclaredAttachmentSize } from '../utils/attachments';
 import {
@@ -681,7 +681,8 @@ export class FeedbackClient {
    * Note: Platform allowlist enforcement against `PublicAppConfig.allowedPlatforms`
    * happens at the composer layer (such as {@link FeedbackComposer}) via
    * {@link resolveAllowedPlatform}. Direct client calls forward the draft's
-   * platform or client `defaultPlatform` directly to the intake endpoint.
+   * platform or client `defaultPlatform` to the intake endpoint, coercing the
+   * host-facing `'web'` to `'universal'` (the only cross-platform wire value).
    *
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
@@ -714,7 +715,11 @@ export class FeedbackClient {
       resolvedUserToken = undefined;
     }
 
-    const platform = draft.platform || this.config.defaultPlatform || getRuntimePlatform();
+    // The intake schema only accepts ios/macos/android/universal: coerce the
+    // host-facing 'web' to 'universal' so web builds never ship a 400-ing value.
+    const platform = toWirePlatform(
+      draft.platform || this.config.defaultPlatform || getRuntimePlatform()
+    );
     const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
     // Only session uploads can be submitted: the intake endpoint rejects raw
     // storage keys and URLs (`direct_attachment_forbidden`), so legacy
