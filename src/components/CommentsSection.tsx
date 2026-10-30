@@ -63,6 +63,27 @@ export interface CommentsSectionProps {
  * ```
  */
 export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
+  // Every piece of thread state below — the draft, the armed reply, the
+  // error, the submit flags, and the loaded list — belongs to exactly one
+  // feature request. Mounting the thread as a keyed child makes React itself
+  // drop the whole subtree when the id changes: the commit-safe equivalent of
+  // a render-phase reset, with no refs mutated during render and no way for
+  // an in-flight submission from the previous thread to write into the new
+  // thread's state (that instance is unmounted, so its settling updates are
+  // no-ops). A same-id re-render keeps the key — and therefore the draft and
+  // the loaded thread — intact; `useAsyncData` refetches on an id change by
+  // itself, and clearing state via the remount makes the previous thread's
+  // comments yield to the loading spinner and, on a failed fetch, to the
+  // error state.
+  return <CommentThread key={featureRequestId} featureRequestId={featureRequestId} />;
+}
+
+/**
+ * Per-thread body of {@link CommentsSection}. Module-private; the public
+ * wrapper remounts it (via `key`) whenever `featureRequestId` changes, so a
+ * new id always starts from fresh composer and list state.
+ */
+function CommentThread({ featureRequestId }: CommentsSectionProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();

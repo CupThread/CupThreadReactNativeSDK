@@ -2,7 +2,12 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import type { FeatureRequestComment, FeatureRequestItem, VoteResult } from '../src/types';
+import type {
+  CommentDraft,
+  FeatureRequestComment,
+  FeatureRequestItem,
+  VoteResult,
+} from '../src/types';
 
 // `FeatureRequestDetail` imports react-native, which cannot load under plain
 // Node. Mock every symbol its render tree uses with lightweight stubs, then
@@ -14,6 +19,7 @@ const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 
 const TouchableOpacityStub = (props: any) => props.children ?? null;
 const TextStub = (props: any) => props.children ?? null;
+const TextInputStub = () => null;
 
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
@@ -23,7 +29,7 @@ if (supportsModuleMocks) {
       // the rendered tree.
       View: ({ children }: any) => children ?? null,
       Text: TextStub,
-      TextInput: () => null,
+      TextInput: TextInputStub,
       TouchableOpacity: TouchableOpacityStub,
       ActivityIndicator: () => null,
       ScrollView: ({ children }: any) => children ?? null,
@@ -74,7 +80,9 @@ function createDeferred<T>() {
 class RecordingClient extends FeedbackClient {
   voteCalls: string[] = [];
   commentCalls: string[] = [];
+  postCalls: { featureRequestId: string; draft: CommentDraft }[] = [];
   deferredVotes = new Map<string, ReturnType<typeof createDeferred<VoteResult>>>();
+  commentSources = new Map<string, FeatureRequestComment[]>();
 
   override async toggleVote(featureRequestId: string): Promise<VoteResult> {
     this.voteCalls.push(featureRequestId);
@@ -85,7 +93,20 @@ class RecordingClient extends FeedbackClient {
 
   override async fetchComments(featureRequestId: string): Promise<FeatureRequestComment[]> {
     this.commentCalls.push(featureRequestId);
-    return [];
+    return this.commentSources.get(featureRequestId) ?? [];
+  }
+
+  override async postComment(
+    featureRequestId: string,
+    draft: CommentDraft
+  ): Promise<FeatureRequestComment> {
+    this.postCalls.push({ featureRequestId, draft });
+    return {
+      id: 'c_new',
+      authorName: null,
+      body: draft.body,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    } as FeatureRequestComment;
   }
 }
 
@@ -126,7 +147,9 @@ interface DetailHarness {
 async function renderDetail(
   item: FeatureRequestItem,
   visible = true,
-  locale?: string
+  locale?: string,
+  sessionProvider?: () => string,
+  configureClient?: (client: RecordingClient) => void
 ): Promise<DetailHarness> {
   // The provider's config fetch is the only call reaching global fetch; it
   // gets a rejection (non-fatal, falls back to system theme).
@@ -134,6 +157,7 @@ async function renderDetail(
   globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
 
   const client = new RecordingClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_test_detail' });
+  configureClient?.(client);
   const voteChangeCalls: FeatureRequestItem[] = [];
 
   const buildElement = (detailItem: FeatureRequestItem, detailVisible: boolean) =>
@@ -141,6 +165,7 @@ async function renderDetail(
       client,
       userToken: 'usr_tok_test',
       locale,
+      ...(sessionProvider ? { commentSessionProvider: sessionProvider } : {}),
       children: React.createElement(FeatureRequestDetail, {
         item: detailItem,
         visible: detailVisible,
@@ -174,6 +199,18 @@ async function renderDetail(
 function getVoteButtonProps(harness: DetailHarness): { voteCount: number; hasVoted: boolean } {
   const node = harness.renderer.root.findByType(VoteButton);
   return { voteCount: node.props.voteCount, hasVoted: node.props.hasVoted };
+}
+
+/** Finds a pressable whose subtree renders exactly the given label text. */
+function findButtonByText(
+  root: TestRenderer.ReactTestRenderer['root'],
+  label: string
+): TestRenderer.ReactTestInstance | undefined {
+  return root
+    .findAllByType(TouchableOpacityStub as any)
+    .find((button) =>
+      button.findAllByType(TextStub as any).some((t) => t.props?.children === label)
+    );
 }
 
 test(
@@ -428,6 +465,86 @@ test(
       assert.ok(
         collectText(harness.renderer.root).includes(expected),
         `Expected "${expected}" in the rendered detail`
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a reply armed in the comments section does not survive the documented item swap',
+  renderTestOptions,
+  async () => {
+    const commentA: FeatureRequestComment = {
+      id: 'c_a1',
+      authorName: 'Alice',
+      body: "Alice's comment on fr_A",
+      createdAt: '2026-10-01T00:00:00.000Z',
+    } as FeatureRequestComment;
+    const commentB: FeatureRequestComment = {
+      id: 'c_b1',
+      authorName: 'Bob',
+      body: "Bob's comment on fr_B",
+      createdAt: '2026-10-02T00:00:00.000Z',
+    } as FeatureRequestComment;
+
+    const harness = await renderDetail(
+      makeItem({ id: 'fr_A' }),
+      true,
+      undefined,
+      () => 'clerk_jwt_live',
+      (client) => {
+        client.commentSources.set('fr_A', [commentA]);
+        client.commentSources.set('fr_B', [commentB]);
+      }
+    );
+    try {
+      assert.ok(
+        collectText(harness.renderer.root).includes("Alice's comment on fr_A"),
+        "A's thread must render"
+      );
+
+      // Arm a reply on A's only comment.
+      const replyButton = findButtonByText(harness.renderer.root, 'Reply');
+      assert.ok(replyButton, 'reply affordance must render with a session source');
+      await act(async () => {
+        replyButton!.props.onPress();
+      });
+      assert.ok(
+        collectText(harness.renderer.root).includes('Replying to @Alice'),
+        'the reply bar must be armed before the swap'
+      );
+
+      // Documented keep-mounted swap to request B.
+      await harness.update(makeItem({ id: 'fr_B' }), true);
+
+      const text = collectText(harness.renderer.root);
+      assert.ok(!text.includes('Replying to @Alice'), "A's reply bar must not survive the swap");
+      assert.ok(
+        !text.includes("Alice's comment on fr_A"),
+        "A's comments must not render under B"
+      );
+      assert.ok(text.includes("Bob's comment on fr_B"), "B's thread must render");
+
+      // Posting after the swap must target B with no parent from A's thread.
+      await act(async () => {
+        harness.renderer.root.findByType(TextInputStub as any).props.onChangeText('Hello B');
+      });
+      const send = findButtonByText(harness.renderer.root, 'Post Comment');
+      assert.ok(send, 'send button must exist');
+      await act(async () => {
+        send!.props.onPress();
+      });
+      await flush();
+
+      assert.equal(harness.client.postCalls.length, 1);
+      assert.equal(harness.client.postCalls[0].featureRequestId, 'fr_B');
+      assert.equal(
+        harness.client.postCalls[0].draft.parentId,
+        undefined,
+        'no parentId of A\'s comments may leak into the post against B'
       );
     } finally {
       harness.restoreFetch();
