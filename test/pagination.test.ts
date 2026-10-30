@@ -25,7 +25,7 @@ import {
 // Hook test harness with proper dependency caching and effect lifecycle
 // ---------------------------------------------------------------------------
 
-function renderTestHook<T>(hookFn: () => T) {
+function renderTestHook<T>(hookFn: () => T, onRender?: (result: T) => void) {
   const states: any[] = [];
   const stateSetters: Array<(val: any) => void> = [];
   const refs: any[] = [];
@@ -107,6 +107,7 @@ function renderTestHook<T>(hookFn: () => T) {
       currentResult = hookFn();
     } finally {
       reactInternals.ReactCurrentDispatcher.current = prev;
+      onRender?.(currentResult);
     }
 
     const effectsToRun = pendingEffects;
@@ -1733,4 +1734,261 @@ test('useFeatureRequests: disabling mid-flight aborts a manual refresh still on 
   latest().resolve({ requests: [makeMockItem('fr_back', 1)], total: 1 });
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(harness.result.items[0].id, 'fr_back');
+});
+
+// ---------------------------------------------------------------------------
+// Issue #166: a manual refresh()/reload() that lands while a deferred page-0
+// is pending must neutralize the stale timer — no duplicate fetch, no
+// isLoading flash, no aborted in-flight loadMore. A manual load skipped by
+// the limiter publishes nothing and must still let the deferred query run
+// (#130/#132).
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests: a manual refresh that landed during the deferral stops the stale deferred page-0 (#166)', async () => {
+  const requestsMade: Array<{ q?: string; offset: number }> = [];
+  const alphaSet = Array.from({ length: 120 }, (_, i) => makeMockItem(`alpha_${i + 1}`, i + 1));
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q: opts.query, offset });
+      return {
+        requests: alphaSet.slice(offset, offset + (opts.limit ?? 50)),
+        total: 120,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const query = 'alpha';
+  // Record every committed render's isLoading: `harness.result` keeps only
+  // the latest render, and a transient flash can set and clear the flag
+  // between two wall-clock samples.
+  const renderedLoadingStates: boolean[] = [];
+  const harness = renderTestHook(
+    () =>
+      useFeatureRequests({
+        client: mockClient,
+        userToken: 'test_token',
+        query,
+        pageSize: 50,
+        debounceMs: 250,
+        searchRateLimiterOptions: { minSpacingMs: 0 },
+      }),
+    (result) => renderedLoadingStates.push(result.isLoading)
+  );
+
+  // The initial load defers behind the debounce window (isLoading starts
+  // raised for the pending initial load; the wire is still untouched).
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(requestsMade, [], 'the deferred page-0 has not reached the wire yet');
+
+  // Pull-to-refresh lands inside the deferral window and publishes the query.
+  await harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(requestsMade, [{ q: 'alpha', offset: 0 }]);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items.length, 50);
+
+  // From here on, no render may ever raise isLoading again — sample across
+  // the stale timer's fire boundary: it must be a silent no-op.
+  renderedLoadingStates.length = 0;
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.deepEqual(
+    requestsMade,
+    [{ q: 'alpha', offset: 0 }],
+    'the stale deferred page-0 must not re-fetch the already-loaded query'
+  );
+  assert.equal(
+    renderedLoadingStates.includes(true),
+    false,
+    'isLoading must stay down across the stale timer fire'
+  );
+  assert.equal(harness.result.items.length, 50);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
+});
+
+test('useFeatureRequests: a limiter-skipped refresh during the deferral must not drop the typed query (#166, #130/#132)', async () => {
+  const requestsMade: Array<{ q?: string; offset: number }> = [];
+  const datasets: Record<string, FeatureRequestItem[]> = {
+    alpha: Array.from({ length: 120 }, (_, i) => makeMockItem(`alpha_${i + 1}`, i + 1)),
+    beta: Array.from({ length: 120 }, (_, i) => makeMockItem(`beta_${i + 1}`, i + 1)),
+  };
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const q = opts.query || 'alpha';
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q, offset });
+      const set = datasets[q];
+      return { requests: set.slice(offset, offset + (opts.limit ?? 50)), total: 120 };
+    },
+  } as unknown as FeedbackClient;
+
+  let query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      debounceMs: 100,
+      searchRateLimiterOptions: { minSpacingMs: 250 },
+    })
+  );
+
+  // Alpha's deferred page-0 lands and consumes the search spacing.
+  await new Promise((r) => setTimeout(r, 250));
+  assert.deepEqual(requestsMade, [{ q: 'alpha', offset: 0 }]);
+
+  // Typing beta defers the new query behind debounce + remaining spacing.
+  query = 'beta';
+  harness.rerender();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(harness.result.isLoading, false);
+
+  // A refresh fired inside the spacing window is skipped by the limiter: it
+  // makes no fetch and publishes no generation.
+  await harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    requestsMade,
+    [{ q: 'alpha', offset: 0 }],
+    'the limiter-skipped refresh must not reach the wire'
+  );
+  assert.equal(harness.result.isLoading, false, 'a skipped refresh must not stick the flag');
+
+  // The deferred beta page-0 must still fire once the spacing elapses.
+  await new Promise((r) => setTimeout(r, 450));
+  assert.deepEqual(
+    requestsMade,
+    [
+      { q: 'alpha', offset: 0 },
+      { q: 'beta', offset: 0 },
+    ],
+    'the typed query must not be dropped by the limiter-skipped refresh'
+  );
+  assert.equal(harness.result.items.length, 50);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('beta_')));
+  assert.equal(harness.result.isLoading, false);
+});
+
+test('useFeatureRequests: the stale deferred timer must not abort an in-flight loadMore (#166)', async () => {
+  const requestsMade: Array<{ q?: string; offset: number }> = [];
+  const alphaSet = Array.from({ length: 120 }, (_, i) => makeMockItem(`alpha_${i + 1}`, i + 1));
+  let releaseHangingPage:
+    ((value: { requests: FeatureRequestItem[]; total: number }) => void) | null = null;
+
+  const mockClient = {
+    fetchFeatureRequests: (opts: any) => {
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q: opts.query, offset });
+      if (offset === 50) {
+        return new Promise<{ requests: FeatureRequestItem[]; total: number }>((resolve, reject) => {
+          releaseHangingPage = resolve;
+          opts.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          );
+        });
+      }
+      return Promise.resolve({
+        requests: alphaSet.slice(offset, offset + (opts.limit ?? 50)),
+        total: 120,
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  const query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      debounceMs: 250,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // The refresh lands inside the deferral window; the deferred timer stays
+  // pending past it.
+  await new Promise((r) => setTimeout(r, 50));
+  await harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(requestsMade, [{ q: 'alpha', offset: 0 }]);
+
+  // The user's scroll starts page-2; it hangs in flight when the stale timer
+  // fires.
+  const pendingLoadMore = harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoadingMore, true);
+
+  // The stale timer fires mid-flight and must not touch the page-2 request.
+  await new Promise((r) => setTimeout(r, 350));
+  assert.deepEqual(
+    requestsMade,
+    [
+      { q: 'alpha', offset: 0 },
+      { q: 'alpha', offset: 50 },
+    ],
+    'the stale timer must not start a duplicate page-0'
+  );
+  assert.equal(
+    harness.result.isLoadingMore,
+    true,
+    'the in-flight loadMore must not be aborted by the stale timer'
+  );
+
+  // The page-2 response completes undisturbed and appends to the list.
+  releaseHangingPage!({ requests: alphaSet.slice(50, 100), total: 120 });
+  await pendingLoadMore;
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.isLoadingMore, false);
+  assert.equal(harness.result.items.length, 100);
+  assert.ok(harness.result.items.every((i) => i.id.startsWith('alpha_')));
+  assert.equal(harness.result.loadMoreError, null);
+});
+
+test('useFeatureRequests: the deferred page-0 still fires exactly once with no manual load (#166)', async () => {
+  const requestsMade: Array<{ q?: string; offset: number }> = [];
+  const alphaSet = Array.from({ length: 120 }, (_, i) => makeMockItem(`alpha_${i + 1}`, i + 1));
+
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      const offset = opts.offset ?? 0;
+      requestsMade.push({ q: opts.query, offset });
+      return {
+        requests: alphaSet.slice(offset, offset + (opts.limit ?? 50)),
+        total: 120,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const query = 'alpha';
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 50,
+      debounceMs: 100,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    })
+  );
+
+  // No manual load interferes: the deferred page-0 fires once and publishes.
+  await new Promise((r) => setTimeout(r, 250));
+  assert.deepEqual(requestsMade, [{ q: 'alpha', offset: 0 }]);
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.items.length, 50);
+
+  // Well past the timer: nothing else may re-fire for the same query.
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(
+    requestsMade,
+    [{ q: 'alpha', offset: 0 }],
+    'the deferred load must fire exactly once'
+  );
+  assert.equal(harness.result.isLoading, false);
 });
