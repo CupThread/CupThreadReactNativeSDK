@@ -90,6 +90,7 @@ class SwapStubClient extends FeedbackClient {
   postCalls: PostCall[] = [];
   commentSources = new Map<string, FeatureRequestComment[]>();
   deferredFetches = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment[]>>>();
+  deferredPosts = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment>>>();
   fetchFailures = new Set<string>();
   postedComment = makeComment('c_new', { authorName: null, body: 'Freshly posted' });
 
@@ -106,6 +107,8 @@ class SwapStubClient extends FeedbackClient {
     draft: CommentDraft
   ): Promise<FeatureRequestComment> {
     this.postCalls.push({ featureRequestId, draft });
+    const deferred = this.deferredPosts.get(featureRequestId);
+    if (deferred) return deferred.promise;
     return this.postedComment;
   }
 }
@@ -358,6 +361,68 @@ test(
       assert.ok(
         collectText(harness.renderer.root).includes('Comments (2)'),
         'the merged thread must count exactly the two B comments'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a post from the previous thread that settles after the swap leaves the new thread untouched',
+  renderTestOptions,
+  async () => {
+    const harness = await renderSwapHarness();
+    try {
+      assert.ok(collectText(harness.renderer.root).includes('Alpha thread comment'));
+
+      // Hold A's post in flight and submit a draft on A.
+      const deferredPostA = createDeferred<FeatureRequestComment>();
+      harness.client.deferredPosts.set('fr_A', deferredPostA);
+      const inputA = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputA.props.onChangeText('Draft for A');
+      });
+      const sendA = findButtonByText(harness.renderer.root, 'Post Comment');
+      await act(async () => {
+        sendA!.props.onPress();
+      });
+      await flush();
+
+      assert.equal(harness.client.postCalls.length, 1);
+      assert.equal(
+        harness.client.postCalls[0].featureRequestId,
+        'fr_A',
+        'the in-flight post must belong to the previous thread'
+      );
+
+      // Swap to B while A's post is still pending; B loads its own thread.
+      await harness.swap('fr_B');
+      assert.ok(collectText(harness.renderer.root).includes('Beta thread comment'));
+
+      // The user has already started composing on B when A's post settles.
+      const inputB = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputB.props.onChangeText('Draft for B');
+      });
+
+      deferredPostA.resolve(makeComment('c_late_a', { authorName: 'Alice', body: 'Late A post' }));
+      await flush();
+
+      const text = collectText(harness.renderer.root);
+      assert.ok(
+        !text.includes('Late A post'),
+        'a settled post from the previous thread must not render in the new thread'
+      );
+      assert.equal(
+        harness.renderer.root.findByType(TextInputStub as any).props.value,
+        'Draft for B',
+        "the settled post must not clear the new thread's draft"
+      );
+      assert.ok(
+        !text.includes('Alpha thread comment'),
+        "the previous thread's comments must stay gone"
       );
     } finally {
       harness.restoreFetch();

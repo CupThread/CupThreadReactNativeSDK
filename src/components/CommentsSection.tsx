@@ -63,6 +63,27 @@ export interface CommentsSectionProps {
  * ```
  */
 export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
+  // Every piece of thread state below — the draft, the armed reply, the
+  // error, the submit flags, and the loaded list — belongs to exactly one
+  // feature request. Mounting the thread as a keyed child makes React itself
+  // drop the whole subtree when the id changes: the commit-safe equivalent of
+  // a render-phase reset, with no refs mutated during render and no way for
+  // an in-flight submission from the previous thread to write into the new
+  // thread's state (that instance is unmounted, so its settling updates are
+  // no-ops). A same-id re-render keeps the key — and therefore the draft and
+  // the loaded thread — intact; `useAsyncData` refetches on an id change by
+  // itself, and clearing state via the remount makes the previous thread's
+  // comments yield to the loading spinner and, on a failed fetch, to the
+  // error state.
+  return <CommentThread key={featureRequestId} featureRequestId={featureRequestId} />;
+}
+
+/**
+ * Per-thread body of {@link CommentsSection}. Module-private; the public
+ * wrapper remounts it (via `key`) whenever `featureRequestId` changes, so a
+ * new id always starts from fresh composer and list state.
+ */
+function CommentThread({ featureRequestId }: CommentsSectionProps) {
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
@@ -106,27 +127,6 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   // True when a submit was refused by the session check or rejected with 401:
   // the composer yields to the sign-in notice until a session appears again.
   const [requiresSignIn, setRequiresSignIn] = useState<boolean>(false);
-
-  // The documented host pattern keeps this section mounted while the request
-  // it shows changes (FeatureRequestDetail swaps the `item` prop), and direct
-  // hosts may pass a new `featureRequestId` to a mounted instance. The draft,
-  // the armed reply, the error, and the loaded list all belong to the thread
-  // that was displayed, so none of them may survive an id change — otherwise a
-  // reply armed on the previous thread posts its `parentId` against the new
-  // one. Render-phase derived-state adjustment, same semantics as
-  // key={featureRequestId}: a different id resets the per-thread state while a
-  // same-id re-render (fresh data for the same request) keeps it. useAsyncData
-  // refetches on the id change by itself; clearing `data` here makes the
-  // previous thread's comments yield to the loading spinner and, on a failed
-  // fetch, to the error state.
-  const lastRequestIdRef = useRef(featureRequestId);
-  if (lastRequestIdRef.current !== featureRequestId) {
-    lastRequestIdRef.current = featureRequestId;
-    setCommentText('');
-    setReplyTo(null);
-    setError(null);
-    setCommentsData(null);
-  }
 
   const hasSessionSource = Boolean(commentSessionProvider);
   const showComposer = hasSessionSource && !requiresSignIn;
