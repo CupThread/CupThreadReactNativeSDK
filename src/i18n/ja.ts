@@ -119,6 +119,7 @@ export const jaStrings: CupThreadStrings = {
     replyingTo: (name: string) => `@${name} に返信`,
     cancelReply: '返信をキャンセル',
     postFailed: 'コメントの投稿に失敗しました',
+    signInToComment: 'コメントするにはサインインしてください',
   },
   changelog: {
     overlayTitle: '新着情報',

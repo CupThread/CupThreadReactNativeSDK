@@ -133,6 +133,7 @@ export const plStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Odpowiedź dla @${name}`,
     cancelReply: 'Anuluj odpowiedź',
     postFailed: 'Nie udało się opublikować komentarza',
+    signInToComment: 'Zaloguj się, aby komentować',
   },
   changelog: {
     overlayTitle: 'Co nowego',

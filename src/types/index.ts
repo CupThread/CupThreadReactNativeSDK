@@ -1426,49 +1426,84 @@ export interface FeatureRequestComment {
 /**
  * Draft payload for posting a new comment or reply in a discussion thread.
  *
+ * @remarks
+ * Mirrors the API's `CreateFeatureRequestCommentInput`. Author identity is
+ * always derived server-side from the authenticated Clerk session (or the
+ * public commenter profile): request fields naming the author are silently
+ * stripped and never stored, so `authorEmail`, `authorName` and
+ * `authorAvatarUrl` are accepted for source compatibility but have no effect.
+ * Commenting requires a
+ * Clerk end-user session — pass it through
+ * {@link FeedbackClient.postComment | postComment}'s `sessionToken` option
+ * (the anonymous `X-User-Token` surface does not apply to comment writes).
+ *
  * @example
  * ```ts
  * const commentDraft: CommentDraft = {
  *   body: 'This would also be super useful for iPad Split View!',
- *   authorName: 'Alex',
  * };
  * ```
  */
 export interface CommentDraft {
   /**
-   * Comment body text (supports markdown).
+   * Comment body text (supports markdown). 1–2000 characters after trimming.
    */
   body: string;
 
   /**
-   * Optional author display name.
-   */
-  authorName?: string;
-
-  /**
-   * Optional author email address.
+   * @deprecated Accepted for source compatibility only. The SDK does not send
+   * this value and the server resolves identity from the signed-in profile.
    */
   authorEmail?: string;
 
   /**
-   * Optional author avatar image URL.
+   * Accepted for source compatibility only — the server resolves the author
+   * display name from the signed-in profile and strips client-sent values.
+   */
+  authorName?: string;
+
+  /**
+   * Accepted for source compatibility only — the server resolves the avatar
+   * from the signed-in profile and strips client-sent values.
    */
   authorAvatarUrl?: string;
 
   /**
-   * Parent comment ID if replying in a thread.
+   * Parent comment ID if replying in a thread. Must reference a visible
+   * comment on the same feature request.
    */
   parentId?: string;
 
   /**
-   * Clerk user ID of the person being replied to.
+   * Accepted for source compatibility only — the replied-to author is always
+   * resolved server-side from `parentId`.
    */
   replyToClerkId?: string;
 
   /**
-   * Display name of the person being replied to.
+   * Display name of the person being replied to. Accepted as a display hint;
+   * attribution itself is resolved server-side from `parentId`.
    */
   replyToAuthorName?: string;
+}
+
+/**
+ * Options for posting a comment or reply
+ * ({@link FeedbackClient.postComment}).
+ */
+export interface PostCommentOptions extends RequestOptions {
+  /**
+   * Clerk end-user session token (JWT) for the commenter.
+   *
+   * Comment writes always require a signed-in session: the endpoint answers
+   * `401 authentication_required` for every anonymous call, and the anonymous
+   * `X-User-Token` surface does not apply to this route. When provided, the
+   * token travels as `Authorization: Bearer <sessionToken>` and no
+   * `X-User-Token` header is sent. When omitted, the request keeps the
+   * legacy anonymous credential and will be rejected with
+   * {@link AuthenticationRequiredException} by the current API.
+   */
+  sessionToken?: string;
 }
 
 /**

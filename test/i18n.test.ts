@@ -327,6 +327,10 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
 
     // comments
     assert.ok(typeof loc.comments.postFailed === 'string' && loc.comments.postFailed.length > 0);
+    assert.ok(
+      typeof loc.comments.signInToComment === 'string' && loc.comments.signInToComment.length > 0,
+      'signInToComment must be translated in every locale'
+    );
 
     // changelog
     assert.ok(typeof loc.changelog.subscribeFailed === 'string' && loc.changelog.subscribeFailed.length > 0);

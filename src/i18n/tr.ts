@@ -118,6 +118,7 @@ export const trStrings: CupThreadStrings = {
     replyingTo: (name: string) => `@${name} kullanıcısına yanıt`,
     cancelReply: 'Yanıtı iptal et',
     postFailed: 'Yorum paylaşılamadı',
+    signInToComment: 'Yorum yapmak için giriş yapın',
   },
   changelog: {
     overlayTitle: 'Yenilikler',

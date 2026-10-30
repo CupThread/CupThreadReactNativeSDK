@@ -140,6 +140,7 @@ export interface CommentsStrings {
   replyingTo: (name: string) => string;
   cancelReply: string;
   postFailed: string;
+  signInToComment: string;
 }
 
 /**

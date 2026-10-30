@@ -129,6 +129,7 @@ export const deStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Antwort an @${name}`,
     cancelReply: 'Antwort abbrechen',
     postFailed: 'Kommentar konnte nicht gesendet werden',
+    signInToComment: 'Melde dich an, um zu kommentieren',
   },
   changelog: {
     overlayTitle: 'Neuigkeiten',

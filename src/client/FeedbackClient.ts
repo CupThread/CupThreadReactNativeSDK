@@ -19,6 +19,7 @@ import type {
   ListPublicChangelogResult,
   PublicAppConfig,
   PublicUserProfileResult,
+  PostCommentOptions,
   RequestOptions,
   SdkAppearance,
   UpdateUserAttributesOptions,
@@ -1546,38 +1547,57 @@ export class FeedbackClient {
   /**
    * Posts a new discussion comment or reply on a feature request.
    *
+   * Comment writes always require a Clerk end-user session: the endpoint
+   * answers `401 authentication_required` for every anonymous call, and the
+   * anonymous `X-User-Token` surface does not apply to this route. Pass the
+   * session through `options.sessionToken` — it travels as
+   * `Authorization: Bearer <sessionToken>` and no `X-User-Token` header is
+   * sent. Without a session token the request keeps the legacy anonymous
+   * credential and the current API rejects it with
+   * {@link AuthenticationRequiredException}.
+   *
+   * Author attribution (`authorName`, avatar, replied-to author) is resolved
+   * server-side from the signed-in profile; client-sent values are stripped.
+   *
    * @param featureRequestId - ID of the target feature request.
-   * @param draft - Comment message content, author info, and optional reply pointers.
-   * @param userToken - User token of the commenter.
+   * @param draft - Comment message content and optional reply pointers.
+   * @param userToken - User token of the commenter (legacy anonymous credential; unused when `sessionToken` is provided).
+   * @param options - Optional `sessionToken`, request options, or an `AbortSignal`.
    * @returns The created comment record.
+   * @throws {@link AuthenticationRequiredException} When the endpoint requires sign-in and no (valid) session was presented.
    *
    * @example
    * ```ts
    * const comment = await client.postComment('fr_123', {
    *   body: 'We are targeting release in version 2.2!',
-   *   authorName: 'Alex',
-   * }, userToken);
+   * }, userToken, { sessionToken: clerkSessionToken });
    * ```
    */
   public async postComment(
     featureRequestId: string,
     draft: CommentDraft,
     userToken: string,
-    options?: RequestOptions | AbortSignal
+    options?: PostCommentOptions | AbortSignal
   ): Promise<FeatureRequestComment> {
+    const isOptionsObject =
+      options &&
+      typeof options === 'object' &&
+      !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
+    const postOpts = isOptionsObject ? (options as PostCommentOptions) : undefined;
+    const sessionToken = postOpts?.sessionToken?.trim() || undefined;
+
     return this.request<FeatureRequestComment>({
       method: 'POST',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
       body: {
         body: draft.body.trim(),
-        authorName: draft.authorName?.trim() || undefined,
-        authorEmail: draft.authorEmail?.trim() || undefined,
-        authorAvatarUrl: draft.authorAvatarUrl?.trim() || undefined,
         parentId: draft.parentId || undefined,
-        replyToClerkId: draft.replyToClerkId || undefined,
         replyToAuthorName: draft.replyToAuthorName?.trim() || undefined,
       },
-      userToken,
+      // Comment writes authenticate with the Clerk session only; the anonymous
+      // token surface does not apply to this route, so a session suppresses it.
+      ...(sessionToken ? {} : { userToken }),
+      ...(sessionToken ? { headers: { Authorization: `Bearer ${sessionToken}` } } : {}),
       accepted: [200, 201],
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),

@@ -119,6 +119,7 @@ export const viStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Đang trả lời @${name}`,
     cancelReply: 'Hủy trả lời',
     postFailed: 'Đăng bình luận thất bại',
+    signInToComment: 'Đăng nhập để bình luận',
   },
   changelog: {
     overlayTitle: 'Có gì mới',

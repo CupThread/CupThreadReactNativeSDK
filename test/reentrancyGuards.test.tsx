@@ -384,15 +384,17 @@ test(
           React.createElement(CupThreadProvider, {
             client,
             userToken: 'tok_test',
+            // The composer renders only when a comment session source exists.
+            commentSessionProvider: () => 'clerk_jwt_reentrancy',
             children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
           })
         );
       });
       await flush();
 
-      // Find comment inputs and set comment text
+      // Find comment input and set comment text
       const inputs = renderer.root.findAll((node) => node.type === TextInputStub);
-      assert.ok(inputs.length >= 2, 'expected name and comment text inputs');
+      assert.equal(inputs.length, 1, 'expected the comment text input');
       for (const input of inputs) {
         await act(async () => {
           input.props.onChangeText('Great suggestion!');
@@ -471,6 +473,8 @@ test(
           React.createElement(CupThreadProvider, {
             client,
             userToken: 'tok_test',
+            // The composer renders only when a comment session source exists.
+            commentSessionProvider: () => 'clerk_jwt_reentrancy',
             children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
           })
         );

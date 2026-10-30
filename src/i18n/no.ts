@@ -122,6 +122,7 @@ export const noStrings: CupThreadStrings = {
     replyingTo: (name: string) => `Svarer @${name}`,
     cancelReply: 'Avbryt svar',
     postFailed: 'Kunne ikke publisere kommentar',
+    signInToComment: 'Logg inn for å kommentere',
   },
   changelog: {
     overlayTitle: 'Hva er nytt',
