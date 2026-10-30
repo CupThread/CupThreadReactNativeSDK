@@ -107,6 +107,27 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   // the composer yields to the sign-in notice until a session appears again.
   const [requiresSignIn, setRequiresSignIn] = useState<boolean>(false);
 
+  // The documented host pattern keeps this section mounted while the request
+  // it shows changes (FeatureRequestDetail swaps the `item` prop), and direct
+  // hosts may pass a new `featureRequestId` to a mounted instance. The draft,
+  // the armed reply, the error, and the loaded list all belong to the thread
+  // that was displayed, so none of them may survive an id change — otherwise a
+  // reply armed on the previous thread posts its `parentId` against the new
+  // one. Render-phase derived-state adjustment, same semantics as
+  // key={featureRequestId}: a different id resets the per-thread state while a
+  // same-id re-render (fresh data for the same request) keeps it. useAsyncData
+  // refetches on the id change by itself; clearing `data` here makes the
+  // previous thread's comments yield to the loading spinner and, on a failed
+  // fetch, to the error state.
+  const lastRequestIdRef = useRef(featureRequestId);
+  if (lastRequestIdRef.current !== featureRequestId) {
+    lastRequestIdRef.current = featureRequestId;
+    setCommentText('');
+    setReplyTo(null);
+    setError(null);
+    setCommentsData(null);
+  }
+
   const hasSessionSource = Boolean(commentSessionProvider);
   const showComposer = hasSessionSource && !requiresSignIn;
 

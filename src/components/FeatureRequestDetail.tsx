@@ -232,7 +232,10 @@ export function FeatureRequestDetail({
             <MarkdownText content={item.description} />
           </View>
 
-          <CommentsSection featureRequestId={item.id} />
+          {/* key={item.id} remounts the thread on a documented item swap, so
+              the composer and the list are guaranteed fresh even if
+              CommentsSection's internal id reset were bypassed. */}
+          <CommentsSection key={item.id} featureRequestId={item.id} />
         </ScrollView>
       </SafeAreaView>
     </Modal>
