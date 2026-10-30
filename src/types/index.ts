@@ -1430,8 +1430,9 @@ export interface FeatureRequestComment {
  * Mirrors the API's `CreateFeatureRequestCommentInput`. Author identity is
  * always derived server-side from the authenticated Clerk session (or the
  * public commenter profile): request fields naming the author are silently
- * stripped and never stored, so `authorName` and `authorAvatarUrl` are
- * accepted for source compatibility but have no effect. Commenting requires a
+ * stripped and never stored, so `authorEmail`, `authorName` and
+ * `authorAvatarUrl` are accepted for source compatibility but have no effect.
+ * Commenting requires a
  * Clerk end-user session — pass it through
  * {@link FeedbackClient.postComment | postComment}'s `sessionToken` option
  * (the anonymous `X-User-Token` surface does not apply to comment writes).
@@ -1448,6 +1449,12 @@ export interface CommentDraft {
    * Comment body text (supports markdown). 1–2000 characters after trimming.
    */
   body: string;
+
+  /**
+   * @deprecated Accepted for source compatibility only. The SDK does not send
+   * this value and the server resolves identity from the signed-in profile.
+   */
+  authorEmail?: string;
 
   /**
    * Accepted for source compatibility only — the server resolves the author

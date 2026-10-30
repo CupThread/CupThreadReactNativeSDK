@@ -110,8 +110,10 @@ export function CommentsSection({ featureRequestId }: CommentsSectionProps) {
   const hasSessionSource = Boolean(commentSessionProvider);
   const showComposer = hasSessionSource && !requiresSignIn;
 
-  // A host sign-in typically swaps the provider callback (new identity);
+  // The context exposes a stable provider wrapper, so this only fires when the
+  // host adds/removes the provider itself (or the host swaps it deliberately):
   // re-check on the next submit instead of keeping the dead sign-in state.
+  // While sign-in state is up, the Retry button is the recovery path.
   useEffect(() => {
     setRequiresSignIn(false);
   }, [commentSessionProvider]);

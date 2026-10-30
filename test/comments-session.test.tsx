@@ -34,7 +34,8 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+const { CupThreadProvider, useCupThreadCommentSession } =
+  await import('../src/theme/CupThreadThemeProvider');
 const { CommentsSection } = await import('../src/components/CommentsSection');
 const { FeedbackClient } = await import('../src/client/FeedbackClient');
 const { AuthenticationRequiredException } = await import('../src/client/FeedbackException');
@@ -328,6 +329,119 @@ test(
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a host re-render with a fresh inline provider identity keeps the sign-in state and the provider reference',
+  renderTestOptions,
+  async () => {
+    // The provider must wrap the host callback in a stable ref-backed function:
+    // an inline arrow (new identity per host render) must neither reset the
+    // sign-in state nor rebuild the context value between renders.
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+    const client = new CommentsStubClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comments_session_test',
+    });
+    const observedProviders: unknown[] = [];
+    let sessionToken: string | null = null;
+    let rerenderHost: (() => void) | null = null;
+
+    function SessionProbe() {
+      observedProviders.push(useCupThreadCommentSession());
+      return null;
+    }
+
+    function Host() {
+      const [, setTick] = React.useState(0);
+      rerenderHost = () => setTick((n) => n + 1);
+      // Inline arrow: a brand-new identity on every host render — exactly the
+      // shape the README documents.
+      return React.createElement(CupThreadProvider, {
+        client,
+        userToken: 'usr_tok_test',
+        commentSessionProvider: () => sessionToken,
+        children: [
+          React.createElement(SessionProbe, { key: 'probe' }),
+          React.createElement(CommentsSection, { key: 'section', featureRequestId: 'fr_1' }),
+        ],
+      });
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(React.createElement(Host));
+      });
+      await flush();
+      assert.ok(rerenderHost, 'host must expose a re-render trigger');
+
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Still here');
+      });
+      const send = findButtonByText(renderer.root, 'Post Comment');
+      await act(async () => {
+        send!.props.onPress();
+      });
+      await flush();
+
+      assert.ok(
+        collectText(renderer.root).includes('Sign in to comment'),
+        'sign-in state must be active before the host re-renders'
+      );
+
+      // Host re-renders with a fresh inline callback identity while still
+      // signed out: the composer must stay hidden.
+      await act(async () => {
+        rerenderHost!();
+      });
+      await flush();
+
+      assert.ok(
+        collectText(renderer.root).includes('Sign in to comment'),
+        'an unstable provider identity must not reset the sign-in state while signed out'
+      );
+      assert.ok(
+        !findButtonByText(renderer.root, 'Post Comment'),
+        'the composer must stay hidden after an unrelated host re-render'
+      );
+
+      // The exposed provider reference is stable across host re-renders.
+      assert.ok(
+        observedProviders.length >= 2,
+        'the probe must have observed the context on every host render'
+      );
+      const providerRef = observedProviders[0];
+      assert.ok(providerRef, 'a configured provider must be non-null');
+      for (const observed of observedProviders.slice(1)) {
+        assert.equal(observed, providerRef, 'the context provider reference must stay stable');
+      }
+
+      // Recovery stays with Retry, which now finds the signed-in session.
+      sessionToken = 'clerk_jwt_after_signin';
+      const retry = findButtonByText(renderer.root, 'Retry');
+      await act(async () => {
+        retry!.props.onPress();
+      });
+      await flush();
+
+      assert.ok(
+        !collectText(renderer.root).includes('Sign in to comment'),
+        'composer must return once Retry finds a session'
+      );
+      assert.equal(
+        renderer.root.findByType(TextInputStub as any).props.value,
+        'Still here',
+        'draft text must survive the re-render and sign-in round trip'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
     }
   }
 );

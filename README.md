@@ -322,7 +322,7 @@ Each scope keeps at most 50 seen ids (`UserTokenStore.MAX_SEEN_CHANGELOGS`) and 
 
 #### Storage Security & Encrypted Adapters
 
-The token is a bearer credential identifying the user to the CupThread API for all actions (votes, comments, feedback, and user attributes). While plaintext `AsyncStorage` is fine for local-only development or anonymous-only usage, production apps—especially when using `setToken()` with real user IDs—should persist it with an encrypted adapter such as [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/) (Expo) or `react-native-keychain` / encrypted MMKV (bare React Native).
+The token is a bearer credential identifying the user to the CupThread API for all actions it unlocks (votes, feature-request proposals, feedback, and user attributes — but not comment writes, which require a Clerk session, see [Comment Writes Require a Clerk Session](#comment-writes-require-a-clerk-session)). While plaintext `AsyncStorage` is fine for local-only development or anonymous-only usage, production apps—especially when using `setToken()` with real user IDs—should persist it with an encrypted adapter such as [`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/) (Expo) or `react-native-keychain` / encrypted MMKV (bare React Native).
 
 `SecureStore`'s `(get|set|delete)ItemAsync` map ~1:1 onto `TokenStorageAdapter`. The asynchronous adapter path is fully supported (`getToken()` and `isTokenReady` handle pending reads seamlessly):
 
@@ -341,7 +341,7 @@ UserTokenStore.configure({
 
 #### Login / Logout Identity Switching
 
-To attribute SDK activity to your own signed-in users, call `setToken()` after login and `resetToken()` on logout. `<CupThreadProvider>` (mounted without an explicit `userToken` prop) subscribes to these switches automatically — every mounted SDK screen re-resolves its token and subsequent votes, comments, and feedback are attributed to the new identity:
+To attribute SDK activity to your own signed-in users, call `setToken()` after login and `resetToken()` on logout. `<CupThreadProvider>` (mounted without an explicit `userToken` prop) subscribes to these switches automatically — every mounted SDK screen re-resolves its token and subsequent votes and feedback are attributed to the new identity (comment writes are attributed through the Clerk session instead — see [Comment Writes Require a Clerk Session](#comment-writes-require-a-clerk-session)):
 
 ```tsx
 // After your auth flow signs the user in:

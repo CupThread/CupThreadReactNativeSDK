@@ -144,10 +144,7 @@ export function shouldRetryAfterFailure(attempt: number, error: unknown): boolea
  * return a fresh short-lived JWT on every call.
  */
 export type CommentSessionProvider = () =>
-  | string
-  | null
-  | undefined
-  | Promise<string | null | undefined>;
+  string | null | undefined | Promise<string | null | undefined>;
 
 /**
  * Context value provided by {@link CupThreadProvider} to descendant SDK components.
@@ -182,6 +179,12 @@ export interface CupThreadContextValue {
    * Host-provided source for the signed-in user's Clerk session token, or
    * `null` when the host has not configured one. Comment surfaces stay in a
    * sign-in state while this is `null`.
+   *
+   * @remarks
+   * The provider wraps the host callback in a stable ref-backed function, so
+   * an inline callback (new identity per host render) does not change this
+   * value. It only changes when a provider goes from configured to unconfigured
+   * or back.
    */
   commentSessionProvider: CommentSessionProvider | null;
 
@@ -510,12 +513,24 @@ export function CupThreadProvider({
     return getLocaleStrings(resolvedLocale, customStrings);
   }, [resolvedLocale, customStrings]);
 
+  // Hosts commonly pass an inline arrow (new identity per render). Wrap the
+  // latest callback in a ref-backed stable function so a host re-render neither
+  // rebuilds the context value nor resets sign-in state that keyed off the
+  // callback identity. Presence (configured vs not) stays part of the identity.
+  const commentSessionProviderRef = useRef(commentSessionProvider);
+  commentSessionProviderRef.current = commentSessionProvider;
+  const hasCommentSessionProvider = Boolean(commentSessionProvider);
+  const stableCommentSessionProvider = useMemo<CommentSessionProvider | null>(
+    () => (hasCommentSessionProvider ? () => commentSessionProviderRef.current?.() : null),
+    [hasCommentSessionProvider]
+  );
+
   const value: CupThreadContextValue = useMemo(
     () => ({
       client,
       userToken: resolvedUserToken,
       isTokenReady,
-      commentSessionProvider: commentSessionProvider ?? null,
+      commentSessionProvider: stableCommentSessionProvider,
       themeName: effectiveTheme,
       colors,
       appConfig: configState.appConfig,
@@ -529,7 +544,7 @@ export function CupThreadProvider({
       client,
       resolvedUserToken,
       isTokenReady,
-      commentSessionProvider,
+      stableCommentSessionProvider,
       effectiveTheme,
       colors,
       configState.appConfig,
@@ -777,4 +792,3 @@ export function useCupThreadAppConfig(): {
     isLoadingConfig: ctx?.isLoadingConfig ?? false,
   };
 }
-
