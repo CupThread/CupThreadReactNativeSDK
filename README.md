@@ -280,6 +280,8 @@ Key behaviors:
 
 When `<CupThreadProvider>` loads your application configuration (`PublicAppConfig`), `FeedbackComposer` automatically validates the outgoing feedback platform against `allowedPlatforms` via `resolveAllowedPlatform()`. If the candidate platform (from `initialDraft.platform`, `client.config.defaultPlatform`, or the runtime OS) is excluded from the app's configured allowlist, it falls back to the first allowed platform and emits a diagnostic warning in development mode (`__DEV__`).
 
+On Expo web / react-native-web builds the runtime platform resolves to `'web'`. The intake schema only accepts `ios`, `macos`, `android`, and `universal`, so the SDK coerces `'web'` to `'universal'` before serializing (see `toWirePlatform()`) — web submissions never fail platform validation.
+
 ### 4. Email Unsubscribe (Changelog & Weekly Digest)
 
 Both unsubscribe flows are token-gated. The API removed the unauthenticated bare-email payload, so unsubscribing requires the signed `token` carried by the link inside the email:

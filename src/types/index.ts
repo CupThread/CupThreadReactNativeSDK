@@ -3,7 +3,10 @@
  *
  * @remarks
  * Used for platform-specific filtering, reporting, and asset targeting across
- * CupThread services.
+ * CupThread services. `'web'` is a host-facing convenience only: the feedback
+ * intake schema accepts `'ios' | 'macos' | 'android' | 'universal'` on the
+ * wire, so the SDK coerces `'web'` to `'universal'` before serialization
+ * (see `toWirePlatform`).
  *
  * @example
  * ```ts

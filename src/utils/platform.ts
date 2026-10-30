@@ -1,5 +1,31 @@
 import type { FeedbackPlatform } from '../types';
 
+/**
+ * Platform values the intake endpoint accepts on the wire.
+ *
+ * The live schema (`FeedbackSubmissionInput.platform`) enumerates only these
+ * four — `'web'` is a host-facing convenience that must be coerced before
+ * serialization.
+ */
+export type ApiFeedbackPlatform = 'ios' | 'macos' | 'android' | 'universal';
+
+/**
+ * Coerces a host-facing platform to the nearest value the intake endpoint
+ * accepts. `'web'` submissions are cross-platform by nature, so they map to
+ * `'universal'`; every already-valid value passes through unchanged.
+ */
+export function toWirePlatform(platform: FeedbackPlatform): ApiFeedbackPlatform {
+  if (
+    platform === 'ios' ||
+    platform === 'macos' ||
+    platform === 'android' ||
+    platform === 'universal'
+  ) {
+    return platform;
+  }
+  return 'universal';
+}
+
 export function getRuntimePlatform(): FeedbackPlatform {
   try {
     // Dynamically check React Native Platform if running in RN runtime.
@@ -38,8 +64,11 @@ function isDev(): boolean {
 /**
  * Resolves an outgoing feedback platform against the application's configured allowlist.
  *
- * - When `allowed` is empty or undefined, `requested ?? fallback` is returned unchanged
- *   (preserving legacy behavior where the server remains authoritative).
+ * Host-facing values that the intake endpoint rejects on the wire (`'web'`) are
+ * coerced via {@link toWirePlatform} before matching, so the resolved platform is
+ * always serializable whether or not an allowlist is configured.
+ *
+ * - When `allowed` is empty or undefined, the coerced `requested ?? fallback` is returned.
  * - When `requested` is present and contained in `allowed`, `requested` is returned.
  * - When `requested` is absent or not in `allowed`, the first entry of `allowed` (or `fallback`
  *   if `allowed` is empty) is returned, and a warning is logged via `console.warn` in development
@@ -55,20 +84,23 @@ export function resolveAllowedPlatform(
   allowed: FeedbackPlatform[] | undefined,
   fallback: FeedbackPlatform
 ): FeedbackPlatform {
+  const wireRequested = requested ? toWirePlatform(requested) : undefined;
+  const wireFallback = toWirePlatform(fallback);
+
   if (!allowed || allowed.length === 0) {
-    return requested ?? fallback;
+    return wireRequested ?? wireFallback;
   }
 
-  if (requested && allowed.includes(requested)) {
-    return requested;
+  if (wireRequested && allowed.includes(wireRequested)) {
+    return wireRequested;
   }
 
   // If requested is absent and fallback is in the allowlist, honor fallback without warning.
-  if (!requested && allowed.includes(fallback)) {
-    return fallback;
+  if (!wireRequested && allowed.includes(wireFallback)) {
+    return wireFallback;
   }
 
-  const resolved = allowed[0] ?? fallback;
+  const resolved = toWirePlatform(allowed[0] ?? fallback);
   if (isDev()) {
     const requestedStr = requested ? `"${requested}"` : `default/fallback "${fallback}"`;
     console.warn(
