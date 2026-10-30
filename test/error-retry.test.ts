@@ -451,6 +451,117 @@ test('useAsyncData keeps isRefreshing true for the whole flight of an uninterrup
 });
 
 // ---------------------------------------------------------------------------
+// useAsyncData: a reload (or an effect-driven restart) superseding an
+// in-flight refresh must release `isRefreshing` at the start of the
+// replacement flight, not only when the replacement settles (#162). The
+// superseded refresh's guarded `finally` skips the reset (#137), so the
+// replacement's start is the only chance to hand the flag back.
+// ---------------------------------------------------------------------------
+
+test('useAsyncData: reload() over an in-flight refresh releases isRefreshing for the whole reload (#162)', async () => {
+  let calls = 0;
+  let releaseReload: (() => void) | null = null;
+  let abortObserved = false;
+  const fetcher = (signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    if (calls === 2) {
+      // The refresh: hangs on the wire until the superseding reload aborts it.
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          abortObserved = true;
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    }
+    // The superseding reload: settles only when the test releases it.
+    return new Promise((resolve) => {
+      releaseReload = () => resolve('reloaded');
+    });
+  };
+
+  const harness = renderTestHook(() => useAsyncData(fetcher));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+
+  // Pull to refresh and let it reach the wire.
+  void harness.result.refresh();
+  await flush();
+  assert.equal(harness.result.isRefreshing, true);
+
+  // A reload (e.g. ErrorState retry) mid-refresh supersedes it with a plain
+  // load: isRefreshing must drop at once instead of riding through reload().
+  void harness.result.reload();
+  await flush();
+  assert.equal(abortObserved, true, 'the reload must abort the superseded refresh');
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stay raised for the superseding reload'
+  );
+  assert.equal(harness.result.isLoading, true, 'isLoading must reflect the reload in flight');
+
+  releaseReload!();
+  await flush();
+  assert.equal(harness.result.isRefreshing, false, 'no flag may remain stuck after the reload');
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.data, 'reloaded');
+});
+
+test('useAsyncData: a fetcher identity change aborting an in-flight refresh leaves no stuck isRefreshing (#162)', async () => {
+  let calls = 0;
+  let activeFetcher: (signal: AbortSignal) => Promise<string>;
+  let releaseReplacement: (() => void) | null = null;
+
+  const hangingFetcher = (signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    // The refresh: hangs until the fetcher change aborts it.
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
+  };
+  const replacementFetcher = (): Promise<string> =>
+    new Promise((resolve) => {
+      releaseReplacement = () => resolve('replacement');
+    });
+
+  activeFetcher = hangingFetcher;
+  const harness = renderTestHook(() => useAsyncData(activeFetcher));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+
+  void harness.result.refresh();
+  await flush();
+  assert.equal(harness.result.isRefreshing, true);
+
+  // A fetcher identity change re-runs the effect: the cleanup aborts the
+  // in-flight refresh and the effect's reload() starts a plain load.
+  activeFetcher = replacementFetcher;
+  harness.rerender();
+  await flush();
+
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must release when the fetcher change supersedes the refresh'
+  );
+  assert.equal(harness.result.isLoading, true, 'the replacement load owns isLoading');
+
+  releaseReplacement!();
+  await flush();
+  assert.equal(harness.result.isRefreshing, false, 'no flag may remain stuck after the restart');
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.data, 'replacement');
+});
+
+// ---------------------------------------------------------------------------
 // useFeatureRequests: error state exposure (consumed by screens for retry UI)
 // ---------------------------------------------------------------------------
 

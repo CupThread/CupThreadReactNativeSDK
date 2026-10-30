@@ -651,6 +651,224 @@ test('useChangelogEntries refresh rewinds to the first page and re-arms paginati
   }
 });
 
+// ---------------------------------------------------------------------------
+// Hook: superseded-refresh flag ownership (#162). A reload (or an effect
+// restart) that aborts an in-flight refresh must release `isRefreshing` when
+// the replacement starts: the superseded refresh's guarded `finally` skips
+// the reset (#137), so the replacement's start is the only chance.
+// ---------------------------------------------------------------------------
+
+/**
+ * Installs a changelog fetch stub whose page-0 responses are settled manually
+ * by the test, so a refresh can be held on the wire and its response can land
+ * late (after a superseding reload aborted it). The raw fetch `signal` is
+ * forwarded to the handlers so they can reject like a real network stack.
+ */
+function installDeferredChangelogFetch(handlers: {
+  onPage0: (call: number, signal: AbortSignal | undefined) => Promise<Response> | Response;
+  onPage2: (signal: AbortSignal | undefined) => Promise<Response> | Response;
+}): { readonly count: number; restore: () => void } {
+  const originalFetch = globalThis.fetch;
+  const state = { count: 0 };
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: { signal?: AbortSignal }) => {
+    const target = url.toString();
+    if (!target.includes('/changelog')) {
+      return new Response('not found', { status: 404 });
+    }
+    const query = new URLSearchParams(target.split('?')[1] ?? '');
+    const signal = init?.signal;
+    if (query.get('cursor')) return handlers.onPage2(signal);
+    state.count += 1;
+    return handlers.onPage0(state.count, signal);
+  }) as any;
+
+  return {
+    get count() {
+      return state.count;
+    },
+    restore: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+test('useChangelogEntries: reload() over an in-flight refresh releases isRefreshing for the whole reload (#162)', async () => {
+  let releaseReload: ((response: Response) => void) | null = null;
+  let releaseStaleRefresh: (() => void) | null = null;
+  const fetchMock = installDeferredChangelogFetch({
+    onPage0: (call) => {
+      if (call === 1) {
+        return pageResponse([makeEntry('e1', '2026-09-01T00:00:00.000Z')], true, 'cur-2');
+      }
+      if (call === 2) {
+        // The refresh: hangs on the wire until aborted, and its response can
+        // still be delivered afterwards to prove the discard guard holds.
+        return new Promise<Response>((resolve) => {
+          releaseStaleRefresh = () =>
+            resolve(
+              pageResponse([makeEntry('e_stale', '2026-09-02T00:00:00.000Z')], true, 'cur-2')
+            );
+        });
+      }
+      // The superseding reload: settles only when the test releases it.
+      return new Promise<Response>((resolve) => {
+        releaseReload = (response) => resolve(response);
+      });
+    },
+    onPage2: () => pageResponse([makeEntry('e2', '2026-08-01T00:00:00.000Z')], false, null),
+  });
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1']
+    );
+    assert.equal(harness.result.hasMore, true);
+
+    // Pull to refresh and let it reach the wire.
+    const refreshPromise = harness.result.refresh();
+    await flush();
+    assert.equal(fetchMock.count, 2);
+    assert.equal(harness.result.isRefreshing, true);
+
+    // A reload (e.g. ErrorState retry) mid-refresh supersedes it with a plain
+    // load: isRefreshing must drop at once instead of riding through reload().
+    void harness.result.reload();
+    await flush();
+    assert.equal(
+      harness.result.isRefreshing,
+      false,
+      'isRefreshing must not stay raised for the superseding reload'
+    );
+    assert.equal(harness.result.isLoading, true, 'isLoading must reflect the reload in flight');
+
+    // The aborted refresh's response landing late must change nothing: the
+    // discard guard drops the stale page and the guarded `finally` skips the
+    // flag reset for an aborted signal (#137).
+    releaseStaleRefresh!();
+    await refreshPromise;
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1'],
+      "the superseded refresh's late page must be discarded"
+    );
+    assert.equal(harness.result.isRefreshing, false, 'the late page must not re-raise flags');
+    assert.equal(harness.result.isLoading, true);
+
+    releaseReload!(
+      pageResponse([makeEntry('e_reload', '2026-09-03T00:00:00.000Z')], true, 'cur-2')
+    );
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e_reload']
+    );
+    assert.equal(harness.result.isRefreshing, false, 'no flag may remain stuck after the reload');
+    assert.equal(harness.result.isLoading, false);
+
+    // Pagination must stay usable after the superseding reload (#162).
+    await harness.result.loadMore();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e_reload', 'e2']
+    );
+    assert.equal(harness.result.hasMore, false);
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('useChangelogEntries: disabling mid-flight aborts a manual refresh still on the wire (#162)', async () => {
+  let enabled = true;
+  let releaseRefresh: ((response: Response) => void) | null = null;
+  let abortObserved = false;
+  const fetchMock = installDeferredChangelogFetch({
+    onPage0: (call, signal) => {
+      if (call === 1) {
+        return pageResponse([makeEntry('e1', '2026-09-01T00:00:00.000Z')], true, 'cur-2');
+      }
+      // The manual refresh: hangs on the wire until aborted.
+      return new Promise<Response>((resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          abortObserved = true;
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+        // If never aborted it could still be answered by hand.
+        releaseRefresh = () =>
+          resolve(pageResponse([makeEntry('e2', '2026-08-01T00:00:00.000Z')], false, null));
+      });
+    },
+    onPage2: () => pageResponse([makeEntry('e3', '2026-07-01T00:00:00.000Z')], false, null),
+  });
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20, enabled }));
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1']
+    );
+
+    // A manual refresh reaches the wire: its controller now replaces the one
+    // the effect cleanup would abort, so only the disabled branch can stop it.
+    const refreshPromise = harness.result.refresh();
+    await flush();
+    assert.equal(fetchMock.count, 2);
+    assert.equal(harness.result.isRefreshing, true);
+
+    // Disable mid-refresh: the manual request must be aborted synchronously
+    // and both flags cleared, not left in flight with the flags cleared
+    // behind it (#162). The synchronous abort assertion is what separates a
+    // real cancellation from the client's request timeout eventually tearing
+    // the hanging request down.
+    enabled = false;
+    harness.rerender();
+    assert.equal(
+      abortObserved,
+      true,
+      'disabling must abort the manual refresh right away, not leave it on the wire'
+    );
+    await refreshPromise;
+    await flush();
+    assert.equal(
+      harness.result.isRefreshing,
+      false,
+      'isRefreshing must not stay raised while the hook is disabled'
+    );
+    assert.equal(harness.result.isLoading, false);
+    assert.equal(
+      harness.result.error,
+      null,
+      'the cancelled refresh must not surface as a first-page error'
+    );
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1']
+    );
+
+    // The released (post-abort) response must change nothing while disabled.
+    releaseRefresh!(pageResponse([makeEntry('e2', '2026-08-01T00:00:00.000Z')], false, null));
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1'],
+      'a page landing after the disable must be discarded'
+    );
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('useChangelogEntries forces hasMore off when a page is empty despite hasMore', async () => {
   const pages = new Map<string | null, { status: number; body?: unknown }>([
     [null, { status: 200, body: { entries: [], hasMore: true, nextCursor: 'cur-2' } }],

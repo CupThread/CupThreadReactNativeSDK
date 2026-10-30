@@ -174,7 +174,15 @@ export function useChangelogEntries(
   // Initial load, and reload when the client / page size / enabled changes.
   useEffect(() => {
     if (!enabled) {
+      // The previous effect's cleanup aborted only its own controller; a
+      // manual refresh()/reload() may have replaced `loadControllerRef` with
+      // a live request the cleanup never saw. Abort it here so the hook
+      // cannot disable with a first page still on the wire, then clear the
+      // flags its guarded `finally` would otherwise skip (#137).
+      loadControllerRef.current?.abort();
+      loadMoreControllerRef.current?.abort();
       setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
@@ -183,6 +191,12 @@ export function useChangelogEntries(
 
     const controller = new AbortController();
     loadControllerRef.current = controller;
+    // The replacement this effect schedules is a plain load, never a
+    // refresh: release the refresh flag now so a refresh aborted above
+    // cannot keep RefreshControl spinning through the replacement's flight.
+    // The aborted refresh's guarded `finally` will not clear it, so this is
+    // the only chance to hand the flag back (#137).
+    setIsRefreshing(false);
     setIsLoading(true);
     void loadFirstPage(controller.signal);
 
@@ -250,6 +264,11 @@ export function useChangelogEntries(
     const controller = new AbortController();
     loadControllerRef.current = controller;
 
+    // reload() supersedes any in-flight refresh with a plain load: release
+    // the refresh flag now, or isRefreshing would stay raised for the whole
+    // reload. The superseded refresh's guarded `finally` skips the reset, so
+    // this is the only chance to clear it (#137).
+    setIsRefreshing(false);
     setIsLoading(true);
     await loadFirstPage(controller.signal);
   }, [enabled, loadFirstPage]);

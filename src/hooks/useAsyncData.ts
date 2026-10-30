@@ -145,6 +145,11 @@ export function useAsyncData<T>(
       controllerRef.current = controller;
 
       if (mode === 'initial') {
+        // reload() supersedes any in-flight refresh with a plain load: release
+        // the refresh flag now, or isRefreshing would stay raised for the
+        // whole reload. The superseded refresh's guarded `finally` skips the
+        // reset, so this is the only chance to clear it (#137).
+        setIsRefreshing(false);
         setIsLoading(true);
       } else {
         setIsRefreshing(true);
