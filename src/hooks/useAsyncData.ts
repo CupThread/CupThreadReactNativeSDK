@@ -160,7 +160,13 @@ export function useAsyncData<T>(
   // Initial load, and reload when the fetcher identity or `enabled` changes.
   useEffect(() => {
     if (!enabled) {
+      // The cleanup below aborts any in-flight load/refresh, and an aborted
+      // runLoad deliberately skips its guarded `finally` reset so it cannot
+      // wipe a newer operation's flags (#137). While the hook stays disabled
+      // nothing else clears them, so reset both here or a refresh aborted by
+      // this flip would leave `isRefreshing` stuck true forever (#158).
       setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 

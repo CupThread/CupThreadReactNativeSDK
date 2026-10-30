@@ -287,6 +287,170 @@ test('useAsyncData aborts an in-flight request when unmounted', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// useAsyncData: disabling while a refresh/reload is in flight must release
+// both loading flags (#158). The aborted operation's guarded `finally` skips
+// its reset by design (#137), so the disabled early-return is the only place
+// left that can clear them.
+// ---------------------------------------------------------------------------
+
+function makeAbortObservingFetcher(onAbort: () => void): (signal: AbortSignal) => Promise<string> {
+  return (signal: AbortSignal) => {
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {
+        onAbort();
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+      // Never settles on its own.
+    });
+  };
+}
+
+test('useAsyncData releases isRefreshing when enabled flips false during a refresh', async () => {
+  let enabled = true;
+  let calls = 0;
+  let abortObserved = false;
+  const fetcher = (signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    return makeAbortObservingFetcher(() => {
+      abortObserved = true;
+    })(signal);
+  };
+
+  const harness = renderTestHook(() => useAsyncData(fetcher, { enabled }));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+  assert.equal(harness.result.isLoading, false);
+
+  void harness.result.refresh();
+  await flush();
+  assert.equal(harness.result.isRefreshing, true, 'refresh must raise isRefreshing mid-flight');
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+
+  assert.equal(abortObserved, true, 'disabling must abort the in-flight refresh');
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'isRefreshing must not stay stuck after the hook is disabled'
+  );
+  assert.equal(harness.result.isLoading, false);
+});
+
+test('useAsyncData releases both flags when enabled flips false during a reload', async () => {
+  let enabled = true;
+  let calls = 0;
+  let abortObserved = false;
+  const fetcher = (signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    return makeAbortObservingFetcher(() => {
+      abortObserved = true;
+    })(signal);
+  };
+
+  const harness = renderTestHook(() => useAsyncData(fetcher, { enabled }));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+
+  void harness.result.reload();
+  await flush();
+  assert.equal(harness.result.isLoading, true, 'reload must raise isLoading mid-flight');
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+
+  assert.equal(abortObserved, true, 'disabling must abort the in-flight reload');
+  assert.equal(harness.result.isLoading, false, 'isLoading must clear when disabled');
+  assert.equal(
+    harness.result.isRefreshing,
+    false,
+    'the refresh flag must stay clear across the disable too'
+  );
+});
+
+test('useAsyncData: re-enabling after the flip starts a fresh load that settles normally', async () => {
+  let enabled = true;
+  let calls = 0;
+  let releaseFresh: (() => void) | null = null;
+  const fetcher = (signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    if (calls === 2) {
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    }
+    return new Promise((resolve) => {
+      releaseFresh = () => resolve('fresh');
+    });
+  };
+
+  const harness = renderTestHook(() => useAsyncData(fetcher, { enabled }));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+
+  void harness.result.refresh();
+  await flush();
+  assert.equal(harness.result.isRefreshing, true);
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.isRefreshing, false, 'the flip must release the stuck flag');
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.isLoading, true, 're-enabling must start a fresh load');
+
+  releaseFresh!();
+  await flush();
+  assert.equal(harness.result.data, 'fresh');
+  assert.equal(harness.result.isLoading, false);
+  assert.equal(harness.result.isRefreshing, false, 'flags must settle cleanly after re-enable');
+});
+
+test('useAsyncData keeps isRefreshing true for the whole flight of an uninterrupted refresh', async () => {
+  let calls = 0;
+  let releaseRefresh: (() => void) | null = null;
+  const fetcher = (_signal: AbortSignal): Promise<string> => {
+    calls++;
+    if (calls === 1) return Promise.resolve('initial');
+    return new Promise((resolve) => {
+      releaseRefresh = () => resolve('fresh');
+    });
+  };
+
+  const harness = renderTestHook(() => useAsyncData(fetcher));
+  await flush();
+  assert.equal(harness.result.data, 'initial');
+
+  void harness.result.refresh();
+  await flush();
+  assert.equal(
+    harness.result.isRefreshing,
+    true,
+    'isRefreshing must stay raised while the refresh is on the wire'
+  );
+  assert.equal(harness.result.isLoading, false, 'a refresh must not raise isLoading');
+
+  releaseRefresh!();
+  await flush();
+  assert.equal(harness.result.isRefreshing, false);
+  assert.equal(harness.result.data, 'fresh');
+});
+
+// ---------------------------------------------------------------------------
 // useFeatureRequests: error state exposure (consumed by screens for retry UI)
 // ---------------------------------------------------------------------------
 
