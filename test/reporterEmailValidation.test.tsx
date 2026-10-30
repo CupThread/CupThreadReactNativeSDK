@@ -39,8 +39,16 @@ if (supportsModuleMocks) {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { FeedbackComposer } = await import('../src/components/FeedbackComposer');
+// Guard the component imports with the mock-capability check: importing the
+// real modules pulls in react-native, which cannot load under plain Node, so
+// without the guard an unsupported Node would crash the file instead of
+// skipping the render-level tests.
+const { CupThreadProvider } = supportsModuleMocks
+  ? await import('../src/theme/CupThreadThemeProvider')
+  : ({} as any);
+const { FeedbackComposer } = supportsModuleMocks
+  ? await import('../src/components/FeedbackComposer')
+  : ({} as any);
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -122,7 +130,13 @@ test(
   'a malformed non-empty reporter email blocks the submit, shows the localized error, and keeps the draft',
   renderTestOptions,
   async () => {
-    for (const malformed of ['john@gmail', 'jane@@example.com', 'a b@c.com', 'jane@example.com,']) {
+    for (const malformed of [
+      'john@gmail',
+      'jane@@example.com',
+      'a b@c.com',
+      'jane@example.com,',
+      'john@example..com',
+    ]) {
       const harness = await createHarness();
       try {
         await act(async () => {

@@ -22,8 +22,10 @@
  * ```
  */
 export function isValidEmail(value: string): boolean {
-  // The shape alone would accept paste artifacts that ride inside the TLD
-  // (`jane@example.com,`), so also require the address to end alphanumerically
-  // — no real domain ends in punctuation.
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && /[a-zA-Z0-9]$/.test(value);
+  // Domain labels must be non-empty (`john@example..com` fails), and each
+  // label excludes `.` so the label segmentation is unambiguous — no
+  // quadratic backtracking on a long pasted value. The trailing alphanumeric
+  // requirement rejects paste artifacts riding at the end of the TLD
+  // (`jane@example.com,`) — no real domain ends in punctuation.
+  return /^[^\s@]+@[^.\s@]+(?:\.[^.\s@]+)+$/.test(value) && /[a-zA-Z0-9]$/.test(value);
 }
