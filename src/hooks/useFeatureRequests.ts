@@ -3,6 +3,7 @@ import type { FeedbackClient } from '../client/FeedbackClient';
 import { RateLimitedException } from '../client/FeedbackException';
 import type { FeatureRequestItem } from '../types';
 import { SearchRateLimiter } from '../utils/searchRateLimiter';
+import type { VoteChangeMeta } from './useToggleVote';
 
 /**
  * Tuning knobs passed through to the hook's {@link SearchRateLimiter}.
@@ -186,10 +187,17 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Applies a state transform to a specific item by ID (e.g. for optimistic votes).
+   *
+   * The change is remembered as a pending mutation so concurrent page-0 loads
+   * keep the optimistic row instead of blind-overwriting it with older server
+   * data. Pass {@link VoteChangeMeta.isRollback} to mark a change that reverts
+   * a failed vote: the pending entry is released so later server snapshots
+   * win for that row again.
    */
   applyItemChange: (
     itemId: string,
-    transform: (item: FeatureRequestItem) => FeatureRequestItem
+    transform: (item: FeatureRequestItem) => FeatureRequestItem,
+    meta?: VoteChangeMeta
   ) => void;
 }
 
@@ -268,13 +276,26 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
 
   const applyItemChange = useCallback(
-    (itemId: string, transform: (item: FeatureRequestItem) => FeatureRequestItem) => {
+    (
+      itemId: string,
+      transform: (item: FeatureRequestItem) => FeatureRequestItem,
+      meta?: VoteChangeMeta
+    ) => {
       localRevisionRef.current += 1;
       setItems((prev) =>
         prev.map((item) => {
           if (item.id === itemId) {
             const updated = transform(item);
-            pendingItemMutationsRef.current.set(itemId, updated);
+            if (meta?.isRollback) {
+              // A rollback ends the optimistic-vote lifecycle (#139): the
+              // reverted snapshot is no longer an in-flight optimistic state,
+              // so it must not stay as a pending mutation — that would pin the
+              // pre-tap row over every later server snapshot whose `hasVoted`
+              // disagrees, and the mismatch could never resolve on its own.
+              pendingItemMutationsRef.current.delete(itemId);
+            } else {
+              pendingItemMutationsRef.current.set(itemId, updated);
+            }
             return updated;
           }
           return item;

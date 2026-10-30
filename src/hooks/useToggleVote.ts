@@ -87,10 +87,29 @@ export function withVoteRollback(
 export type VoteItemTransform = (item: FeatureRequestItem) => FeatureRequestItem;
 
 /**
+ * Metadata describing which vote-lifecycle phase produced a change.
+ */
+export interface VoteChangeMeta {
+  /**
+   * `true` when the transform reverts a failed vote attempt. A rollback ends
+   * the optimistic-vote lifecycle, so a host that guards in-flight optimistic
+   * rows against fresher server snapshots must release the item alongside
+   * applying the revert — otherwise the rolled-back snapshot would be treated
+   * as a live optimistic vote forever and pin the row over every later
+   * refresh (#139).
+   */
+  isRollback?: boolean;
+}
+
+/**
  * Applier supplied by the host component, typically mapping the transform over
  * its list state so the change always lands on the freshest item data.
  */
-export type VoteChangeApplier = (itemId: string, transform: VoteItemTransform) => void;
+export type VoteChangeApplier = (
+  itemId: string,
+  transform: VoteItemTransform,
+  meta?: VoteChangeMeta
+) => void;
 
 /**
  * Options for configuring {@link useToggleVote}.
@@ -259,7 +278,14 @@ export function useToggleVote(
           }
         })
         .catch((err: unknown) => {
-          applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot));
+          // The rollback also ends the optimistic-vote lifecycle: hosts that
+          // keep a pending mutation for the item (so an in-flight vote
+          // survives concurrent refreshes) must release it here, or the
+          // rolled-back snapshot would pin the row over every later server
+          // snapshot (#139).
+          applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot), {
+            isRollback: true,
+          });
           const errorObj = err instanceof Error ? err : new Error(String(err));
           setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));
           setVoteError(errorObj);
