@@ -1367,6 +1367,21 @@ export interface ListFeatureRequestsResult {
    * Total number of matching items across all pages.
    */
   total: number;
+
+  /**
+   * Whether more pages are available after this one, as reported by the
+   * server's keyset cursor pagination. Present only on responses from servers
+   * that serve cursor pagination; offset-only deployments omit both this and
+   * {@link ListFeatureRequestsResult.nextCursor}.
+   */
+  hasMore?: boolean;
+
+  /**
+   * Opaque keyset cursor for the next page. Pass it back as `cursor` on the
+   * next call to read the following page. `null` (or absent) marks the end of
+   * the list; also absent on offset-only deployments.
+   */
+  nextCursor?: string | null;
 }
 
 /**

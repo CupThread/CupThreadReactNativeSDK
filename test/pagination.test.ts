@@ -830,6 +830,424 @@ test('useFeatureRequests: pagination offset tracks consumed windows, not the ded
   assert.equal(harness.result.hasMore, false);
 });
 
+// ---------------------------------------------------------------------------
+// Keyset cursor pagination (#170)
+// ---------------------------------------------------------------------------
+
+test('useFeatureRequests: a cursor-carrying page-0 switches loadMore to the cursor walk (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      if (!opts.cursor) {
+        return {
+          requests: [makeMockItem('fr_c1', 1), makeMockItem('fr_c2', 2)],
+          total: 4,
+          hasMore: true,
+          nextCursor: 'cur_page2',
+        };
+      }
+      if (opts.cursor === 'cur_page2') {
+        return {
+          requests: [makeMockItem('fr_c3', 3), makeMockItem('fr_c4', 4)],
+          total: 4,
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
+      return { requests: [], total: 4, hasMore: false, nextCursor: null };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 2);
+  // The server's exact hasMore is exposed, not the items.length < total
+  // heuristic (2 === total/2 is coincidental here).
+  assert.equal(harness.result.hasMore, true);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    ['fr_c1', 'fr_c2', 'fr_c3', 'fr_c4']
+  );
+  assert.equal(harness.result.hasMore, false, 'server hasMore=false ends the walk');
+
+  const page1 = requestsSeen[1];
+  assert.equal(page1.cursor, 'cur_page2', 'loadMore must send the served cursor');
+  assert.ok(
+    page1.offset === undefined || page1.offset === 0,
+    'a cursor request must not carry a meaningful offset'
+  );
+
+  // The walk is exhausted: further loadMore calls are no-ops.
+  await harness.result.loadMore();
+  assert.equal(requestsSeen.length, 2, 'no fetch happens once the server reports hasMore=false');
+});
+
+test('useFeatureRequests: cursor walk never skips ids over a mutating sort (#170)', async () => {
+  // A mutable "sort" the offset path cannot handle: between page fetches a
+  // new row slides into the head of the list, shifting every window. A keyset
+  // cursor pins the position, so no row is skipped or repeated.
+  const board: FeatureRequestItem[] = [
+    makeMockItem('fr_x1', 1),
+    makeMockItem('fr_x2', 2),
+    makeMockItem('fr_x3', 3),
+    makeMockItem('fr_x4', 4),
+    makeMockItem('fr_x5', 5),
+  ];
+  const pagesServed: string[][] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      if (!opts.cursor) {
+        const page = board.slice(0, 2);
+        pagesServed.push(page.map((i) => i.id));
+        return {
+          requests: page,
+          total: board.length,
+          hasMore: true,
+          nextCursor: 'after:fr_x2',
+        };
+      }
+      if (opts.cursor === 'after:fr_x2') {
+        // A new approval slides into the consumed head region mid-walk.
+        board.unshift(makeMockItem('fr_x0', 0));
+        const index = board.findIndex((i) => i.id === 'fr_x2');
+        const page = board.slice(index + 1, index + 3);
+        pagesServed.push(page.map((i) => i.id));
+        return {
+          requests: page,
+          total: board.length,
+          hasMore: true,
+          nextCursor: 'after:fr_x4',
+        };
+      }
+      const index = board.findIndex((i) => i.id === 'fr_x4');
+      const page = board.slice(index + 1, index + 3);
+      pagesServed.push(page.map((i) => i.id));
+      return {
+        requests: page,
+        total: board.length,
+        hasMore: false,
+        nextCursor: null,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+
+  // Every row that existed when the walk started is served exactly once: no
+  // duplicates and no skips, even though the mid-walk insertion shifted every
+  // offset window. (fr_x0 itself slid into the *consumed* head region, so it
+  // only appears after a refresh — that is keyset semantics, not a skip of
+  // anything the walk had ahead of it.)
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    ['fr_x1', 'fr_x2', 'fr_x3', 'fr_x4', 'fr_x5'],
+    'every pre-existing row is served exactly once despite the mid-walk insertion'
+  );
+  assert.deepEqual(pagesServed, [['fr_x1', 'fr_x2'], ['fr_x3', 'fr_x4'], ['fr_x5']]);
+  assert.equal(harness.result.hasMore, false);
+});
+
+test('useFeatureRequests: a refresh rewinding the cursor discards an in-flight stale page (#170)', async () => {
+  let releaseCursorPage: ((value: any) => void) | null = null;
+  const mockClient = {
+    fetchFeatureRequests: (opts: any) => {
+      if (!opts.cursor) {
+        // Page 0: served immediately, twice (initial load + refresh).
+        return Promise.resolve({
+          requests: [makeMockItem('fr_s1', 1)],
+          total: 3,
+          hasMore: true,
+          nextCursor: 'cur_v2',
+        });
+      }
+      // The in-flight cursor page: hangs until the test releases it.
+      return new Promise((resolve) => {
+        releaseCursorPage = () =>
+          resolve({
+            requests: [makeMockItem('fr_stale', 99)],
+            total: 3,
+            hasMore: false,
+            nextCursor: null,
+          });
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 1,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 1);
+
+  // Start a cursor loadMore (it hangs), then refresh. The refresh rewinds
+  // nextCursorRef to the fresh page-0 cursor while the loadMore is on the
+  // wire, and aborts its controller — the stale response must not splice in.
+  const loadMorePromise = harness.result.loadMore();
+  await harness.result.refresh();
+  await new Promise((r) => setTimeout(r, 20));
+  releaseCursorPage!({
+    requests: [makeMockItem('fr_stale', 99)],
+    total: 3,
+    hasMore: false,
+    nextCursor: null,
+  });
+  await loadMorePromise;
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.deepEqual(
+    harness.result.items.map((i) => i.id),
+    ['fr_s1'],
+    'the stale cursor page must be discarded, not appended'
+  );
+  assert.equal(harness.result.loadMoreError, null);
+});
+
+test('useFeatureRequests: a legacy response without cursor metadata keeps offset pagination (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const allItems = Array.from({ length: 5 }, (_, i) => makeMockItem(`fr_l${i + 1}`, i + 1));
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      const offset = opts.offset ?? 0;
+      return {
+        requests: allItems.slice(offset, offset + (opts.limit ?? 50)),
+        total: 5,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 2);
+  assert.equal(harness.result.hasMore, true, 'legacy heuristic drives hasMore');
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 4);
+  assert.equal(requestsSeen[1].offset, 2, 'the offset window bookkeeping stays in charge');
+  assert.equal(requestsSeen[1].cursor, undefined, 'no cursor is sent against a legacy server');
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 5);
+  assert.equal(harness.result.hasMore, false);
+  assert.equal(harness.result.loadMoreError, null);
+});
+
+test('FeedbackClient.fetchFeatureRequests serializes cursor and omits offset for a cursor request', async () => {
+  const intercepted: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    intercepted.push(url.toString());
+    return new Response(
+      JSON.stringify({ requests: [], total: 0, hasMore: false, nextCursor: null }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_cursor_test',
+    });
+
+    // A cursor request serializes the cursor and no offset parameter.
+    await client.fetchFeatureRequests({ limit: 25, cursor: 'cur_abc', offset: 50 });
+    let parsed = new URL(intercepted[0]);
+    assert.equal(parsed.searchParams.get('cursor'), 'cur_abc');
+    assert.equal(
+      parsed.searchParams.get('offset'),
+      null,
+      'a cursor request must never carry an offset'
+    );
+
+    // An offset request never carries a cursor parameter.
+    await client.fetchFeatureRequests({ limit: 25, offset: 50 });
+    parsed = new URL(intercepted[1]);
+    assert.equal(parsed.searchParams.get('cursor'), null);
+    assert.equal(parsed.searchParams.get('offset'), '50');
+
+    // Default (no cursor, no offset) still serializes offset=0.
+    await client.fetchFeatureRequests({ limit: 10 });
+    parsed = new URL(intercepted[2]);
+    assert.equal(parsed.searchParams.get('cursor'), null);
+    assert.equal(parsed.searchParams.get('offset'), '0');
+
+    // Cursor metadata passes through to the caller untouched.
+    const page = await client.fetchFeatureRequests({ cursor: 'cur_abc' });
+    assert.equal(page.hasMore, false);
+    assert.equal(page.nextCursor, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('useFeatureRequests: an exhausted cursor walk never falls back to an offset request (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      if (!opts.cursor) {
+        return {
+          requests: [makeMockItem('fr_e1', 1), makeMockItem('fr_e2', 2)],
+          total: 10, // drifted high: more than the 4 rows the walk ever serves
+          hasMore: true,
+          nextCursor: 'cur_e2',
+        };
+      }
+      // Terminal cursor page: hasMore=false with nextCursor=null.
+      return {
+        requests: [makeMockItem('fr_e3', 3), makeMockItem('fr_e4', 4)],
+        total: 10,
+        hasMore: false,
+        nextCursor: null,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 4);
+  // items (4) < total (10): the offset heuristic would let this through and
+  // re-read a stale window; cursor mode must refuse.
+  assert.equal(harness.result.hasMore, false);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(
+    requestsSeen.length,
+    2,
+    'an exhausted cursor walk must not fire a stale offset request'
+  );
+});
+
+test('useFeatureRequests: a terminal single-page cursor response stays in cursor mode (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      return {
+        requests: [makeMockItem('fr_t1', 1)],
+        total: 5,
+        hasMore: false,
+        nextCursor: null,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 1);
+  assert.equal(harness.result.hasMore, false, 'the server-reported hasMore=false wins');
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(
+    requestsSeen.length,
+    1,
+    'a terminal cursor page-0 must not hand pagination back to the offset window'
+  );
+});
+
+test('useFeatureRequests: a non-advancing cursor ends the walk instead of looping (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      if (!opts.cursor) {
+        return {
+          requests: [makeMockItem('fr_n1', 1)],
+          total: 4,
+          hasMore: true,
+          nextCursor: 'cur_stuck',
+        };
+      }
+      // Misbehaving server: reports more pages but hands back the SAME cursor
+      // it was given, so the walk could never advance.
+      return {
+        requests: [makeMockItem('fr_n2', 2), makeMockItem('fr_n3', 3)],
+        total: 4,
+        hasMore: true,
+        nextCursor: 'cur_stuck',
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 3, 'the duplicate page still appends its fresh rows');
+  assert.equal(
+    harness.result.hasMore,
+    false,
+    'a stalled cursor must end pagination instead of keeping hasMore true'
+  );
+
+  // Further loadMore calls must not re-request the stuck page.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(requestsSeen.length, 2, 'the walk stops instead of looping on the same cursor');
+});
+
 test('useFeatureRequests applyItemChange transforms specific item without refetching', async () => {
   const mockClient = {
     fetchFeatureRequests: async () => ({

@@ -1292,7 +1292,7 @@ export class FeedbackClient {
    * rather than as a URL query parameter to prevent credential leakage into server access logs,
    * reverse proxies, CDNs, and browser history (CWE-598).
    *
-   * @param options - Query parameters including `userToken`, `limit`, `offset`, `versionId`, and `query`.
+   * @param options - Query parameters including `userToken`, `limit`, `offset`, `cursor`, `versionId`, and `query`.
    * @returns Paginated list of feature request items.
    *
    * @example
@@ -1311,6 +1311,18 @@ export class FeedbackClient {
    * // `X-User-Token` header is sent for the request.
    * const result = await client.fetchFeatureRequests({ limit: 20 });
    * ```
+   *
+   * @example Keyset cursor pagination
+   * ```ts
+   * // Prefer `cursor` over `offset`: the keyset cursor is exact over the
+   * // server's mutable sort, while offset windows can skip or repeat rows
+   * // when items are approved or re-voted between pages.
+   * let cursor: string | undefined;
+   * do {
+   *   const page = await client.fetchFeatureRequests({ limit: 50, cursor });
+   *   cursor = page.nextCursor ?? undefined;
+   * } while (cursor);
+   * ```
    */
   public async fetchFeatureRequests(options: {
     /**
@@ -1328,6 +1340,14 @@ export class FeedbackClient {
      * Page offset index (default: 0).
      */
     offset?: number;
+    /**
+     * Opaque keyset cursor from a previous response's `nextCursor`. When
+     * provided, the server resolves the page from the cursor and ignores
+     * `offset` entirely; this method then serializes only the cursor and
+     * omits `offset` from the query string. Responses from cursor-capable
+     * servers carry `hasMore` and `nextCursor` alongside the page.
+     */
+    cursor?: string;
     /**
      * Optional version ID filter.
      */
@@ -1354,8 +1374,15 @@ export class FeedbackClient {
     const params = new URLSearchParams({
       appKey: this.config.appKey,
       limit: String(options.limit ?? 50),
-      offset: String(options.offset ?? 0),
     });
+
+    // The API resolves a cursor request from the keyset and ignores `offset`
+    // entirely, so a cursor request must not carry an offset parameter.
+    if (options.cursor) {
+      params.append('cursor', options.cursor);
+    } else {
+      params.append('offset', String(options.offset ?? 0));
+    }
 
     if (transport === 'query' || transport === 'both') {
       if (options.userToken) {
