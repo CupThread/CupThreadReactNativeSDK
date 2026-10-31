@@ -34,6 +34,8 @@ import { isSurfaceEnabled } from '../utils/featureFlags';
 import {
   createFeatureRequestComposeState,
   resetFeatureRequestComposeState,
+  resolveReopenedFeatureRequestComposeState,
+  shouldResetComposerStateOnReopen,
 } from '../utils/composer-state';
 import { userFacingErrorMessage } from '../utils/errors';
 import { resolveEffectiveUserToken } from '../utils/userToken';
@@ -163,20 +165,44 @@ export function FeatureRequestComposeSheet({
     const wasVisible = prevVisibleRef.current;
     if (!wasVisible && visible) {
       openSessionRef.current += 1;
-      const draftChanged = initialDraft !== prevInitialDraftRef.current;
-      const shouldReset = !preserveDraftOnClose || hasSubmittedRef.current || draftChanged;
-      if (shouldReset) {
+      // The reopen decision (and the preserved-session state shape below) come
+      // from the shared composer-state helpers — the single implementation of
+      // the reopen semantics, kept in sync with FeedbackComposer.
+      const reopenOptions = {
+        preserveDraftOnClose,
+        hasSubmitted: hasSubmittedRef.current,
+        initialDraft,
+        previousInitialDraft: prevInitialDraftRef.current,
+      };
+      if (shouldResetComposerStateOnReopen(reopenOptions)) {
         resetForm(initialDraft);
         hasSubmittedRef.current = false;
       } else {
-        setErrorMessage(null);
-        setIsSubmitting(false);
+        const preserved = resolveReopenedFeatureRequestComposeState(
+          { title, description, requesterName, isSubmitting, errorMessage },
+          reopenOptions
+        );
+        setTitle(preserved.title);
+        setDescription(preserved.description);
+        setRequesterName(preserved.requesterName);
+        setIsSubmitting(preserved.isSubmitting);
+        setErrorMessage(preserved.errorMessage);
         isSubmittingRef.current = false;
       }
       prevInitialDraftRef.current = initialDraft;
     }
     prevVisibleRef.current = visible;
-  }, [visible, preserveDraftOnClose, initialDraft, resetForm]);
+  }, [
+    visible,
+    preserveDraftOnClose,
+    initialDraft,
+    resetForm,
+    title,
+    description,
+    requesterName,
+    isSubmitting,
+    errorMessage,
+  ]);
 
   const handleClose = useCallback(() => {
     if (!preserveDraftOnClose) {

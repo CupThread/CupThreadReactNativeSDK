@@ -35,7 +35,12 @@ import { formatFileSize } from '../utils/formatters';
 import { processPickedAttachments, uploadInSessionChunks } from '../utils/attachments';
 import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../client/FeedbackClient';
 import { isSurfaceEnabled } from '../utils/featureFlags';
-import { createFeedbackComposerState, resetFeedbackComposerState } from '../utils/composer-state';
+import {
+  createFeedbackComposerState,
+  resetFeedbackComposerState,
+  resolveReopenedFeedbackComposerState,
+  shouldResetComposerStateOnReopen,
+} from '../utils/composer-state';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import type { PickedAttachmentInput } from '../utils/attachments';
 import { uploadErrorMessage, userFacingErrorMessage } from '../utils/errors';
@@ -226,21 +231,59 @@ export function FeedbackComposer({
     const wasVisible = prevVisibleRef.current;
     if (!wasVisible && visible) {
       openSessionRef.current += 1;
-      const draftChanged = initialDraft !== prevInitialDraftRef.current;
-      const shouldReset = !preserveDraftOnClose || hasSubmittedRef.current || draftChanged;
-      if (shouldReset) {
+      // The reopen decision (and the preserved-session state shape below) come
+      // from the shared composer-state helpers — the single implementation of
+      // the reopen semantics, kept in sync with FeatureRequestComposeSheet.
+      const reopenOptions = {
+        preserveDraftOnClose,
+        hasSubmitted: hasSubmittedRef.current,
+        initialDraft,
+        previousInitialDraft: prevInitialDraftRef.current,
+      };
+      if (shouldResetComposerStateOnReopen(reopenOptions)) {
         resetForm(initialDraft);
         hasSubmittedRef.current = false;
       } else {
-        setErrorMessage(null);
-        setIsUploadingAttachment(false);
-        setIsSubmitting(false);
+        const preserved = resolveReopenedFeedbackComposerState(
+          {
+            title,
+            description,
+            reporterName,
+            reporterEmail,
+            attachments,
+            isUploadingAttachment,
+            isSubmitting,
+            errorMessage,
+          },
+          reopenOptions
+        );
+        setTitle(preserved.title);
+        setDescription(preserved.description);
+        setReporterName(preserved.reporterName);
+        setReporterEmail(preserved.reporterEmail);
+        setAttachments(preserved.attachments);
+        setIsUploadingAttachment(preserved.isUploadingAttachment);
+        setIsSubmitting(preserved.isSubmitting);
+        setErrorMessage(preserved.errorMessage);
         isSubmittingRef.current = false;
       }
       prevInitialDraftRef.current = initialDraft;
     }
     prevVisibleRef.current = visible;
-  }, [visible, preserveDraftOnClose, initialDraft, resetForm]);
+  }, [
+    visible,
+    preserveDraftOnClose,
+    initialDraft,
+    resetForm,
+    title,
+    description,
+    reporterName,
+    reporterEmail,
+    attachments,
+    isUploadingAttachment,
+    isSubmitting,
+    errorMessage,
+  ]);
 
   const handleClose = useCallback(() => {
     if (!preserveDraftOnClose) {

@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createComposerState,
   resetComposerState,
   createFeedbackComposerState,
   resetFeedbackComposerState,
   resolveReopenedFeedbackComposerState,
+  shouldResetComposerStateOnReopen,
   createFeatureRequestComposeState,
   resetFeatureRequestComposeState,
   resolveReopenedFeatureRequestComposeState,
@@ -241,4 +245,161 @@ test('FeatureRequestComposeSheet: resolveReopenedFeatureRequestComposeState hand
   assert.equal(preserved.description, 'Some long proposal description');
   assert.equal(preserved.requesterName, 'Dave');
   assert.equal(preserved.errorMessage, null);
+});
+
+// ---------------------------------------------------------------------------
+// Single reopen decision shared with the shipping components (issue #146)
+// ---------------------------------------------------------------------------
+
+test('Reopen decision: undefined -> defined initialDraft transition resets the form (shipped semantics)', () => {
+  const userTypedState: FeedbackComposerState = {
+    title: 'Draft typed before the host attached an initialDraft',
+    description: 'User-typed repro steps',
+    reporterName: 'Eve',
+    reporterEmail: 'eve@example.com',
+    attachments: [makeAttachment('typed-before-draft')],
+    isUploadingAttachment: false,
+    isSubmitting: false,
+    errorMessage: 'Earlier validation failure',
+  };
+
+  // A host transitioning `initialDraft` from `undefined` to a defined object is
+  // re-contextualizing the form: the typed draft is reset to the new draft, even
+  // with `preserveDraftOnClose: true`. This is the behavior the shipping
+  // components have always had via their identity compare — now encoded once in
+  // the shared decision helper.
+  const reopened = resolveReopenedFeedbackComposerState(userTypedState, {
+    preserveDraftOnClose: true,
+    hasSubmitted: false,
+    initialDraft: { title: 'Freshly attached draft' },
+    previousInitialDraft: undefined,
+  });
+  assert.equal(reopened.title, 'Freshly attached draft');
+  assert.equal(reopened.description, '');
+  assert.equal(reopened.reporterName, '');
+  assert.equal(reopened.reporterEmail, '');
+  assert.deepEqual(reopened.attachments, []);
+  assert.equal(reopened.errorMessage, null);
+  assert.equal(
+    shouldResetComposerStateOnReopen({
+      preserveDraftOnClose: true,
+      hasSubmitted: false,
+      initialDraft: { title: 'Freshly attached draft' },
+      previousInitialDraft: undefined,
+    }),
+    true,
+    'the shared decision itself must report a reset for undefined -> defined'
+  );
+});
+
+test('Reopen decision: defined -> undefined initialDraft transition resets the form to clean defaults', () => {
+  const userTypedState: FeatureRequestComposeState = {
+    title: 'Typed proposal',
+    description: 'Typed description',
+    requesterName: 'Frank',
+    isSubmitting: true,
+    errorMessage: 'Earlier failure',
+  };
+
+  const reopened = resolveReopenedFeatureRequestComposeState(userTypedState, {
+    preserveDraftOnClose: true,
+    hasSubmitted: false,
+    initialDraft: undefined,
+    previousInitialDraft: { title: 'Earlier context' },
+  });
+  assert.equal(reopened.title, '');
+  assert.equal(reopened.description, '');
+  assert.equal(reopened.requesterName, '');
+  assert.equal(reopened.isSubmitting, false);
+  assert.equal(reopened.errorMessage, null);
+});
+
+test('Reopen decision: same-identity drafts (defined or undefined) preserve the typed state', () => {
+  const draft: Partial<FeedbackDraft> = { title: 'Stable context' };
+  assert.equal(
+    shouldResetComposerStateOnReopen({
+      preserveDraftOnClose: true,
+      hasSubmitted: false,
+      initialDraft: draft,
+      previousInitialDraft: draft,
+    }),
+    false
+  );
+  assert.equal(
+    shouldResetComposerStateOnReopen({
+      preserveDraftOnClose: true,
+      hasSubmitted: false,
+      initialDraft: undefined,
+      previousInitialDraft: undefined,
+    }),
+    false
+  );
+  assert.equal(
+    shouldResetComposerStateOnReopen({
+      preserveDraftOnClose: true,
+      hasSubmitted: false,
+      initialDraft: { title: 'Swapped in' },
+      previousInitialDraft: undefined,
+    }),
+    true,
+    'undefined -> defined must reset'
+  );
+  assert.equal(
+    shouldResetComposerStateOnReopen({
+      preserveDraftOnClose: true,
+      hasSubmitted: true,
+      initialDraft: draft,
+      previousInitialDraft: draft,
+    }),
+    true,
+    'a submitted session always resets'
+  );
+});
+
+test('Reopen semantics ship as a single implementation: components call the shared helpers', () => {
+  const srcDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
+  const composerSource = readFileSync(
+    path.join(srcDir, 'components', 'FeedbackComposer.tsx'),
+    'utf8'
+  );
+  const sheetSource = readFileSync(
+    path.join(srcDir, 'components', 'FeatureRequestComposeSheet.tsx'),
+    'utf8'
+  );
+
+  // Both components must make the reopen decision through the shared helper…
+  assert.match(
+    composerSource,
+    /shouldResetComposerStateOnReopen\(/,
+    'FeedbackComposer must use the shared reopen decision helper'
+  );
+  assert.match(
+    sheetSource,
+    /shouldResetComposerStateOnReopen\(/,
+    'FeatureRequestComposeSheet must use the shared reopen decision helper'
+  );
+  // …and apply the preserved-session state through the resolver…
+  assert.match(
+    composerSource,
+    /resolveReopenedFeedbackComposerState\(/,
+    'FeedbackComposer must apply preserved-session state through the shared resolver'
+  );
+  assert.match(
+    sheetSource,
+    /resolveReopenedFeatureRequestComposeState\(/,
+    'FeatureRequestComposeSheet must apply preserved-session state through the shared resolver'
+  );
+
+  // …instead of re-implementing the decision inline (the drifted copy this
+  // issue consolidated — see the removed `draftChanged` locals).
+  assert.doesNotMatch(
+    composerSource,
+    /const draftChanged = initialDraft !== prevInitialDraftRef\.current;/,
+    'FeedbackComposer must not re-implement the reopen decision inline'
+  );
+  assert.doesNotMatch(
+    sheetSource,
+    /const draftChanged = initialDraft !== prevInitialDraftRef\.current;/,
+    'FeatureRequestComposeSheet must not re-implement the reopen decision inline'
+  );
 });
