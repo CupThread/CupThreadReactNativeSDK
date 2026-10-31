@@ -36,7 +36,9 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
   - `POST /api/v1/feature-requests/:id/comments` — Post a comment or reply on a feature request.
   - `GET /api/v1/users/:userId/profile` — Public developer profile, authored apps, and recent comments.
   - `POST /api/v1/feedback` — Submit feedback draft with attachments.
-  - `POST /api/v1/uploads/images` & `POST /api/v1/uploads/r2` — Media and log attachment uploads.
+  - `POST /api/v1/uploads/sessions` — Reserve a governed upload session (1–8 files per session; daily quota billed from declared byte sizes; identity-bound via `X-User-Token` with anonymous callers falling back to the shared `UserTokenStore` id). Legacy direct uploads are gone: `POST /api/v1/uploads/r2` is a `410 Gone` tombstone and `POST /api/v1/uploads/images` now requires a session.
+  - `POST /api/v1/uploads/:uploadId` — Fill a reserved slot with multipart bytes, authorized by the upload session's bearer token (multipart twin of the server-documented `PUT /api/v1/uploads/:uploadId`).
+  - `POST /api/v1/public/digest/unsubscribe` — Weekly-digest unsubscribe with the signed token from the email footer / `List-Unsubscribe` header (workspace-scoped; the `GET` twin renders an HTML interstitial and mutates nothing).
 
 ## Quality Rules
 
