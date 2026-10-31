@@ -2,6 +2,7 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import type { FeedbackAttachment, FeatureRequestItem } from '../src/types';
 
@@ -72,48 +73,7 @@ if (supportsModuleMocks) {
       Modal: ModalStub,
       SafeAreaView: ({ children }: any) => children ?? null,
       RefreshControl: () => null,
-      FlatList: ({
-        data,
-        renderItem,
-        keyExtractor,
-        ListHeaderComponent,
-        ListFooterComponent,
-        ListEmptyComponent,
-      }: any) => {
-        const items = Array.isArray(data)
-          ? data.map((item: any, index: number) =>
-              React.createElement(
-                React.Fragment,
-                { key: keyExtractor ? keyExtractor(item, index) : String(index) },
-                renderItem({ item, index, separators: {} })
-              )
-            )
-          : [];
-        return React.createElement(
-          React.Fragment,
-          null,
-          // VirtualizedList renders a component prop via
-          // `React.createElement(...)` but an element prop verbatim
-          // (`isValidElement`); mirror that branch so both header shapes
-          // reach the tree exactly like the real list renders them.
-          ListHeaderComponent
-            ? React.isValidElement(ListHeaderComponent)
-              ? ListHeaderComponent
-              : React.createElement(ListHeaderComponent)
-            : null,
-          ...items,
-          ListFooterComponent
-            ? React.isValidElement(ListFooterComponent)
-              ? ListFooterComponent
-              : React.createElement(ListFooterComponent)
-            : null,
-          ListEmptyComponent
-            ? React.isValidElement(ListEmptyComponent)
-              ? ListEmptyComponent
-              : React.createElement(ListEmptyComponent)
-            : null
-        );
-      },
+      FlatList: createFlatListStub(),
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },
       Alert: { alert: () => {} },
       Linking: { openURL: () => Promise.resolve() },

@@ -2,6 +2,7 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import type { FeatureRequestItem } from '../src/types';
 
@@ -23,41 +24,7 @@ const TextStub = (props: any) => {
   return React.createElement('Text', props, props.children ?? null);
 };
 
-const FlatListStub = ({
-  data,
-  renderItem,
-  ListHeaderComponent,
-  ListFooterComponent,
-  ListEmptyComponent,
-}: any) => {
-  return React.createElement(
-    'FlatList',
-    null,
-    ListHeaderComponent
-      ? typeof ListHeaderComponent === 'function'
-        ? React.createElement(ListHeaderComponent)
-        : ListHeaderComponent
-      : null,
-    data && data.length > 0
-      ? data.map((item: any, index: number) =>
-          React.createElement(
-            React.Fragment,
-            { key: item.id ?? index },
-            renderItem({ item, index })
-          )
-        )
-      : ListEmptyComponent
-        ? typeof ListEmptyComponent === 'function'
-          ? React.createElement(ListEmptyComponent)
-          : ListEmptyComponent
-        : null,
-    ListFooterComponent
-      ? typeof ListFooterComponent === 'function'
-        ? React.createElement(ListFooterComponent)
-        : ListFooterComponent
-      : null
-  );
-};
+const FlatListStub = createFlatListStub();
 
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
