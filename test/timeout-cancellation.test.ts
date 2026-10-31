@@ -444,10 +444,12 @@ test('FeedbackClient normal uploadAttachment is unaffected by timeout', async ()
     return new Response(
       JSON.stringify({
         uploadId: 'upl_1',
+        status: 'uploaded',
+        stored: true,
         filename: 'screenshot.png',
-        contentType: 'image/png',
-        sizeBytes: 1024,
-        downloadUrl: 'https://cdn.cupthread.com/img_123.png',
+        mimeType: 'image/png',
+        size: 1024,
+        sha256: 'a'.repeat(64),
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
@@ -469,7 +471,9 @@ test('FeedbackClient normal uploadAttachment is unaffected by timeout', async ()
     });
 
     assert.equal(attachment.uploadId, 'upl_1');
-    assert.equal(attachment.url, 'https://cdn.cupthread.com/img_123.png');
+    // The served `UploadedFileResponse` carries no download URL (it is minted
+    // server-side when the feedback finalizes), so the slot URL remains.
+    assert.equal(attachment.url, '/api/v1/uploads/upl_1');
   } finally {
     globalThis.fetch = originalFetch;
   }

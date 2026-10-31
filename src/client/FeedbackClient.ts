@@ -123,14 +123,18 @@ interface UploadSessionFileWire {
 }
 
 /**
- * Response shape of `PUT /api/v1/uploads/{uploadId}`.
+ * Response shape of `POST /api/v1/uploads/{uploadId}` (the multipart twin of
+ * the documented `PUT /api/v1/uploads/{uploadId}`, which answers the same
+ * `UploadedFileResponse`). Fields are optional here so a truncated body keeps
+ * falling back to what the client itself declared. There is no `downloadUrl` —
+ * the signed download URL is minted server-side when the feedback submission
+ * finalizes.
  */
 interface UploadedFileResponse {
   uploadId?: string;
   filename?: string;
-  contentType?: string;
-  sizeBytes?: number;
-  downloadUrl?: string | null;
+  mimeType?: string;
+  size?: number;
 }
 
 /**
@@ -1205,10 +1209,12 @@ export class FeedbackClient {
       kind: declaration.kind,
       uploadId: json?.uploadId || slot.uploadId,
       key: json?.uploadId || slot.uploadId,
-      url: json?.downloadUrl || slot.uploadUrl,
+      // The served `UploadedFileResponse` carries no download URL; it is minted
+      // server-side when the feedback submission finalizes.
+      url: slot.uploadUrl,
       filename: json?.filename || declaration.filename,
-      mimeType: json?.contentType || declaration.mimeType,
-      size: json?.sizeBytes ?? declaration.size,
+      mimeType: json?.mimeType || declaration.mimeType,
+      size: json?.size ?? declaration.size,
     };
   }
 
@@ -2252,14 +2258,15 @@ export class FeedbackClient {
    * API resolves those within the app named by the `appKey` query parameter,
    * so this method always sends the client's configured app key; pass
    * `appKey` to override it when rendering a profile from another app's board.
-   * Raw Clerk ids (`user_*`) resolve without an app key but still accept one.
+   * Raw Clerk ids (`user_*`) are not resolved here (PRIV-06): they answer the
+   * anonymous placeholder profile, not the person's public profile.
    *
    * The endpoint is rate limited per client IP and answers `429` when the
    * budget is spent, which surfaces as {@link RateLimitedException} with the
    * `Retry-After` hint. An unknown `u_*` id, or a `u_*` id with no app key to
    * resolve against, answers `404`.
    *
-   * @param userId - App-scoped public id (`u_<hex>`) or a Clerk user id.
+   * @param userId - App-scoped public id (`u_<hex>`) from a board or comment payload.
    * @param options - Optional request options (including an `appKey` override), or an `AbortSignal`.
    * @returns Public profile details.
    * @throws {@link RateLimitedException} If the per-IP profile budget is spent.

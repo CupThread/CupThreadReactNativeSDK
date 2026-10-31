@@ -1882,6 +1882,11 @@ export interface UserAttributesUpdateResult {
 /**
  * Public developer or user profile details.
  *
+ * The published payload deliberately carries no privacy flag and no
+ * membership-derived update timestamp (PRIV-06): `hideComments` gates the
+ * `recentComments` list server-side and is never disclosed, and `updatedAt`
+ * is internal-only.
+ *
  * @example
  * ```ts
  * const profile: PublicUserProfile = {
@@ -1889,9 +1894,7 @@ export interface UserAttributesUpdateResult {
  *   displayName: 'Alice Engineer',
  *   bio: 'Building indie productivity apps.',
  *   websiteUrl: 'https://alice.dev',
- *   hideComments: false,
  *   createdAt: '2025-01-01T00:00:00.000Z',
- *   updatedAt: '2026-06-01T00:00:00.000Z',
  * };
  * ```
  */
@@ -1922,23 +1925,72 @@ export interface PublicUserProfile {
   websiteUrl?: string | null;
 
   /**
-   * Privacy setting indicating whether the user chooses to hide their comment history.
-   */
-  hideComments: boolean;
-
-  /**
    * ISO 8601 creation timestamp.
    */
   createdAt: string;
+}
+
+/**
+ * One public app of a workspace the profile user owns, as served by the
+ * user-profile endpoint.
+ *
+ * @example
+ * ```ts
+ * const app: PublicUserProfileApp = {
+ *   id: 'app_1',
+ *   workspaceSlug: 'acme-studio',
+ *   workspaceName: 'Acme Studio',
+ *   appSlug: 'focus-timer-pro',
+ *   name: 'Focus Timer Pro',
+ *   description: 'Pomodoro timer with cloud sync',
+ *   iconUrl: 'https://cdn.cupthread.com/app_1.png',
+ * };
+ * ```
+ */
+export interface PublicUserProfileApp {
+  /**
+   * Application ID.
+   */
+  id: string;
 
   /**
-   * ISO 8601 last update timestamp.
+   * Slug of the workspace that owns the application.
    */
-  updatedAt: string;
+  workspaceSlug: string;
+
+  /**
+   * Display name of the workspace that owns the application.
+   */
+  workspaceName: string;
+
+  /**
+   * URL slug for the application within its workspace.
+   */
+  appSlug: string;
+
+  /**
+   * Display name of the application.
+   */
+  name: string;
+
+  /**
+   * Short description of the application.
+   */
+  description: string | null;
+
+  /**
+   * CDN icon URL.
+   */
+  iconUrl: string | null;
 }
 
 /**
  * Summary representation of an application listed on a public user or developer profile.
+ *
+ * @deprecated No served payload uses this shape. The user-profile endpoint
+ * serves {@link PublicUserProfileApp} (no `requestCount`; carries workspace
+ * fields instead), and the app showcase serves a different record again.
+ * Kept only so hosts referencing it keep compiling; do not use it in new code.
  *
  * @example
  * ```ts
@@ -1994,7 +2046,8 @@ export interface PublicAppSummary {
  *   createdAt: '2026-08-10T14:00:00.000Z',
  *   featureRequestId: 'fr_101',
  *   featureRequestTitle: 'Custom Keybindings',
- *   appId: 'app_1',
+ *   workspaceSlug: 'acme-studio',
+ *   appSlug: 'focus-timer-pro',
  *   appName: 'Focus Timer Pro',
  * };
  * ```
@@ -2026,12 +2079,17 @@ export interface UserProfileComment {
   featureRequestTitle: string;
 
   /**
-   * ID of the application owning the feature request.
+   * Slug of the workspace owning the application the comment was posted on.
    */
-  appId: string;
+  workspaceSlug: string;
 
   /**
-   * Name of the application owning the feature request.
+   * URL slug of the application the comment was posted on.
+   */
+  appSlug: string;
+
+  /**
+   * Name of the application the comment was posted on.
    */
   appName: string;
 }
@@ -2039,10 +2097,16 @@ export interface UserProfileComment {
 /**
  * Complete public profile payload including authored apps and recent public comments.
  *
+ * Mirrors the published `PublicUserProfileResponse` envelope: `profile`,
+ * `publicApps`, `recentComments`. A hidden comment history never surfaces as
+ * a flag — the server simply omits the comments (PRIV-06).
+ *
  * @example
  * ```ts
- * const userProfile = await client.fetchUserProfile('user_abc123');
- * console.log(`User: ${userProfile.profile.displayName}, Apps: ${userProfile.apps.length}`);
+ * const userProfile = await client.fetchUserProfile('u_abc123');
+ * console.log(
+ *   `User: ${userProfile.profile.displayName}, Apps: ${userProfile.publicApps.length}`
+ * );
  * ```
  */
 export interface PublicUserProfileResult {
@@ -2054,15 +2118,12 @@ export interface PublicUserProfileResult {
   /**
    * List of public applications associated with this developer or team.
    */
-  apps: PublicAppSummary[];
+  publicApps: PublicUserProfileApp[];
 
   /**
-   * Recent public comments authored by this user across all apps.
+   * Recent public comments authored by this user across all apps. Empty when
+   * the user hides their comment history; the privacy flag itself is never
+   * disclosed (PRIV-06).
    */
   recentComments: UserProfileComment[];
-
-  /**
-   * Whether the user has opted to hide recent comments on their public profile.
-   */
-  hideComments: boolean;
 }

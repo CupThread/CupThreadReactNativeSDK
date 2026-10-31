@@ -173,9 +173,8 @@ function stubFetch(): () => void {
           displayName: 'Lex',
           websiteUrl: 'https://example.com',
         },
-        apps: [],
+        publicApps: [],
         recentComments: [],
-        hideComments: true,
       });
     }
     if (/\/comments/.test(target)) {

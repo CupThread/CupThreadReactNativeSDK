@@ -42,7 +42,7 @@ function makeClient(appKey = 'app_key_abc'): FeedbackClient {
 }
 
 test('fetchUserProfile sends the configured appKey so app-scoped u_ ids resolve', async () => {
-  const fetchMock = installFetch(200, { profile: {}, apps: [], recentComments: [] });
+  const fetchMock = installFetch(200, { profile: {}, publicApps: [], recentComments: [] });
 
   try {
     await makeClient().fetchUserProfile('u_0123456789abcdef0123456789abcdef');
@@ -62,7 +62,7 @@ test('fetchUserProfile sends the configured appKey so app-scoped u_ ids resolve'
 });
 
 test('fetchUserProfile accepts a per-call appKey override for cross-app profiles', async () => {
-  const fetchMock = installFetch(200, { profile: {}, apps: [], recentComments: [] });
+  const fetchMock = installFetch(200, { profile: {}, publicApps: [], recentComments: [] });
 
   try {
     await makeClient('app_own').fetchUserProfile('u_abc', { appKey: 'app_other' });
@@ -74,7 +74,7 @@ test('fetchUserProfile accepts a per-call appKey override for cross-app profiles
 });
 
 test('fetchUserProfile trims the override and falls back when it is blank', async () => {
-  const fetchMock = installFetch(200, { profile: {}, apps: [], recentComments: [] });
+  const fetchMock = installFetch(200, { profile: {}, publicApps: [], recentComments: [] });
 
   try {
     await makeClient('app_own').fetchUserProfile('u_abc', { appKey: '  app_other  ' });
@@ -93,7 +93,7 @@ test('fetchUserProfile trims the override and falls back when it is blank', asyn
 });
 
 test('fetchUserProfile percent-encodes an appKey with reserved characters', async () => {
-  const fetchMock = installFetch(200, { profile: {}, apps: [], recentComments: [] });
+  const fetchMock = installFetch(200, { profile: {}, publicApps: [], recentComments: [] });
 
   try {
     await makeClient('app key/../x?y#z').fetchUserProfile('u_abc');
@@ -296,10 +296,10 @@ test(
               avatarUrl: null,
               bio: null,
               websiteUrl: null,
+              createdAt: '2025-01-01T00:00:00.000Z',
             },
-            apps: [],
+            publicApps: [],
             recentComments: [],
-            hideComments: false,
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -319,6 +319,102 @@ test(
         texts.includes(enStrings.userProfile.rateLimited),
         false,
         'the rate-limited state must clear once the reload succeeds'
+      );
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Published-schema regression (#189): the SDK must parse and render the exact
+// `PublicUserProfileResponse` the endpoint serves.
+// ---------------------------------------------------------------------------
+
+/** A spec-shaped `PublicUserProfileResponse` fixture, straight from the OpenAPI schema. */
+const SPEC_PROFILE_FIXTURE = {
+  profile: {
+    clerkUserId: 'user_2xyz',
+    displayName: 'Ada Lovelace',
+    avatarUrl: null,
+    bio: 'Pioneer of computing.',
+    websiteUrl: 'https://example.com/ada',
+    createdAt: '2025-01-01T00:00:00.000Z',
+  },
+  publicApps: [
+    {
+      id: 'app_1',
+      workspaceSlug: 'ada-works',
+      workspaceName: 'Ada Works',
+      appSlug: 'focus-timer-pro',
+      name: 'Focus Timer Pro',
+      description: 'Pomodoro timer with cloud sync',
+      iconUrl: null,
+    },
+  ],
+  recentComments: [
+    {
+      id: 'cmt_55',
+      body: 'Agreed, native keyboard shortcuts are essential.',
+      createdAt: '2026-08-10T14:00:00.000Z',
+      featureRequestId: 'fr_101',
+      featureRequestTitle: 'Custom Keybindings',
+      workspaceSlug: 'ada-works',
+      appSlug: 'focus-timer-pro',
+      appName: 'Focus Timer Pro',
+    },
+  ],
+};
+
+test('fetchUserProfile parses the published PublicUserProfileResponse field-for-field', async () => {
+  const fetchMock = installFetch(200, SPEC_PROFILE_FIXTURE);
+
+  try {
+    const result = await makeClient().fetchUserProfile('u_abc');
+
+    // The client must pass the served envelope through unshaped: every field
+    // of the published schema survives verbatim, and nothing else appears.
+    assert.deepEqual(result, SPEC_PROFILE_FIXTURE);
+    assert.equal(result.publicApps[0].appSlug, 'focus-timer-pro');
+    assert.equal(result.recentComments[0].workspaceSlug, 'ada-works');
+    // Phantom fields the server never serves must stay absent.
+    assert.equal('hideComments' in result.profile, false);
+    assert.equal('updatedAt' in result.profile, false);
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test(
+  'UserProfileScreen renders the Apps section from the served publicApps field',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, SPEC_PROFILE_FIXTURE);
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      // Regression for #189: the SDK typed this section `apps`, a field the
+      // server never serves, so the section silently never rendered.
+      assert.ok(
+        texts.includes(enStrings.userProfile.appsSection(1)),
+        'the Apps section must render with the served app count'
+      );
+      assert.ok(
+        texts.includes('Focus Timer Pro'),
+        'the served app name must render inside the Apps section'
+      );
+      assert.ok(
+        texts.includes('Pomodoro timer with cloud sync'),
+        'the served app description must render inside the Apps section'
+      );
+      assert.ok(
+        texts.every((t) => !t.includes('undefined')),
+        'no phantom field (requestCount) may leak into the rendered copy'
       );
       renderer.unmount();
     } finally {

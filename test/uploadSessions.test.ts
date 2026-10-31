@@ -79,13 +79,17 @@ function installUploadFetch(
     if (options.slotResponder) {
       return options.slotResponder(uploadId, slots.indexOf(uploadId));
     }
+    // Served `UploadedFileResponse` shape: mimeType/size (no contentType,
+    // sizeBytes, or downloadUrl).
     return new Response(
       JSON.stringify({
         uploadId,
-        filename: 'file',
-        contentType: 'image/png',
-        sizeBytes: 1024,
+        status: 'uploaded',
         stored: true,
+        filename: 'file',
+        mimeType: 'image/png',
+        size: 1024,
+        sha256: 'a'.repeat(64),
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
@@ -432,6 +436,11 @@ test('uploadAttachment sends the bytes to the reserved slot with the bearer toke
     assert.equal(attachment.uploadId, 'upl_1');
     assert.equal(attachment.key, 'upl_1');
     assert.equal(attachment.kind, 'image');
+    // The served `UploadedFileResponse` fields win over what the client
+    // declared: mimeType/size (regression for #189 — the client used to read
+    // phantom `contentType`/`sizeBytes` and always fell back).
+    assert.equal(attachment.mimeType, 'image/png');
+    assert.equal(attachment.size, 1024);
   } finally {
     mocked.restore();
   }
@@ -575,7 +584,7 @@ test('uploadAttachments stops at a rejected slot and keeps earlier results usabl
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response(JSON.stringify({ uploadId, sizeBytes: 10, stored: true }), {
+      return new Response(JSON.stringify({ uploadId, size: 10, stored: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -614,7 +623,7 @@ test('a per-item retry after an aborted batch opens its own fresh session', asyn
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response(JSON.stringify({ uploadId, sizeBytes: 10, stored: true }), {
+      return new Response(JSON.stringify({ uploadId, size: 10, stored: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

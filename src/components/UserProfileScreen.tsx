@@ -148,12 +148,12 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             ) : null}
           </View>
 
-          {data.apps && data.apps.length > 0 && (
+          {data.publicApps && data.publicApps.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-                {strings.userProfile.appsSection(data.apps.length)}
+                {strings.userProfile.appsSection(data.publicApps.length)}
               </Text>
-              {data.apps.map((app) => (
+              {data.publicApps.map((app) => (
                 <View
                   key={app.id}
                   style={[
@@ -170,15 +170,15 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                       {app.description}
                     </Text>
                   )}
-                  <Text style={[styles.appRequests, { color: colors.textMuted }]}>
-                    {strings.userProfile.requestCount(app.requestCount)}
-                  </Text>
                 </View>
               ))}
             </View>
           )}
 
-          {!data.hideComments && data.recentComments && data.recentComments.length > 0 && (
+          {/* A hidden comment history never reaches the client as a flag: the
+              server simply omits the comments (PRIV-06), so there is no
+              client-side gate to consult. */}
+          {data.recentComments && data.recentComments.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 {strings.userProfile.recentComments}
@@ -205,8 +205,8 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             </View>
           )}
 
-          {(!data.apps || data.apps.length === 0) &&
-            (!data.recentComments || data.recentComments.length === 0 || data.hideComments) && (
+          {(!data.publicApps || data.publicApps.length === 0) &&
+            (!data.recentComments || data.recentComments.length === 0) && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                   {strings.userProfile.activityTitle}
@@ -352,9 +352,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 6,
-  },
-  appRequests: {
-    fontSize: 12,
   },
   commentCard: {
     padding: 12,
