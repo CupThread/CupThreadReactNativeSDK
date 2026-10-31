@@ -182,6 +182,18 @@ test('FeatureRequestComment carries the fields the published OpenAPI schema serv
   assert.equal(comment.appId, 'app_123');
   assert.equal(comment.updatedAt, '2026-08-21T10:00:00.000Z');
 
+  // Minimal schema-required fixture: omits optional fields (`featureRequestId`,
+  // `appId`, `updatedAt`) to ensure they remain optional.
+  const legacyComment: import('../src/types').FeatureRequestComment = {
+    id: 'cmt_002',
+    authorName: 'DevTeam',
+    body: 'Legacy comment',
+    createdAt: '2026-08-20T09:00:00.000Z',
+  };
+  assert.equal(legacyComment.featureRequestId, undefined);
+  assert.equal(legacyComment.appId, undefined);
+  assert.equal(legacyComment.updatedAt, undefined);
+
   // Compile-time negative probe: `authorEmail` is no longer part of the
   // record — the server strips author identity fields and never serves one
   // back (issue #176). This fails to compile ("unused '@ts-expect-error'")

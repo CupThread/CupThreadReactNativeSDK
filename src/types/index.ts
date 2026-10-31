@@ -1492,9 +1492,9 @@ export interface FeatureRequestComment {
   id: string;
 
   /**
-   * Parent feature request ID.
+   * Parent feature request ID. Optional in the published response schema.
    */
-  featureRequestId: string;
+  featureRequestId?: string;
 
   /**
    * ID of the application that owns the parent feature request. Optional in
