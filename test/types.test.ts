@@ -157,3 +157,40 @@ test('PublicAppConfig carries the fields the published OpenAPI schema serves', (
   assert.equal(config.googlePlayUrl, null);
   assert.equal(config.websiteUrl, 'https://example.com');
 });
+
+test('FeatureRequestComment carries the fields the published OpenAPI schema serves', () => {
+  // Compile-time probe: indexed access fails to compile (TS2339) if any of
+  // these spec fields is dropped from FeatureRequestComment again (issue #176).
+  type SpecFieldProbe = [
+    import('../src/types').FeatureRequestComment['appId'],
+    import('../src/types').FeatureRequestComment['updatedAt'],
+  ];
+  const _specFieldProbe: SpecFieldProbe = ['app_123', '2026-08-21T10:00:00.000Z'];
+  void _specFieldProbe;
+
+  // Runtime fixture: assigning this to FeatureRequestComment fails to compile
+  // when a spec-required field is missing.
+  const comment: import('../src/types').FeatureRequestComment = {
+    id: 'cmt_001',
+    featureRequestId: 'fr_101',
+    appId: 'app_123',
+    authorName: 'DevTeam',
+    body: 'We have started working on this for the next minor release!',
+    createdAt: '2026-08-20T09:00:00.000Z',
+    updatedAt: '2026-08-21T10:00:00.000Z',
+  };
+  assert.equal(comment.appId, 'app_123');
+  assert.equal(comment.updatedAt, '2026-08-21T10:00:00.000Z');
+
+  // Compile-time negative probe: `authorEmail` is no longer part of the
+  // record — the server strips author identity fields and never serves one
+  // back (issue #176). This fails to compile ("unused '@ts-expect-error'")
+  // the moment the field returns to the record type. The draft type keeps
+  // its documented source-compatibility field.
+  const leaked: import('../src/types').FeatureRequestComment = {
+    ...comment,
+    // @ts-expect-error authorEmail is never served on comment records
+    authorEmail: 'nobody@example.com',
+  };
+  void leaked;
+});
