@@ -27,7 +27,7 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
   - `POST /api/v1/public/apps/:appKey/changelog/subscribe` — Email subscription.
   - `POST /api/v1/public/apps/:appKey/changelog/unsubscribe` — Unsubscribe from updates.
   - `PUT /api/v1/public/apps/:appKey/user` — Report user attributes (paying status, MRR).
-  - `GET /api/v1/feature-requests` — Feature requests list, search (`q`), and pagination (`limit`, `offset`, `versionId`); caller identity via `X-User-Token` header.
+  - `GET /api/v1/feature-requests` — Feature requests list, search (`q`), and pagination (`limit`, `offset`, `versionId`, or keyset `cursor` with exact `hasMore`/`nextCursor` — a request supplying `cursor` ignores `offset`); caller identity via `X-User-Token` header.
   - `POST /api/v1/feature-requests` — Submit new feature request.
   - `POST /api/v1/feature-requests/:id/vote` — Cast a vote on a feature request (insert-only, idempotent).
   - `DELETE /api/v1/feature-requests/:id/vote` — Remove a vote from a feature request (idempotent).

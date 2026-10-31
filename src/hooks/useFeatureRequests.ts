@@ -117,6 +117,10 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Whether there are more items available to fetch from the server.
+   *
+   * When the server serves keyset cursor pagination, this mirrors the exact
+   * `hasMore` reported with the most recent page; otherwise it is derived as
+   * `items.length < total` from the offset-based legacy contract.
    */
   hasMore: boolean;
 
@@ -242,6 +246,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const [error, setError] = useState<Error | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+  // Keyset cursor mode (#170): `null` while the current list came from (or
+  // still targets) an offset-only server; a boolean once a page response
+  // carried a `nextCursor`, mirroring the server's exact `hasMore`. The ref
+  // mirrors the state for loadMore's synchronous early-return guards.
+  const [cursorHasMore, setCursorHasMore] = useState<boolean | null>(null);
+  const cursorHasMoreRef = useRef<boolean | null>(null);
 
   // Created lazily on first render; option changes after mount are ignored so
   // the pacing state is never reset mid-session.
@@ -283,6 +293,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // page-0, and any successful page-0 in between re-loads that key's window
   // from scratch, so the slot is always the right offset when loadMore runs.
   const nextOffsetRef = useRef<number>(0);
+
+  // Keyset cursor for the next unread page (#170). `null` means either the
+  // last page response carried no cursor (offset-only deployment → the legacy
+  // `nextOffsetRef` window bookkeeping below drives loadMore) or the end of
+  // the list has been reached in cursor mode.
+  const nextCursorRef = useRef<string | null>(null);
 
   const localRevisionRef = useRef<number>(0);
   const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
@@ -428,8 +444,22 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         loadedGenerationRef.current = generation;
         // The page-0 window [0, pageSize) is consumed; the next pagination
         // request starts at the second window, whatever the deduped display
-        // length of this page turns out to be (#159).
+        // length of this page turns out to be (#159). Dead bookkeeping in
+        // cursor mode, kept as the fallback for offset-only servers.
         nextOffsetRef.current = pageSize;
+        // Keyset cursor mode (#170): a response carrying `nextCursor` switches
+        // loadMore to the exact cursor walk; a response without one keeps the
+        // legacy offset behavior so existing hosts see no change. `hasMore`
+        // only counts when a cursor exists to follow — mirroring
+        // useChangelogEntries, a page that reports more entries but hands back
+        // no cursor could never actually fetch them.
+        const nextCursor =
+          typeof res.nextCursor === 'string' && res.nextCursor.length > 0 ? res.nextCursor : null;
+        const serverHasMore =
+          nextCursor !== null && res.hasMore === true && fetchedItems.length > 0;
+        nextCursorRef.current = nextCursor;
+        cursorHasMoreRef.current = nextCursor !== null ? serverHasMore : null;
+        setCursorHasMore(nextCursor !== null ? serverHasMore : null);
         // A fresh page-0 result replaces the whole list, so a load-more
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
@@ -572,14 +602,23 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // Paginating it would request the new query at the old list's offset and
     // splice the response into the old list's rows (#140).
     if (page0GenerationRef.current !== loadedGenerationRef.current) return;
-    if (itemsRef.current.length >= totalRef.current) return;
-    // Residual gap (#159): the feature-requests endpoint is offset-based
-    // over a mutable sort, so rows that slide *into* already-consumed windows
-    // (new approvals, vote reorders) can still be skipped — unfixable from
-    // the client. The window-based offset and the overlap-aware end-of-data
-    // check below remove the self-inflicted half (rewound offsets, false
-    // exhaustion); a keyset cursor on the API would remove the rest, mirroring
-    // the changelog endpoint's cursor pagination.
+    // Cursor mode (#170): the server's exact `hasMore` gates pagination — the
+    // legacy `items.length < total` heuristic must not block a cursor walk
+    // when dedupe or a drifted total would read as end-of-data. Offset mode
+    // keeps the heuristic.
+    const currentCursor = nextCursorRef.current;
+    if (currentCursor !== null) {
+      if (cursorHasMoreRef.current !== true) return;
+    } else if (itemsRef.current.length >= totalRef.current) {
+      return;
+    }
+    // The feature-requests endpoint serves both a legacy offset window and a
+    // keyset cursor (DATA-01). Under the offset window the server's mutable
+    // sort (new approvals, vote reorders) can still skip rows that slide into
+    // already-consumed windows — unfixable from the client (#159). Once a page
+    // response carries `nextCursor`, the walk below uses it instead: keyset
+    // cursors are exact over the mutable sort, closing the remaining #159 gap
+    // the way the changelog endpoint already paginates.
 
     const trimmedQuery = query?.trim() || '';
     const isSearch = trimmedQuery.length > 0;
@@ -600,23 +639,52 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         limiter.markFetched();
       }
 
-      // Request the next unconsumed server window (#159), not the deduped
-      // display length: display shrinkage from dedupe would rewind the
-      // offset and re-read rows this list has already shown.
-      const currentOffset = nextOffsetRef.current;
+      // Cursor mode sends only the cursor (the API ignores `offset` on a
+      // cursor request); offset mode requests the next unconsumed server
+      // window (#159), not the deduped display length: display shrinkage from
+      // dedupe would rewind the offset and re-read rows this list has already
+      // shown.
       const res = await client.fetchFeatureRequests({
         userToken,
         versionId: versionId || undefined,
         query: trimmedQuery || undefined,
         limit: pageSize,
-        offset: currentOffset,
+        ...(currentCursor !== null ? { cursor: currentCursor } : { offset: nextOffsetRef.current }),
         signal: controller.signal,
       });
 
       if (controller.signal.aborted) return;
 
       const newItems = res.requests || [];
+
+      if (currentCursor !== null) {
+        // Keyset cursors only move forward. If a refresh rewound the cursor
+        // while this page was in flight, the response is stale — discard it
+        // instead of splicing it into the fresh list (mirrors
+        // useChangelogEntries).
+        if (nextCursorRef.current !== currentCursor) return;
+        const nextCursor =
+          typeof res.nextCursor === 'string' && res.nextCursor.length > 0 ? res.nextCursor : null;
+        const serverHasMore = nextCursor !== null && res.hasMore === true && newItems.length > 0;
+        nextCursorRef.current = nextCursor;
+        cursorHasMoreRef.current = serverHasMore;
+        setCursorHasMore(serverHasMore);
+        if (typeof res.total === 'number') {
+          setTotal(res.total);
+        }
+        setItems((prev) => {
+          const ids = new Set(prev.map((i) => i.id));
+          return [...prev, ...newItems.filter((i) => !ids.has(i.id))];
+        });
+        setLoadMoreError(null);
+        if (isSearch) {
+          setIsRateLimited(false);
+        }
+        return;
+      }
+
       let nextTotal = typeof res.total === 'number' ? res.total : totalRef.current;
+      const currentOffset = nextOffsetRef.current;
 
       // Compute the deduped append count from itemsRef instead of inside a
       // functional updater: React invokes updaters during the next render,
@@ -718,7 +786,9 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     };
   }, []);
 
-  const hasMore = items.length < total;
+  // Cursor mode exposes the server's exact hasMore; offset mode keeps the
+  // legacy `items.length < total` heuristic.
+  const hasMore = cursorHasMore !== null ? cursorHasMore : items.length < total;
 
   return {
     items,
