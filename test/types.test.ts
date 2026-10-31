@@ -85,3 +85,75 @@ test('SdkFeatures and SdkAppearance remain in sync with public API schema', () =
   assert.equal(appearance.features.featureRequests, false);
   assert.equal(appearance.changelogOverlay.entryCount, 3);
 });
+
+test('PublicAppConfig carries the fields the published OpenAPI schema serves', () => {
+  // Compile-time probe: indexed access fails to compile (TS2339) if any of
+  // these spec fields is dropped from PublicAppConfig again (issue #175).
+  type SpecFieldProbe = [
+    import('../src/types').PublicAppConfig['workspaceSlug'],
+    import('../src/types').PublicAppConfig['hideSiteBranding'],
+    import('../src/types').PublicAppConfig['requireAnonymousVoteTurnstile'],
+    import('../src/types').PublicAppConfig['turnstile'],
+    import('../src/types').PublicAppConfig['allowedEmbedOrigins'],
+    import('../src/types').PublicAppConfig['appStoreUrl'],
+    import('../src/types').PublicAppConfig['googlePlayUrl'],
+    import('../src/types').PublicAppConfig['websiteUrl'],
+  ];
+  const _specFieldProbe: SpecFieldProbe = [
+    'ws',
+    false,
+    false,
+    undefined,
+    undefined,
+    null,
+    null,
+    null,
+  ];
+  void _specFieldProbe;
+
+  // Runtime fixture: assigning this to PublicAppConfig fails to compile when a
+  // spec-required field is missing.
+  const config: import('../src/types').PublicAppConfig = {
+    appId: 'app_123',
+    appKey: 'app_key_123',
+    workspaceSlug: 'test-workspace',
+    slug: 'test-app',
+    name: 'Test App',
+    storeUrl: 'https://example.com',
+    storeKind: 'app_store',
+    appStoreUrl: 'https://apps.apple.com/app/id123',
+    googlePlayUrl: null,
+    websiteUrl: 'https://example.com',
+    iconUrl: 'https://cdn.example.com/icon.png',
+    allowPublic: true,
+    hideSiteBranding: false,
+    allowedPlatforms: ['ios', 'macos', 'android', 'universal'],
+    allowedEmbedOrigins: ['https://example.com'],
+    maxAttachmentBytes: 10485760,
+    allowAnonymousRoadmap: true,
+    allowAnonymousVote: true,
+    allowAnonymousFeedback: true,
+    allowAnonymousChangelog: true,
+    requireAnonymousVoteTurnstile: true,
+    turnstile: { siteKey: '0x4AAAAAAA_test_site_key' },
+    sdk: {
+      theme: 'system',
+      features: { feedback: true, featureRequests: true, roadmap: true, changelog: true },
+      changelogOverlay: {
+        title: "What's New",
+        entryCount: 3,
+        primaryButton: 'Got it',
+        closeButton: 'Dismiss',
+      },
+    },
+  };
+
+  assert.equal(typeof config.workspaceSlug, 'string');
+  assert.equal(typeof config.hideSiteBranding, 'boolean');
+  assert.equal(typeof config.requireAnonymousVoteTurnstile, 'boolean');
+  assert.equal(config.turnstile?.siteKey, '0x4AAAAAAA_test_site_key');
+  assert.deepEqual(config.allowedEmbedOrigins, ['https://example.com']);
+  assert.equal(config.appStoreUrl, 'https://apps.apple.com/app/id123');
+  assert.equal(config.googlePlayUrl, null);
+  assert.equal(config.websiteUrl, 'https://example.com');
+});

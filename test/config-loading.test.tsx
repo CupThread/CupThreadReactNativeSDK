@@ -19,15 +19,18 @@ type ConfigFetchState = import('../src/theme/CupThreadThemeProvider').ConfigFetc
 const sampleConfig: PublicAppConfig = {
   appId: 'app_123',
   appKey: 'app_config_test',
+  workspaceSlug: 'test-workspace',
   name: 'Test App',
   slug: 'test-app',
   allowPublic: true,
+  hideSiteBranding: false,
   allowedPlatforms: ['ios', 'android'],
   maxAttachmentBytes: 10485760,
   allowAnonymousRoadmap: true,
   allowAnonymousVote: true,
   allowAnonymousFeedback: true,
   allowAnonymousChangelog: true,
+  requireAnonymousVoteTurnstile: false,
   sdk: {
     theme: 'midnight',
     features: {
