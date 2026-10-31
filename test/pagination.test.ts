@@ -1117,6 +1117,89 @@ test('FeedbackClient.fetchFeatureRequests serializes cursor and omits offset for
   }
 });
 
+test('useFeatureRequests: an exhausted cursor walk never falls back to an offset request (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      if (!opts.cursor) {
+        return {
+          requests: [makeMockItem('fr_e1', 1), makeMockItem('fr_e2', 2)],
+          total: 10, // drifted high: more than the 4 rows the walk ever serves
+          hasMore: true,
+          nextCursor: 'cur_e2',
+        };
+      }
+      // Terminal cursor page: hasMore=false with nextCursor=null.
+      return {
+        requests: [makeMockItem('fr_e3', 3), makeMockItem('fr_e4', 4)],
+        total: 10,
+        hasMore: false,
+        nextCursor: null,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 4);
+  // items (4) < total (10): the offset heuristic would let this through and
+  // re-read a stale window; cursor mode must refuse.
+  assert.equal(harness.result.hasMore, false);
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(
+    requestsSeen.length,
+    2,
+    'an exhausted cursor walk must not fire a stale offset request'
+  );
+});
+
+test('useFeatureRequests: a terminal single-page cursor response stays in cursor mode (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      return {
+        requests: [makeMockItem('fr_t1', 1)],
+        total: 5,
+        hasMore: false,
+        nextCursor: null,
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 1);
+  assert.equal(harness.result.hasMore, false, 'the server-reported hasMore=false wins');
+
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(
+    requestsSeen.length,
+    1,
+    'a terminal cursor page-0 must not hand pagination back to the offset window'
+  );
+});
+
 test('useFeatureRequests applyItemChange transforms specific item without refetching', async () => {
   const mockClient = {
     fetchFeatureRequests: async () => ({

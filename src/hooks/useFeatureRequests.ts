@@ -447,19 +447,29 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // length of this page turns out to be (#159). Dead bookkeeping in
         // cursor mode, kept as the fallback for offset-only servers.
         nextOffsetRef.current = pageSize;
-        // Keyset cursor mode (#170): a response carrying `nextCursor` switches
-        // loadMore to the exact cursor walk; a response without one keeps the
-        // legacy offset behavior so existing hosts see no change. `hasMore`
-        // only counts when a cursor exists to follow — mirroring
+        // Keyset cursor mode (#170): a response carrying cursor metadata
+        // (`hasMore` is only served alongside the cursor) switches loadMore to
+        // the exact cursor walk; a response without it keeps the legacy offset
+        // behavior so existing hosts see no change. The metadata presence —
+        // not a nonempty `nextCursor` — is the mode marker: a terminal cursor
+        // page answers `hasMore: false, nextCursor: null`, and demoting that
+        // to offset mode would let loadMore bypass the cursor contract.
+        // `hasMore` only counts when a cursor exists to follow — mirroring
         // useChangelogEntries, a page that reports more entries but hands back
         // no cursor could never actually fetch them.
+        const isCursorResponse = typeof res.hasMore === 'boolean';
         const nextCursor =
-          typeof res.nextCursor === 'string' && res.nextCursor.length > 0 ? res.nextCursor : null;
+          isCursorResponse && typeof res.nextCursor === 'string' && res.nextCursor.length > 0
+            ? res.nextCursor
+            : null;
         const serverHasMore =
-          nextCursor !== null && res.hasMore === true && fetchedItems.length > 0;
+          isCursorResponse &&
+          nextCursor !== null &&
+          res.hasMore === true &&
+          fetchedItems.length > 0;
         nextCursorRef.current = nextCursor;
-        cursorHasMoreRef.current = nextCursor !== null ? serverHasMore : null;
-        setCursorHasMore(nextCursor !== null ? serverHasMore : null);
+        cursorHasMoreRef.current = isCursorResponse ? serverHasMore : null;
+        setCursorHasMore(isCursorResponse ? serverHasMore : null);
         // A fresh page-0 result replaces the whole list, so a load-more
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
@@ -605,13 +615,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // Cursor mode (#170): the server's exact `hasMore` gates pagination — the
     // legacy `items.length < total` heuristic must not block a cursor walk
     // when dedupe or a drifted total would read as end-of-data. Offset mode
-    // keeps the heuristic.
-    const currentCursor = nextCursorRef.current;
-    if (currentCursor !== null) {
+    // keeps the heuristic. The mode marker is `cursorHasMoreRef`'s non-null
+    // state, not `nextCursorRef`: a cursor walk exhausts into
+    // `nextCursorRef = null` while the list stays in cursor mode, and
+    // selecting the offset branch there would fire a stale offset window
+    // request whenever a drifted total outruns the fetched rows.
+    if (cursorHasMoreRef.current !== null) {
       if (cursorHasMoreRef.current !== true) return;
     } else if (itemsRef.current.length >= totalRef.current) {
       return;
     }
+    const currentCursor = nextCursorRef.current;
+    if (cursorHasMoreRef.current !== null && currentCursor === null) return;
     // The feature-requests endpoint serves both a legacy offset window and a
     // keyset cursor (DATA-01). Under the offset window the server's mutable
     // sort (new approvals, vote reorders) can still skip rows that slide into
@@ -663,9 +678,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // instead of splicing it into the fresh list (mirrors
         // useChangelogEntries).
         if (nextCursorRef.current !== currentCursor) return;
+        const isCursorResponse = typeof res.hasMore === 'boolean';
         const nextCursor =
-          typeof res.nextCursor === 'string' && res.nextCursor.length > 0 ? res.nextCursor : null;
-        const serverHasMore = nextCursor !== null && res.hasMore === true && newItems.length > 0;
+          isCursorResponse && typeof res.nextCursor === 'string' && res.nextCursor.length > 0
+            ? res.nextCursor
+            : null;
+        const serverHasMore =
+          isCursorResponse && nextCursor !== null && res.hasMore === true && newItems.length > 0;
         nextCursorRef.current = nextCursor;
         cursorHasMoreRef.current = serverHasMore;
         setCursorHasMore(serverHasMore);
