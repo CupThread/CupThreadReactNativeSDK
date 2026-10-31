@@ -1827,6 +1827,9 @@ export class FeedbackClient {
       record.body.length === 0 ||
       typeof record.createdAt !== 'string' ||
       record.createdAt.length === 0 ||
+      // The schema pins `createdAt` to `date-time`; a non-parseable string
+      // would fall through `formatDate` as raw copy inside the card.
+      isNaN(new Date(record.createdAt).getTime()) ||
       // `authorName` may be absent or `null` (the card renders "Anonymous"),
       // but any other non-string value would crash the card's render
       // (`Avatar`'s initial fallback calls `name.trim()`).
