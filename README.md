@@ -250,6 +250,8 @@ import { FeedbackComposer } from '@cupthread/react-native';
 
 The composer accepts three picker return shapes: pre-uploaded `FeedbackAttachment` descriptors (`{ kind, key, uploadId?, ... }`, attached as-is), `UploadAttachmentOptions` payloads (`{ file, filename, mimeType, size?, preferredKind? }`, uploaded automatically), and the legacy `{ fileUri, filename?, mimeType?, kind?, size? }` alias, which is normalized into an upload automatically. Any item matching none of these shapes surfaces a visible, localized error instead of being silently dropped.
 
+All picker and batch-upload helpers, together with their types (`PickedAttachmentInput`, `ProcessPickedAttachmentsOptions`, `AttachmentBatchResult`, `processPickedAttachments`, `classifyPickedAttachment`, `uploadInSessionChunks`, …), are importable from the package root, so a typed reusable picker function can name its return type without reaching into package internals.
+
 When the app config is loaded, the composer also enforces `maxAttachmentBytes` locally: an item whose picker-reported `size` (or `file.size`) exceeds the limit is rejected before any upload session is reserved, and the form shows a localized message with the formatted ceiling. Items that report no size skip the pre-flight; a bare `{ uri }` payload then fails locally in `uploadAttachment` with `file_size_required` before any request, so forward the picker's `fileSize` to make the upload work at all.
 
 #### Upload Sessions

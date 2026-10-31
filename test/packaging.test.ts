@@ -96,3 +96,15 @@ test('CI workflow enforces npm run format:check alongside package.json scripts',
     'CI workflow must run npm run format:check to prevent formatting drift'
   );
 });
+
+test('package root re-exports every util module referenced by the public surface', () => {
+  const indexSource = readFileSync(path.join(ROOT, 'src', 'index.ts'), 'utf8');
+  // `FeedbackComposerProps.onPickAttachment` is typed in terms of
+  // `PickedAttachmentInput` from `./utils/attachments`; hosts must be able to
+  // name that type from the package root (issue #147).
+  assert.match(
+    indexSource,
+    /export \* from '\.\/utils\/attachments';/,
+    'src/index.ts must re-export ./utils/attachments so PickedAttachmentInput and the upload-batch helpers are importable from the package root'
+  );
+});
