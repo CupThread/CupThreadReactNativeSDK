@@ -933,11 +933,13 @@ export interface PublicAppConfig {
   /**
    * Whether anonymous votes on this board require a Cloudflare Turnstile token.
    *
-   * When `true`, hosts should obtain a token proactively (via
-   * {@link FeedbackClientConfig.turnstileTokenProvider} or
-   * `CastVoteOptions.turnstileToken`) instead of reacting to a
-   * `TurnstileRequiredException` after the vote already failed. See also
-   * {@link PublicAppConfig.turnstile} for the embedded-challenge site key.
+   * When `true`, hosts should resolve a token proactively and pass it per call
+   * via `CastVoteOptions.turnstileToken` instead of reacting to a
+   * `TurnstileRequiredException` after the vote already failed. (The vote path
+   * reads only the per-call token — it does not consult
+   * {@link FeedbackClientConfig.turnstileTokenProvider}, which backs the
+   * feedback-intake flow.) See also {@link PublicAppConfig.turnstile} for the
+   * embedded-challenge site key.
    */
   requireAnonymousVoteTurnstile: boolean;
 
