@@ -583,7 +583,12 @@ test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async 
 
 test('FeedbackClient.postComment sends only schema-accepted body fields over the anonymous credential', async () => {
   const originalFetch = globalThis.fetch;
-  const captured: Array<{ url: string; method?: string; headers: Record<string, string>; body?: any }> = [];
+  const captured: Array<{
+    url: string;
+    method?: string;
+    headers: Record<string, string>;
+    body?: any;
+  }> = [];
 
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const headerBag = new Headers(init?.headers);
@@ -668,12 +673,9 @@ test('FeedbackClient.postComment with a sessionToken sends Bearer auth and no X-
       appKey: 'app_comment_test',
     });
 
-    await client.postComment(
-      'fr_123',
-      { body: 'Signed comment' },
-      'usr_tok_anonymous',
-      { sessionToken: '  clerk_jwt_token  ' }
-    );
+    await client.postComment('fr_123', { body: 'Signed comment' }, 'usr_tok_anonymous', {
+      sessionToken: '  clerk_jwt_token  ',
+    });
 
     assert.equal(captured.length, 1);
     // The Clerk session is the only accepted credential on this route: it

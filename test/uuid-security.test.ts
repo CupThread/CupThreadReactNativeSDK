@@ -7,8 +7,7 @@ import { UserTokenStore } from '../src/client/UserTokenStore';
 // Issue #25 — generateUUID must never fall back to Math.random for identity
 // ---------------------------------------------------------------------------
 
-const V4_UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const V4_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /**
  * The `crypto` global is defined as a getter in some runtimes, so replacement

@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FeedbackClient, DEFAULT_TIMEOUT_MS, DEFAULT_UPLOAD_TIMEOUT_MS } from '../src/client/FeedbackClient';
+import {
+  FeedbackClient,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_UPLOAD_TIMEOUT_MS,
+} from '../src/client/FeedbackClient';
 import {
   RequestTimeoutException,
   FeedbackException,
@@ -49,11 +53,15 @@ test('FeedbackClient request aborts after timeoutMs and throws RequestTimeoutExc
         err.name = 'AbortError';
         return reject(err);
       }
-      receivedSignal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      receivedSignal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -69,7 +77,10 @@ test('FeedbackClient request aborts after timeoutMs and throws RequestTimeoutExc
         await client.fetchColumns();
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.name, 'RequestTimeoutException');
         assert.equal(err.timeoutMs, 50);
         return true;
@@ -90,11 +101,15 @@ test('FeedbackClient uploadAttachment aborts after uploadTimeoutMs and throws Re
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     receivedSignal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      receivedSignal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      receivedSignal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -114,7 +129,10 @@ test('FeedbackClient uploadAttachment aborts after uploadTimeoutMs and throws Re
         });
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 50);
         return true;
       }
@@ -130,11 +148,15 @@ test('FeedbackClient respects per-request timeoutMs override', async () => {
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     const signal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -170,11 +192,15 @@ test('FeedbackClient rethrows AbortError when caller signal cancels in-flight re
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     receivedSignal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      receivedSignal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      receivedSignal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -211,11 +237,15 @@ test('FeedbackClient rethrows AbortError when caller signal cancels uploadAttach
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     const signal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -307,7 +337,14 @@ test('FeedbackClient normal responses are unaffected by timeout and caller signa
     return new Response(
       JSON.stringify({
         columns: [
-          { id: 'c1', name: 'Planned', position: 1, isVisible: true, isSystem: false, kind: 'normal' },
+          {
+            id: 'c1',
+            name: 'Planned',
+            position: 1,
+            isVisible: true,
+            isSystem: false,
+            kind: 'normal',
+          },
         ],
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -339,7 +376,14 @@ test('FeedbackClient supports passing AbortSignal directly as argument', async (
     return new Response(
       JSON.stringify({
         columns: [
-          { id: 'c1', name: 'Planned', position: 1, isVisible: true, isSystem: false, kind: 'normal' },
+          {
+            id: 'c1',
+            name: 'Planned',
+            position: 1,
+            isVisible: true,
+            isSystem: false,
+            kind: 'normal',
+          },
         ],
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -439,10 +483,10 @@ test('FeedbackClient.submit supports options with signal and userToken', async (
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     receivedSignal = init?.signal as AbortSignal;
     receivedHeaders = init?.headers;
-    return new Response(
-      JSON.stringify({ submissionId: 'sub_123', forwardedToGithub: false }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ submissionId: 'sub_123', forwardedToGithub: false }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }) as any;
 
   try {
@@ -530,24 +574,49 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
     }
     if (s.includes('/changelog')) {
       return new Response(
-        JSON.stringify({ entries: [{ id: '1', versionLabel: '1.0', title: 'T', body: 'B', publishedAt: new Date().toISOString() }] }),
+        JSON.stringify({
+          entries: [
+            {
+              id: '1',
+              versionLabel: '1.0',
+              title: 'T',
+              body: 'B',
+              publishedAt: new Date().toISOString(),
+            },
+          ],
+        }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
     if (s.includes('/feature-requests?')) {
-      return new Response(JSON.stringify({ requests: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ requests: [], total: 0 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (s.includes('/vote')) {
-      return new Response(JSON.stringify({ voted: true, voteCount: 5 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ voted: true, voteCount: 5 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (s.includes('/comments')) {
-      return new Response(JSON.stringify({ comments: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ comments: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (s.includes('/user')) {
-      return new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (s.includes('/profile')) {
-      return new Response(JSON.stringify({ profile: { id: 'u1', displayName: 'D' } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ profile: { id: 'u1', displayName: 'D' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as any;
@@ -607,26 +676,17 @@ test('FeedbackClient clears timeout on HTTP errors or parse failures', async () 
       timeoutMs: 1000,
     });
 
-    await assert.rejects(
-      async () => {
-        await (client as any).request({ method: 'GET', path: '/auth-error' });
-      },
-      AuthenticationRequiredException
-    );
+    await assert.rejects(async () => {
+      await (client as any).request({ method: 'GET', path: '/auth-error' });
+    }, AuthenticationRequiredException);
 
-    await assert.rejects(
-      async () => {
-        await (client as any).request({ method: 'GET', path: '/server-error' });
-      },
-      UnexpectedStatusException
-    );
+    await assert.rejects(async () => {
+      await (client as any).request({ method: 'GET', path: '/server-error' });
+    }, UnexpectedStatusException);
 
-    await assert.rejects(
-      async () => {
-        await (client as any).request({ method: 'GET', path: '/bad-json' });
-      },
-      InvalidResponseException
-    );
+    await assert.rejects(async () => {
+      await (client as any).request({ method: 'GET', path: '/bad-json' });
+    }, InvalidResponseException);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -643,11 +703,15 @@ test('FeedbackClient request aborts when response body read stalls past timeoutM
       headers: new Headers({ 'Content-Type': 'application/json' }),
       text: () =>
         new Promise((_resolve, reject) => {
-          receivedSignal?.addEventListener('abort', () => {
-            const err = new Error('The operation was aborted');
-            err.name = 'AbortError';
-            reject(err);
-          }, { once: true });
+          receivedSignal?.addEventListener(
+            'abort',
+            () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            },
+            { once: true }
+          );
         }),
     } as any;
   }) as any;
@@ -665,7 +729,10 @@ test('FeedbackClient request aborts when response body read stalls past timeoutM
         await client.fetchColumns();
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.name, 'RequestTimeoutException');
         assert.equal(err.timeoutMs, 50);
         return true;
@@ -689,11 +756,15 @@ test('FeedbackClient uploadAttachment aborts when success response json read sta
       status: 200,
       text: () =>
         new Promise((_resolve, reject) => {
-          receivedSignal?.addEventListener('abort', () => {
-            const err = new Error('The operation was aborted');
-            err.name = 'AbortError';
-            reject(err);
-          }, { once: true });
+          receivedSignal?.addEventListener(
+            'abort',
+            () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            },
+            { once: true }
+          );
         }),
     } as any;
   }) as any;
@@ -715,13 +786,19 @@ test('FeedbackClient uploadAttachment aborts when success response json read sta
         });
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 50);
         return true;
       }
     );
     const elapsed = Date.now() - start;
-    assert.ok(elapsed < 1000, `Expected stalled upload JSON read to timeout quickly, took ${elapsed}ms`);
+    assert.ok(
+      elapsed < 1000,
+      `Expected stalled upload JSON read to timeout quickly, took ${elapsed}ms`
+    );
     assert.ok(receivedSignal?.aborted, 'Internal signal should be aborted');
   } finally {
     globalThis.fetch = originalFetch;
@@ -738,11 +815,15 @@ test('FeedbackClient uploadAttachment aborts when error response text read stall
       status: 500,
       text: () =>
         new Promise((_resolve, reject) => {
-          receivedSignal?.addEventListener('abort', () => {
-            const err = new Error('The operation was aborted');
-            err.name = 'AbortError';
-            reject(err);
-          }, { once: true });
+          receivedSignal?.addEventListener(
+            'abort',
+            () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            },
+            { once: true }
+          );
         }),
     } as any;
   }) as any;
@@ -764,13 +845,19 @@ test('FeedbackClient uploadAttachment aborts when error response text read stall
         });
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 50);
         return true;
       }
     );
     const elapsed = Date.now() - start;
-    assert.ok(elapsed < 1000, `Expected stalled upload error text read to timeout quickly, took ${elapsed}ms`);
+    assert.ok(
+      elapsed < 1000,
+      `Expected stalled upload error text read to timeout quickly, took ${elapsed}ms`
+    );
     assert.ok(receivedSignal?.aborted, 'Internal signal should be aborted');
   } finally {
     globalThis.fetch = originalFetch;
@@ -885,11 +972,15 @@ test('uploadAttachment uses the dedicated upload budget even when a JSON timeout
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     receivedSignal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      receivedSignal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      receivedSignal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -910,7 +1001,10 @@ test('uploadAttachment uses the dedicated upload budget even when a JSON timeout
         });
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 50);
         return true;
       }
@@ -990,11 +1084,15 @@ test('uploadAttachment honors per-call timeoutMs override over the upload budget
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     const signal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -1016,7 +1114,10 @@ test('uploadAttachment honors per-call timeoutMs override over the upload budget
         });
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 40);
         return true;
       }
@@ -1034,11 +1135,15 @@ test('JSON endpoints still time out with config.timeoutMs after the upload-budge
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     const signal = init?.signal as AbortSignal;
     return new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => {
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        reject(err);
-      }, { once: true });
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        },
+        { once: true }
+      );
     });
   }) as any;
 
@@ -1054,7 +1159,10 @@ test('JSON endpoints still time out with config.timeoutMs after the upload-budge
         await client.fetchColumns();
       },
       (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected RequestTimeoutException, got ${err?.name}`);
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err?.name}`
+        );
         assert.equal(err.timeoutMs, 40);
         return true;
       }

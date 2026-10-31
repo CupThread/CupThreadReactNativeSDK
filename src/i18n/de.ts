@@ -57,7 +57,8 @@ export const deStrings: CupThreadStrings = {
       count === 1
         ? '1 Datei wurde übersprungen: Anhangsformat wird nicht unterstützt.'
         : `${count} Dateien wurden übersprungen: Anhangsformat wird nicht unterstützt.`,
-    uploadSizeMissing: 'Für diese Datei wurde keine Größe gemeldet, daher kann sie nicht hochgeladen werden.',
+    uploadSizeMissing:
+      'Für diese Datei wurde keine Größe gemeldet, daher kann sie nicht hochgeladen werden.',
     uploadTooLarge: 'Diese Datei ist zu groß für den Upload.',
     attachmentTooLarge: (maxSize: string) =>
       `Diese Datei ist zu groß. Maximale Anhangsgröße: ${maxSize}.`,

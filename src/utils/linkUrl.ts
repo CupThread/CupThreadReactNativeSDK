@@ -31,10 +31,7 @@ const DEFAULT_SAFE_SCHEMES = new Set(['http:', 'https:']);
  * isSafeLinkUrl('java\nscript:alert(1)');       // false
  * ```
  */
-export function isSafeLinkUrl(
-  url: string,
-  options?: { allowMailto?: boolean }
-): boolean {
+export function isSafeLinkUrl(url: string, options?: { allowMailto?: boolean }): boolean {
   if (!url || typeof url !== 'string') return false;
 
   // Reject control characters outright to prevent parser differentials or smuggling
@@ -83,13 +80,9 @@ export function sanitizeSafeLinkUrl(
  * openSafeLinkUrl('tel:+18005550199', (safe) => Linking.openURL(safe));      // no-op
  * ```
  */
-export function openSafeLinkUrl(
-  url: string,
-  open: (safeUrl: string) => unknown
-): boolean {
+export function openSafeLinkUrl(url: string, open: (safeUrl: string) => unknown): boolean {
   const safeUrl = sanitizeSafeLinkUrl(url);
   if (!safeUrl) return false;
   open(safeUrl);
   return true;
 }
-

@@ -11,15 +11,27 @@ test('package.json packaging configuration and manifest integrity', () => {
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
   // Ensure scripts support both git dependency installs (prepare) and npm pack/publish (prepack)
-  assert.equal(pkg.scripts?.prepare, 'npm run build', 'prepare script must build dist for git dependencies');
-  assert.equal(pkg.scripts?.prepack, 'npm run build', 'prepack script must build dist before pack/publish');
+  assert.equal(
+    pkg.scripts?.prepare,
+    'npm run build',
+    'prepare script must build dist for git dependencies'
+  );
+  assert.equal(
+    pkg.scripts?.prepack,
+    'npm run build',
+    'prepack script must build dist before pack/publish'
+  );
 
   // Bundler tree-shaking hint
   assert.equal(pkg.sideEffects, false, 'sideEffects must be false for bundler tree-shaking');
 
   // Exports map must export package.json and root entry points
   assert.ok(pkg.exports, 'package.json must define exports map');
-  assert.equal(pkg.exports['./package.json'], './package.json', 'exports map must include ./package.json');
+  assert.equal(
+    pkg.exports['./package.json'],
+    './package.json',
+    'exports map must include ./package.json'
+  );
 
   const rootExport = pkg.exports['.'];
   assert.ok(rootExport, 'exports must include root "." entry');
@@ -58,4 +70,29 @@ test('build output artifacts exist and have correct formats', () => {
 
   const esmJson = JSON.parse(readFileSync(esmPkg, 'utf8'));
   assert.equal(esmJson.type, 'module');
+});
+
+test('CI workflow enforces npm run format:check alongside package.json scripts', () => {
+  const pkgPath = path.join(ROOT, 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+
+  assert.equal(
+    pkg.scripts?.format,
+    'prettier --write src test',
+    'format script must run prettier --write on src and test'
+  );
+  assert.equal(
+    pkg.scripts?.['format:check'],
+    'prettier --check src test',
+    'format:check script must run prettier --check on src and test'
+  );
+
+  const ciWorkflowPath = path.join(ROOT, '.github', 'workflows', 'ci.yml');
+  assert.ok(existsSync(ciWorkflowPath), '.github/workflows/ci.yml must exist');
+  const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8');
+  assert.match(
+    ciWorkflow,
+    /^\s*-\s*run:\s*npm run format:check\s*$/m,
+    'CI workflow must run npm run format:check to prevent formatting drift'
+  );
 });

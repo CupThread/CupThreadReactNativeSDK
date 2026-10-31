@@ -63,10 +63,7 @@ export function uploadErrorMessage(
   }
   if (err instanceof UploadRejectedException) {
     if (err.status === 413 || err.code === 'file_too_large') return strings.uploadTooLarge;
-    if (
-      err.code === 'unsupported_mime_type' ||
-      err.code === 'executable_extension_prohibited'
-    ) {
+    if (err.code === 'unsupported_mime_type' || err.code === 'executable_extension_prohibited') {
       return strings.uploadUnsupportedType;
     }
   }
