@@ -29,6 +29,35 @@ export interface UseFeatureRequestsSearchLimiterOptions {
 }
 
 /**
+ * A pending optimistic mutation remembered for one item, tagged with the user
+ * identity it was created under so an identity switch (UserTokenStore
+ * `setToken`/`resetToken` re-resolving the provider token) can retire the
+ * previous identity's snapshots instead of replaying them over the new
+ * identity's data (#184).
+ */
+interface PendingItemMutation {
+  item: FeatureRequestItem;
+  userToken: string;
+}
+
+/**
+ * A settled vote parked as a one-shot guard against page-0 responses that were
+ * still in flight when the vote settled. Such a response predates the
+ * server-confirmed vote truth and must not wipe it from the row; the first
+ * reconciliation that covers the row consumes the record, and any page-0 that
+ * started after the settlement prunes it outright, so records stay bounded by
+ * in-flight fetch windows instead of accumulating per vote (#184).
+ */
+interface SettledItemMutation extends PendingItemMutation {
+  /**
+   * Value of the hook's monotonic local revision at the moment the vote
+   * settled. A page-0 whose starting revision is greater or equal postdates
+   * the settlement, so its response wins and the record is irrelevant.
+   */
+  revision: number;
+}
+
+/**
  * Builds the deduplication key for a query-bearing search: the same trimmed
  * query + version filter under the same user identity must not refetch when the
  * effect re-fires.
@@ -195,8 +224,10 @@ export interface UseFeatureRequestsResult {
    * The change is remembered as a pending mutation so concurrent page-0 loads
    * keep the optimistic row instead of blind-overwriting it with older server
    * data. Pass {@link VoteChangeMeta.isRollback} to mark a change that reverts
-   * a failed vote: the pending entry is released so later server snapshots
-   * win for that row again.
+   * a failed vote, or {@link VoteChangeMeta.isFinal} for the server-confirmed
+   * result of a successful vote: both end the optimistic-vote lifecycle, so
+   * the pending entry is released and later server snapshots win for that row
+   * again.
    */
   applyItemChange: (
     itemId: string,
@@ -301,7 +332,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const nextCursorRef = useRef<string | null>(null);
 
   const localRevisionRef = useRef<number>(0);
-  const pendingItemMutationsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
+  const pendingItemMutationsRef = useRef<Map<string, PendingItemMutation>>(new Map());
+  const settledItemMutationsRef = useRef<Map<string, SettledItemMutation>>(new Map());
+
+  // The identity of the most recent render, read by the mutation appliers
+  // (which are stable callbacks and must not close over the prop).
+  const userTokenRef = useRef<string>(userToken);
+  userTokenRef.current = userToken;
 
   const applyItemChange = useCallback(
     (
@@ -310,23 +347,47 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       meta?: VoteChangeMeta
     ) => {
       localRevisionRef.current += 1;
-      if (meta?.isRollback) {
-        // A rollback ends the optimistic-vote lifecycle (#139): release the
-        // item's pending mutation so later server snapshots win for the row
-        // again. Released unconditionally and outside the state updater — a
-        // search or filter change may already have removed the row from
-        // `items` while the vote was in flight, and an entry stranded in the
-        // map would override the server row once the query is restored.
-        // Keeping the side effect out of the updater also keeps it
-        // single-shot under StrictMode's double-invoked updaters.
+      const previousPending = pendingItemMutationsRef.current.get(itemId);
+      if (meta?.isRollback || meta?.isFinal) {
+        // A rollback (#139) or a settled success (#184) ends the
+        // optimistic-vote lifecycle: release the item's pending mutation so
+        // later server snapshots win for the row again. Released
+        // unconditionally and outside the state updater — a search or filter
+        // change may already have removed the row from `items` while the
+        // vote was in flight, and an entry stranded in the map would override
+        // the server row once the query is restored. Keeping the side effect
+        // out of the updater also keeps it single-shot under StrictMode's
+        // double-invoked updaters.
         pendingItemMutationsRef.current.delete(itemId);
+      } else {
+        // A fresh optimistic mutation supersedes any settled guard for the
+        // row: from here on the pending entry owns the in-flight protection.
+        settledItemMutationsRef.current.delete(itemId);
+      }
+      // A settled vote is parked as a one-shot guard so a page-0 response
+      // still in flight from before the settlement cannot wipe the
+      // server-confirmed vote (#184). Recorded before the state updater so
+      // the bookkeeping is single-shot; the guard covers rows that already
+      // left `items` (a query change mid-vote) as well.
+      if (meta?.isFinal) {
+        const current = itemsRef.current.find((row) => row.id === itemId) ?? previousPending?.item;
+        if (current) {
+          settledItemMutationsRef.current.set(itemId, {
+            item: transform(current),
+            userToken: userTokenRef.current,
+            revision: localRevisionRef.current,
+          });
+        }
       }
       setItems((prev) =>
         prev.map((item) => {
           if (item.id === itemId) {
             const updated = transform(item);
-            if (!meta?.isRollback) {
-              pendingItemMutationsRef.current.set(itemId, updated);
+            if (!meta?.isRollback && !meta?.isFinal) {
+              pendingItemMutationsRef.current.set(itemId, {
+                item: updated,
+                userToken: userTokenRef.current,
+              });
             }
             return updated;
           }
@@ -343,7 +404,11 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       setItems((prev) => {
         const next = typeof action === 'function' ? action(prev) : action;
         for (const item of next) {
-          pendingItemMutationsRef.current.set(item.id, item);
+          pendingItemMutationsRef.current.set(item.id, {
+            item,
+            userToken: userTokenRef.current,
+          });
+          settledItemMutationsRef.current.delete(item.id);
         }
         return next;
       });
@@ -393,6 +458,16 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
       const rev = localRevisionRef.current;
 
+      // Settled-vote guards this fetch cannot need (#184): a page-0 starting
+      // now postdates those settlements, so its response is authoritative
+      // over them. Only guards for votes that settle while this fetch is in
+      // flight survive to the reconciliation below.
+      for (const [id, entry] of settledItemMutationsRef.current) {
+        if (entry.revision <= rev) {
+          settledItemMutationsRef.current.delete(id);
+        }
+      }
+
       try {
         if (skipped) return;
 
@@ -415,25 +490,58 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         const reconcileWithPending = (
           itemsToReconcile: FeatureRequestItem[]
         ): FeatureRequestItem[] => {
-          if (pendingItemMutationsRef.current.size === 0) return itemsToReconcile;
+          // This fetch runs under `userToken`, so snapshots pinned by a
+          // previous identity must not merge over (or survive into) the new
+          // identity's server data: a guest-era vote does not carry over to
+          // the signed-in account, and retaining such an entry would replay
+          // the stale row over every later page-0 indefinitely (#184).
+          for (const [id, entry] of pendingItemMutationsRef.current) {
+            if (entry.userToken !== userToken) {
+              pendingItemMutationsRef.current.delete(id);
+            }
+          }
+          for (const [id, entry] of settledItemMutationsRef.current) {
+            if (entry.userToken !== userToken) {
+              settledItemMutationsRef.current.delete(id);
+            }
+          }
+          if (
+            pendingItemMutationsRef.current.size === 0 &&
+            settledItemMutationsRef.current.size === 0
+          ) {
+            return itemsToReconcile;
+          }
           return itemsToReconcile.map((item) => {
             const pending = pendingItemMutationsRef.current.get(item.id);
-            if (!pending) return item;
-            if (item.hasVoted === pending.hasVoted) {
-              // Server response already reflects the new vote state, clear pending mutation.
-              pendingItemMutationsRef.current.delete(item.id);
-              return item;
+            if (pending) {
+              if (item.hasVoted === pending.item.hasVoted) {
+                // Server response already reflects the new vote state, clear pending mutation.
+                pendingItemMutationsRef.current.delete(item.id);
+                return item;
+              }
+              return {
+                ...item,
+                ...pending.item,
+              };
             }
-            return {
-              ...item,
-              ...pending,
-            };
+            const settled = settledItemMutationsRef.current.get(item.id);
+            if (settled) {
+              // The response predates this vote's settlement (the fetch
+              // started before it), so it cannot disprove the server-confirmed
+              // result: keep the settled row and consume the guard — the next
+              // page-0 starts after the settlement and decides the row (#184).
+              settledItemMutationsRef.current.delete(item.id);
+              return item.hasVoted === settled.item.hasVoted ? item : { ...item, ...settled.item };
+            }
+            return item;
           });
         };
 
         const hadInterimMutation = localRevisionRef.current !== rev;
         const mergedItems =
-          hadInterimMutation || pendingItemMutationsRef.current.size > 0
+          hadInterimMutation ||
+          pendingItemMutationsRef.current.size > 0 ||
+          settledItemMutationsRef.current.size > 0
             ? reconcileWithPending(fetchedItems)
             : fetchedItems;
         setItems(mergedItems);
