@@ -679,12 +679,24 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // useChangelogEntries).
         if (nextCursorRef.current !== currentCursor) return;
         const isCursorResponse = typeof res.hasMore === 'boolean';
-        const nextCursor =
+        let nextCursor =
           isCursorResponse && typeof res.nextCursor === 'string' && res.nextCursor.length > 0
             ? res.nextCursor
             : null;
+        // A cursor that does not advance can never finish the walk: the
+        // contract defines `nextCursor` as the following page's cursor, so an
+        // unchanged value contradicts a truthy `hasMore`. Stop pagination on
+        // it instead of re-fetching the same page on every loadMore.
+        const stalledCursor = nextCursor !== null && nextCursor === currentCursor;
+        if (stalledCursor) {
+          nextCursor = null;
+        }
         const serverHasMore =
-          isCursorResponse && nextCursor !== null && res.hasMore === true && newItems.length > 0;
+          !stalledCursor &&
+          isCursorResponse &&
+          nextCursor !== null &&
+          res.hasMore === true &&
+          newItems.length > 0;
         nextCursorRef.current = nextCursor;
         cursorHasMoreRef.current = serverHasMore;
         setCursorHasMore(serverHasMore);
@@ -695,7 +707,14 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           const ids = new Set(prev.map((i) => i.id));
           return [...prev, ...newItems.filter((i) => !ids.has(i.id))];
         });
-        setLoadMoreError(null);
+        // Diagnostic only: with hasMore forced false no surface renders a
+        // retry affordance, so the stalled walk ends cleanly while hosts can
+        // still tell it apart from a legitimate end-of-data.
+        setLoadMoreError(
+          stalledCursor
+            ? new Error('The server returned a cursor that does not advance; pagination stopped.')
+            : null
+        );
         if (isSearch) {
           setIsRateLimited(false);
         }

@@ -1200,6 +1200,54 @@ test('useFeatureRequests: a terminal single-page cursor response stays in cursor
   );
 });
 
+test('useFeatureRequests: a non-advancing cursor ends the walk instead of looping (#170)', async () => {
+  const requestsSeen: Array<Record<string, any>> = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      requestsSeen.push({ ...opts });
+      if (!opts.cursor) {
+        return {
+          requests: [makeMockItem('fr_n1', 1)],
+          total: 4,
+          hasMore: true,
+          nextCursor: 'cur_stuck',
+        };
+      }
+      // Misbehaving server: reports more pages but hands back the SAME cursor
+      // it was given, so the walk could never advance.
+      return {
+        requests: [makeMockItem('fr_n2', 2), makeMockItem('fr_n3', 3)],
+        total: 4,
+        hasMore: true,
+        nextCursor: 'cur_stuck',
+      };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      pageSize: 2,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harness.result.items.length, 3, 'the duplicate page still appends its fresh rows');
+  assert.equal(
+    harness.result.hasMore,
+    false,
+    'a stalled cursor must end pagination instead of keeping hasMore true'
+  );
+
+  // Further loadMore calls must not re-request the stuck page.
+  await harness.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(requestsSeen.length, 2, 'the walk stops instead of looping on the same cursor');
+});
+
 test('useFeatureRequests applyItemChange transforms specific item without refetching', async () => {
   const mockClient = {
     fetchFeatureRequests: async () => ({
