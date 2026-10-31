@@ -1492,9 +1492,15 @@ export interface FeatureRequestComment {
   id: string;
 
   /**
-   * Parent feature request ID.
+   * Parent feature request ID. Optional in the published response schema.
    */
-  featureRequestId: string;
+  featureRequestId?: string;
+
+  /**
+   * ID of the application that owns the parent feature request. Optional in
+   * the published response schema, so older deployments may omit it.
+   */
+  appId?: string;
 
   /**
    * Display name of the author.
@@ -1502,17 +1508,13 @@ export interface FeatureRequestComment {
   authorName?: string | null;
 
   /**
-   * Email address of the author if provided.
-   */
-  authorEmail?: string | null;
-
-  /**
    * Avatar URL of the author.
    */
   authorAvatarUrl?: string | null;
 
   /**
-   * Clerk user ID of the author if authenticated.
+   * App-scoped public user ID (`u_<hex>`) of the author — not a Clerk user ID
+   * despite the field name (PRIV-06).
    */
   authorClerkId?: string | null;
 
@@ -1527,7 +1529,8 @@ export interface FeatureRequestComment {
   parentId?: string | null;
 
   /**
-   * Clerk user ID of the user being replied to.
+   * App-scoped public user ID (`u_<hex>`) of the user being replied to — not
+   * a Clerk user ID despite the field name (PRIV-06).
    */
   replyToClerkId?: string | null;
 
@@ -1545,6 +1548,13 @@ export interface FeatureRequestComment {
    * ISO 8601 creation timestamp.
    */
   createdAt: string;
+
+  /**
+   * ISO 8601 timestamp of the most recent update to the comment. Optional in
+   * the published response schema; compare with `createdAt` to render
+   * "edited" affordances or re-sync by recency.
+   */
+  updatedAt?: string;
 }
 
 /**

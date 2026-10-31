@@ -108,6 +108,28 @@ test('listComments requests the server-default page and normalizes a legacy resp
   }
 });
 
+test('listComments preserves the spec fields the published comment schema serves', async () => {
+  // appId / updatedAt are optional but real in the published response schema
+  // (issue #176): the fetch passthrough must keep them on the surfaced record.
+  const edited = makeComment('c1', {
+    appId: 'app_comments_pagination_test',
+    updatedAt: '2026-10-02T08:30:00.000Z',
+  });
+  const pages = new Map([[null, { status: 200, body: { comments: [edited] } }]]);
+  const fetchMock = installCommentsFetch(pages);
+
+  try {
+    const result = await makeClient().listComments('fr_1');
+    assert.deepEqual(
+      result.comments,
+      [edited],
+      'appId and updatedAt must survive the fetch passthrough unchanged'
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('listComments forwards limit and cursor and clamps out-of-range limits', async () => {
   for (const { options, expectedLimit } of [
     { options: { limit: 20, cursor: 'cur-9' }, expectedLimit: '20' },
