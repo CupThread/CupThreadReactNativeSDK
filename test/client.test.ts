@@ -828,7 +828,9 @@ test('FeedbackClient.postComment tolerates a bare comment record for proxies tha
 test('FeedbackClient.postComment rejects malformed create responses with InvalidResponseException', async () => {
   const originalFetch = globalThis.fetch;
   // Each body is answered verbatim: bare junk (`null`, `[]`, `{}`) as well as
-  // envelopes that fail to carry a usable comment record.
+  // envelopes that fail to carry a usable comment record — including records
+  // missing the schema-required `body` or `createdAt`, which would otherwise
+  // render a partially blank card in the thread.
   const malformedBodies: unknown[] = [
     null,
     {},
@@ -836,6 +838,9 @@ test('FeedbackClient.postComment rejects malformed create responses with Invalid
     { comment: null },
     { comment: [] },
     { comment: {} },
+    { comment: { id: 'c_partial' } },
+    { comment: { id: 'c_partial', body: 'no date' } },
+    { comment: { id: 'c_partial', createdAt: '2026-10-25T00:00:00.000Z' } },
   ];
   let next = 0;
 

@@ -1771,7 +1771,7 @@ export class FeedbackClient {
    * @param options - Optional `sessionToken`, request options, or an `AbortSignal`.
    * @returns The created comment record, unwrapped from the documented
    * `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`).
-   * @throws {@link InvalidResponseException} When the response carries no usable comment record (empty object, bare array, or an envelope without a comment).
+   * @throws {@link InvalidResponseException} When the response carries no usable comment record (empty object, bare array, an envelope without a comment, or a record missing its schema-required `id`/`body`/`createdAt`).
    * @throws {@link AuthenticationRequiredException} When the endpoint requires sign-in and no (valid) session was presented.
    *
    * @example
@@ -1822,11 +1822,16 @@ export class FeedbackClient {
       typeof record !== 'object' ||
       Array.isArray(record) ||
       typeof record.id !== 'string' ||
-      record.id.length === 0
+      record.id.length === 0 ||
+      typeof record.body !== 'string' ||
+      record.body.length === 0 ||
+      typeof record.createdAt !== 'string' ||
+      record.createdAt.length === 0
     ) {
-      // A `null` body, a bare array, an empty envelope, or `{"comment": []}`
-      // must surface as a typed parse failure — not a TypeError, and not a
-      // malformed value the UI would append to the thread as a blank card.
+      // A `null` body, a bare array, an empty envelope, `{"comment": []}`, or
+      // a record missing its schema-required `id`/`body`/`createdAt` must
+      // surface as a typed parse failure — not a TypeError, and not a value
+      // the UI would append to the thread as a blank card.
       throw new InvalidResponseException(
         `Comment create for ${featureRequestId} returned no comment record`
       );
