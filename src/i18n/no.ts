@@ -114,6 +114,7 @@ export const noStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Kommentarer (${count})`,
     emptyComments: 'Ingen kommentarer ennå. Start diskusjonen!',
+    loadMore: 'Last inn flere kommentarer',
     inputPlaceholder: 'Legg igjen en kommentar...',
     namePlaceholder: 'Navnet ditt (valgfritt)',
     postButton: 'Publiser kommentar',

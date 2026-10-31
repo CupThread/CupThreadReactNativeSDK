@@ -246,9 +246,16 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
         expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/vote`,
       },
       {
+        label: 'listComments',
+        run: () => client.listComments(HOSTILE_SEGMENT),
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/comments?limit=200`,
+        expectedQuery: '?limit=200',
+      },
+      {
         label: 'fetchComments',
         run: () => client.fetchComments(HOSTILE_SEGMENT),
-        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/comments`,
+        expected: `https://api.cupthread.com/api/v1/feature-requests/${HOSTILE_SEGMENT_ENCODED}/comments?limit=200`,
+        expectedQuery: '?limit=200',
       },
       {
         label: 'postComment',
@@ -363,9 +370,14 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
         expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/vote',
       },
       {
+        label: 'listComments',
+        run: () => client.listComments('fr_123'),
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments?limit=200',
+      },
+      {
         label: 'fetchComments',
         run: () => client.fetchComments('fr_123'),
-        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments',
+        expected: 'https://api.cupthread.com/api/v1/feature-requests/fr_123/comments?limit=200',
       },
       {
         label: 'postComment',

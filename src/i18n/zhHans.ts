@@ -108,6 +108,7 @@ export const zhHansStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `讨论 (${count})`,
     emptyComments: '暂无讨论，来发表第一个想法吧！',
+    loadMore: '加载更多评论',
     inputPlaceholder: '写下您的看法或建议...',
     namePlaceholder: '您的称呼（选填）',
     postButton: '发表评论',

@@ -16,7 +16,11 @@ import {
   useCupThreadLocale,
   useCupThreadCommentSession,
 } from '../theme/CupThreadThemeProvider';
-import type { FeatureRequestComment, CommentDraft } from '../types';
+import type {
+  FeatureRequestComment,
+  CommentDraft,
+  ListFeatureRequestCommentsResult,
+} from '../types';
 import { AuthenticationRequiredException } from '../client/FeedbackException';
 import { Avatar } from './Avatar';
 import { ErrorState } from './ErrorState';
@@ -92,8 +96,14 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   const locale = useCupThreadLocale();
   const commentSessionProvider = useCupThreadCommentSession();
 
-  const fetchComments = useCallback(
-    (signal: AbortSignal) => client.fetchComments(featureRequestId, { signal }),
+  // The comments endpoint is keyset-paginated (at most 200 comments per
+  // request), so `commentsPage` holds the accumulated thread: the first page
+  // plus every page appended behind the load-more affordance. Keeping one
+  // state object means `useAsyncData`'s mergeStale reconciliation keeps the
+  // walked pages (and locally posted comments) intact when a late first-page
+  // response lands.
+  const fetchCommentsPage = useCallback(
+    (signal: AbortSignal) => client.listComments(featureRequestId, { signal }),
     [client, featureRequestId]
   );
   const mergeComments = useCallback(
@@ -109,15 +119,38 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     },
     []
   );
+  // Set once `handleLoadMore` follows a cursor. A comment posted ahead of the
+  // first page seeds `hasMore: false` / `nextCursor: null` — until a real walk
+  // happens, a freshly landed page's own pagination metadata must win, or the
+  // seed would discard the server cursor and the load-more affordance would
+  // never appear. Read inside `mergePage` only, mutated outside any updater,
+  // so the updater stays idempotent under StrictMode.
+  const hasWalkedRef = useRef<boolean>(false);
+  const mergePage = useCallback(
+    (
+      local: ListFeatureRequestCommentsResult | null,
+      incoming: ListFeatureRequestCommentsResult
+    ): ListFeatureRequestCommentsResult => ({
+      comments: mergeComments(local?.comments ?? null, incoming.comments),
+      total: Math.max(incoming.total, local?.total ?? 0),
+      // A late first-page landing must not unwind a load-more walk already
+      // past it: after a real walk the accumulated position is authoritative.
+      hasMore: local && hasWalkedRef.current ? local.hasMore : incoming.hasMore,
+      nextCursor: local && hasWalkedRef.current ? local.nextCursor : incoming.nextCursor,
+    }),
+    [mergeComments]
+  );
 
   const {
-    data: commentsData,
+    data: commentsPage,
     isLoading: isLoadingComments,
     error: loadError,
     reload: reloadComments,
     setData: setCommentsData,
-  } = useAsyncData(fetchComments, { mergeStale: mergeComments });
-  const comments: FeatureRequestComment[] = commentsData ?? [];
+  } = useAsyncData<ListFeatureRequestCommentsResult>(fetchCommentsPage, {
+    mergeStale: mergePage,
+  });
+  const comments: FeatureRequestComment[] = commentsPage?.comments ?? [];
 
   const [commentText, setCommentText] = useState<string>('');
   const [replyTo, setReplyTo] = useState<FeatureRequestComment | null>(null);
@@ -127,6 +160,64 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   // True when a submit was refused by the session check or rejected with 401:
   // the composer yields to the sign-in notice until a session appears again.
   const [requiresSignIn, setRequiresSignIn] = useState<boolean>(false);
+
+  // Load-more state for threads longer than one page. A failure keeps every
+  // already-loaded comment visible and the footer offers a retry.
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const isLoadingMoreRef = useRef<boolean>(false);
+  const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => loadMoreControllerRef.current?.abort();
+  }, []);
+
+  // A page can only be followed when the server reports more comments, the
+  // page was non-empty, and it handed back a cursor to follow.
+  const hasMorePages = Boolean(
+    commentsPage?.hasMore && commentsPage.comments.length > 0 && commentsPage.nextCursor
+  );
+
+  const handleLoadMore = useCallback(async () => {
+    const cursor = commentsPage?.nextCursor;
+    if (!cursor || isLoadingMoreRef.current) return;
+
+    loadMoreControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
+
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const page = await client.listComments(featureRequestId, {
+        cursor,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      // Flip before the updater runs (never inside it): from here on the
+      // accumulated walk position outranks a stale page's metadata.
+      hasWalkedRef.current = true;
+      setCommentsData((prev) => {
+        if (!prev) return prev;
+        const seen = new Set(prev.comments.map((c) => c.id));
+        const fresh = page.comments.filter((c) => !seen.has(c.id));
+        return {
+          comments: fresh.length > 0 ? [...prev.comments, ...fresh] : prev.comments,
+          total: Math.max(prev.total, page.total),
+          // An empty page can never be followed by another one, even if a
+          // buggy server left `hasMore` set; neither can a page without a cursor.
+          hasMore: page.hasMore && page.comments.length > 0,
+          nextCursor: page.nextCursor,
+        };
+      });
+      setLoadMoreError(null);
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [client, featureRequestId, commentsPage?.nextCursor, setCommentsData]);
 
   const hasSessionSource = Boolean(commentSessionProvider);
   const showComposer = hasSessionSource && !requiresSignIn;
@@ -177,7 +268,14 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       const newComment = await client.postComment(featureRequestId, draft, effectiveToken, {
         sessionToken: sessionToken.trim(),
       });
-      setCommentsData((prev) => [...(prev ?? []), newComment]);
+      // A post may complete before the thread's own fetch resolves (data still
+      // null): seed a page holding only the new comment so the pending first
+      // page merges around it via `mergePage` when it lands.
+      setCommentsData((prev) =>
+        prev
+          ? { ...prev, comments: [...prev.comments, newComment] }
+          : { comments: [newComment], total: 1, hasMore: false, nextCursor: null }
+      );
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
@@ -194,11 +292,15 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   };
 
   const activeComments = comments.filter((c) => !c.isHidden);
+  // The server `total` counts every visible comment on the thread, including
+  // pages not loaded yet — prefer it whenever it exceeds what is on screen so
+  // a truncated thread does not present itself as complete.
+  const headingCount = Math.max(activeComments.length, commentsPage?.total ?? 0);
 
   return (
     <View style={styles.container}>
       <Text style={[styles.heading, { color: colors.textPrimary }]}>
-        {strings.comments.commentsCount(activeComments.length)}
+        {strings.comments.commentsCount(headingCount)}
       </Text>
 
       {isLoadingComments ? (
@@ -264,6 +366,25 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
               )}
             </View>
           ))}
+        </View>
+      )}
+
+      {hasMorePages && !isLoadingComments && activeComments.length > 0 && (
+        <View style={styles.loadMoreContainer}>
+          {isLoadingMore ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <TouchableOpacity
+              onPress={handleLoadMore}
+              style={styles.loadMoreButton}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.loadMoreText, { color: colors.primary }]}>
+                {loadMoreError ? strings.common.retry : strings.comments.loadMore}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -371,6 +492,19 @@ const styles = StyleSheet.create({
   },
   list: {
     marginBottom: 16,
+  },
+  loadMoreContainer: {
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  loadMoreButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   commentCard: {
     padding: 12,

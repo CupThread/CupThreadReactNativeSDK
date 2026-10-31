@@ -6,6 +6,7 @@ import type {
   CommentDraft,
   FeatureRequestComment,
   FeatureRequestItem,
+  ListFeatureRequestCommentsResult,
   VoteResult,
 } from '../src/types';
 
@@ -91,9 +92,10 @@ class RecordingClient extends FeedbackClient {
     return { voted: true, voteCount: 42 };
   }
 
-  override async fetchComments(featureRequestId: string): Promise<FeatureRequestComment[]> {
+  override async listComments(featureRequestId: string): Promise<ListFeatureRequestCommentsResult> {
     this.commentCalls.push(featureRequestId);
-    return this.commentSources.get(featureRequestId) ?? [];
+    const comments = this.commentSources.get(featureRequestId) ?? [];
+    return { comments, total: comments.length, hasMore: false, nextCursor: null };
   }
 
   override async postComment(

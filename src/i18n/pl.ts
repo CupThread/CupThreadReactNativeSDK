@@ -125,6 +125,7 @@ export const plStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Komentarze (${count})`,
     emptyComments: 'Brak komentarzy. Rozpocznij dyskusję!',
+    loadMore: 'Pokaż więcej komentarzy',
     inputPlaceholder: 'Dodaj komentarz...',
     namePlaceholder: 'Imię (opcjonalne)',
     postButton: 'Opublikuj komentarz',

@@ -113,6 +113,7 @@ export const enStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Comments (${count})`,
     emptyComments: 'No comments yet. Start the discussion!',
+    loadMore: 'Load more comments',
     inputPlaceholder: 'Leave a comment...',
     namePlaceholder: 'Your name (optional)',
     postButton: 'Post Comment',

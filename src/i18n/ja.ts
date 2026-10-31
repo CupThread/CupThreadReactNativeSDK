@@ -111,6 +111,7 @@ export const jaStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `コメント（${count}）`,
     emptyComments: 'まだコメントはありません。最初に話し合いを始めましょう！',
+    loadMore: 'コメントをもっと読む',
     inputPlaceholder: 'コメントを入力...',
     namePlaceholder: 'お名前（任意）',
     postButton: 'コメントを投稿',
