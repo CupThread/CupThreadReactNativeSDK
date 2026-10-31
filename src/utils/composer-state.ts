@@ -106,20 +106,35 @@ export interface ResolveReopenedStateOptions<TDraft> {
 }
 
 /**
+ * The single implementation of the reopen decision shared by
+ * {@link resolveReopenedFeedbackComposerState}, {@link resolveReopenedFeatureRequestComposeState},
+ * and both shipping components (`FeedbackComposer`, `FeatureRequestComposeSheet`).
+ *
+ * A reopen resets the form when the previous session submitted, when drafts are
+ * not preserved, or when the host swapped the `initialDraft` prop. The swap is
+ * a raw identity compare, deliberately covering the `undefined → defined`
+ * transition: a host attaching a draft for the first time is re-contextualizing
+ * the form, so the typed draft of the old context is reset to the new draft.
+ *
+ * @returns true when the reopened form must be reset to the (new) initial draft.
+ */
+export function shouldResetComposerStateOnReopen(
+  options?: ResolveReopenedStateOptions<unknown>
+): boolean {
+  const preserve = options?.preserveDraftOnClose ?? false;
+  const hasSubmitted = options?.hasSubmitted ?? false;
+  const initialDraftChanged = options?.initialDraft !== options?.previousInitialDraft;
+  return hasSubmitted || !preserve || initialDraftChanged;
+}
+
+/**
  * Resolves the state for {@link FeedbackComposer} when reopened (visible false -> true).
  */
 export function resolveReopenedFeedbackComposerState(
   currentState: FeedbackComposerState,
   options?: ResolveReopenedStateOptions<FeedbackDraft>
 ): FeedbackComposerState {
-  const preserve = options?.preserveDraftOnClose ?? false;
-  const hasSubmitted = options?.hasSubmitted ?? false;
-  const initialDraftChanged =
-    options?.initialDraft !== undefined &&
-    options?.previousInitialDraft !== undefined &&
-    options.initialDraft !== options.previousInitialDraft;
-
-  if (hasSubmitted || !preserve || initialDraftChanged) {
+  if (shouldResetComposerStateOnReopen(options)) {
     return resetFeedbackComposerState(options?.initialDraft);
   }
 
@@ -138,14 +153,7 @@ export function resolveReopenedFeatureRequestComposeState(
   currentState: FeatureRequestComposeState,
   options?: ResolveReopenedStateOptions<FeatureRequestDraft>
 ): FeatureRequestComposeState {
-  const preserve = options?.preserveDraftOnClose ?? false;
-  const hasSubmitted = options?.hasSubmitted ?? false;
-  const initialDraftChanged =
-    options?.initialDraft !== undefined &&
-    options?.previousInitialDraft !== undefined &&
-    options.initialDraft !== options.previousInitialDraft;
-
-  if (hasSubmitted || !preserve || initialDraftChanged) {
+  if (shouldResetComposerStateOnReopen(options)) {
     return resetFeatureRequestComposeState(options?.initialDraft);
   }
 
