@@ -2,7 +2,11 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import type { CommentDraft, FeatureRequestComment } from '../src/types';
+import type {
+  CommentDraft,
+  FeatureRequestComment,
+  ListFeatureRequestCommentsResult,
+} from '../src/types';
 
 // `CommentsSection` imports react-native, which cannot load under plain Node.
 // Mock every symbol its render tree uses with lightweight stubs, then
@@ -89,17 +93,21 @@ class SwapStubClient extends FeedbackClient {
   fetchCalls: string[] = [];
   postCalls: PostCall[] = [];
   commentSources = new Map<string, FeatureRequestComment[]>();
-  deferredFetches = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment[]>>>();
+  deferredFetches = new Map<
+    string,
+    ReturnType<typeof createDeferred<ListFeatureRequestCommentsResult>>
+  >();
   deferredPosts = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment>>>();
   fetchFailures = new Set<string>();
   postedComment = makeComment('c_new', { authorName: null, body: 'Freshly posted' });
 
-  override async fetchComments(featureRequestId: string): Promise<FeatureRequestComment[]> {
+  override async listComments(featureRequestId: string): Promise<ListFeatureRequestCommentsResult> {
     this.fetchCalls.push(featureRequestId);
     const deferred = this.deferredFetches.get(featureRequestId);
     if (deferred) return deferred.promise;
     if (this.fetchFailures.has(featureRequestId)) throw new Error('network gone');
-    return this.commentSources.get(featureRequestId) ?? [];
+    const comments = this.commentSources.get(featureRequestId) ?? [];
+    return { comments, total: comments.length, hasMore: false, nextCursor: null };
   }
 
   override async postComment(
@@ -154,7 +162,7 @@ async function renderSwapHarness(): Promise<SwapHarness> {
     appKey: 'app_comments_swap_test',
   });
   // Both threads are seeded up front; deferreds and failures registered by a
-  // test take precedence inside fetchComments.
+  // test take precedence inside listComments.
   client.commentSources.set('fr_A', [COMMENT_A]);
   client.commentSources.set('fr_B', [COMMENT_B]);
 
@@ -216,7 +224,7 @@ test(
       );
 
       // Hold B's fetch in flight and swap the documented way.
-      const deferredB = createDeferred<FeatureRequestComment[]>();
+      const deferredB = createDeferred<ListFeatureRequestCommentsResult>();
       harness.client.deferredFetches.set('fr_B', deferredB);
       await harness.swap('fr_B');
 
@@ -232,7 +240,7 @@ test(
         "A's comments must not render while B's fetch is in flight"
       );
 
-      deferredB.resolve([COMMENT_B]);
+      deferredB.resolve({ comments: [COMMENT_B], total: 1, hasMore: false, nextCursor: null });
       await flush();
 
       text = collectText(harness.renderer.root);
@@ -324,7 +332,7 @@ test(
     const harness = await renderSwapHarness();
     try {
       // Swap while B's fetch is deferred, then post into B immediately.
-      const deferredB = createDeferred<FeatureRequestComment[]>();
+      const deferredB = createDeferred<ListFeatureRequestCommentsResult>();
       harness.client.deferredFetches.set('fr_B', deferredB);
       await harness.swap('fr_B');
 
@@ -348,7 +356,7 @@ test(
 
       // B's fetch resolves after the local post: the merge must combine only
       // B's server truth with B's local post.
-      deferredB.resolve([COMMENT_B]);
+      deferredB.resolve({ comments: [COMMENT_B], total: 1, hasMore: false, nextCursor: null });
       await flush();
 
       text = collectText(harness.renderer.root);

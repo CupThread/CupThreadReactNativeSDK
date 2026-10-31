@@ -2,7 +2,11 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import type { CommentDraft, FeatureRequestComment } from '../src/types';
+import type {
+  CommentDraft,
+  FeatureRequestComment,
+  ListFeatureRequestCommentsResult,
+} from '../src/types';
 
 // `CommentsSection` imports react-native, which cannot load under plain Node.
 // Mock every symbol its render tree uses with lightweight stubs, then
@@ -79,8 +83,9 @@ class CommentsStubClient extends FeedbackClient {
   postBehavior: 'success' | 'unauthorized' = 'success';
   postedComment = makeComment('c_new', { authorName: null, body: 'Hello thread' });
 
-  override async fetchComments(): Promise<FeatureRequestComment[]> {
-    return [makeComment('c_seed')];
+  override async listComments(): Promise<ListFeatureRequestCommentsResult> {
+    const comments = [makeComment('c_seed')];
+    return { comments, total: comments.length, hasMore: false, nextCursor: null };
   }
 
   override async postComment(

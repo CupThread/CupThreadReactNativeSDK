@@ -111,6 +111,7 @@ export const viStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Bình luận (${count})`,
     emptyComments: 'Chưa có bình luận. Hãy bắt đầu thảo luận!',
+    loadMore: 'Tải thêm bình luận',
     inputPlaceholder: 'Để lại bình luận...',
     namePlaceholder: 'Tên của bạn (không bắt buộc)',
     postButton: 'Đăng bình luận',

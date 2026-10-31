@@ -115,6 +115,7 @@ export const ptStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Comentários (${count})`,
     emptyComments: 'Ainda não há comentários. Inicie a discussão!',
+    loadMore: 'Carregar mais comentários',
     inputPlaceholder: 'Deixe um comentário...',
     namePlaceholder: 'Seu nome (opcional)',
     postButton: 'Publicar comentário',

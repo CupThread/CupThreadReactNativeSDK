@@ -111,6 +111,7 @@ export const koStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `댓글 (${count})`,
     emptyComments: '아직 댓글이 없습니다. 토론을 시작해 보세요!',
+    loadMore: '댓글 더 보기',
     inputPlaceholder: '댓글을 남겨 주세요...',
     namePlaceholder: '이름 (선택 사항)',
     postButton: '댓글 게시',

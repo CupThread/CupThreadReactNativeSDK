@@ -108,6 +108,7 @@ export const zhHantStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `留言（${count}）`,
     emptyComments: '目前還沒有留言，開始討論吧！',
+    loadMore: '載入更多留言',
     inputPlaceholder: '留下留言...',
     namePlaceholder: '您的稱呼（選填）',
     postButton: '發表留言',

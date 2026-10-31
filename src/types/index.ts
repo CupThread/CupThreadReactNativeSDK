@@ -1461,6 +1461,47 @@ export interface FeatureRequestComment {
 }
 
 /**
+ * Paginated page of discussion comments on a feature request.
+ *
+ * The endpoint is keyset-paginated and serves at most 200 comments per
+ * request: pass `nextCursor` to {@link FeedbackClient.listComments} to fetch
+ * the next page. Assuming a single fetch returns the whole thread silently
+ * truncates popular discussions to their oldest 200 comments.
+ *
+ * @example
+ * ```ts
+ * const result: ListFeatureRequestCommentsResult = {
+ *   comments: [{ id: 'cmt_001', featureRequestId: 'fr_101', body: '...', createdAt: '...' }],
+ *   total: 250,
+ *   hasMore: true,
+ *   nextCursor: 'MjAyNi0w...',
+ * };
+ * ```
+ */
+export interface ListFeatureRequestCommentsResult {
+  /**
+   * Discussion comments for the current page, oldest first.
+   */
+  comments: FeatureRequestComment[];
+
+  /**
+   * Total visible comments on the thread, across all pages. Servers that
+   * predate pagination omit it; the SDK then falls back to the page's length.
+   */
+  total: number;
+
+  /**
+   * True when more comments are available beyond this page.
+   */
+  hasMore: boolean;
+
+  /**
+   * Opaque keyset cursor for the next page, or `null` on the last page.
+   */
+  nextCursor: string | null;
+}
+
+/**
  * Draft payload for posting a new comment or reply in a discussion thread.
  *
  * @remarks

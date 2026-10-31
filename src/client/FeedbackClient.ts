@@ -16,6 +16,7 @@ import type {
   FeedbackSubmissionResult,
   FetchUserProfileOptions,
   ListFeatureRequestsResult,
+  ListFeatureRequestCommentsResult,
   ListPublicChangelogResult,
   PublicAppConfig,
   PublicUserProfileResult,
@@ -73,6 +74,13 @@ export const DEFAULT_UPLOAD_TIMEOUT_MS = 60000;
  * Server-side default (and maximum) page size for the public changelog endpoint.
  */
 export const DEFAULT_CHANGELOG_PAGE_SIZE = 100;
+
+/**
+ * Server-side default (and maximum) page size for the feature-request comments
+ * endpoint. The endpoint never serves more than one page per request, so
+ * callers that need the whole thread must walk `nextCursor`.
+ */
+export const DEFAULT_COMMENTS_PAGE_SIZE = 200;
 
 /**
  * Maximum number of files one upload session may reserve (API limit).
@@ -157,6 +165,12 @@ export interface CreateUploadSessionOptions extends RequestOptions {
  * returning, guarding against a server that never clears `hasMore`.
  */
 export const MAX_CHANGELOG_PAGES = 100;
+
+/**
+ * Upper bound on pages {@link FeedbackClient.fetchComments} will follow before
+ * returning, guarding against a server that never clears `hasMore`.
+ */
+export const MAX_COMMENTS_PAGES = 100;
 
 /**
  * Converts a `Retry-After` response header into milliseconds. Accepts both the
@@ -1552,10 +1566,84 @@ export class FeedbackClient {
   }
 
   /**
-   * Retrieves all discussion comments for a feature request.
+   * Retrieves one page of discussion comments for a feature request with keyset pagination.
+   *
+   * The endpoint serves at most {@link DEFAULT_COMMENTS_PAGE_SIZE} comments per
+   * request and is keyset-paginated: the page cursor is opaque — pass a
+   * previous response's `nextCursor` back as `cursor` to read the following
+   * page, and walk until `nextCursor` is `null`. Servers that predate
+   * pagination do not return `total`/`hasMore`/`nextCursor`, which resolves to
+   * a single exhausted page whose `total` falls back to the page's length.
    *
    * @param featureRequestId - ID of the feature request.
-   * @returns List of discussion comments.
+   * @param options - Page size (`limit`, clamped to 1–200), opaque `cursor`, and request options.
+   * @returns Page comments plus pagination metadata (`total`, `hasMore`, `nextCursor`).
+   *
+   * @example
+   * ```ts
+   * const page = await client.listComments('fr_123');
+   * if (page.hasMore && page.nextCursor) {
+   *   const next = await client.listComments('fr_123', { cursor: page.nextCursor });
+   * }
+   * ```
+   */
+  public async listComments(
+    featureRequestId: string,
+    options?: {
+      /**
+       * Maximum number of comments to return per page (default: 200, clamped to 1–200).
+       */
+      limit?: number;
+      /**
+       * Opaque keyset cursor from a previous response's `nextCursor`.
+       */
+      cursor?: string;
+      /**
+       * Optional abort signal to cancel the request.
+       */
+      signal?: AbortSignal;
+      /**
+       * Optional timeout in milliseconds for this request.
+       */
+      timeoutMs?: number;
+    }
+  ): Promise<ListFeatureRequestCommentsResult> {
+    const limit = Math.min(Math.max(options?.limit ?? DEFAULT_COMMENTS_PAGE_SIZE, 1), 200);
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (options?.cursor) params.append('cursor', options.cursor);
+
+    const res = await this.request<Partial<ListFeatureRequestCommentsResult>>({
+      method: 'GET',
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(
+        featureRequestId
+      )}/comments?${params.toString()}`,
+      signal: options?.signal,
+      timeoutMs: options?.timeoutMs,
+    });
+
+    const comments = res.comments || [];
+    return {
+      comments,
+      total: typeof res.total === 'number' ? res.total : comments.length,
+      hasMore: res.hasMore === true,
+      nextCursor: typeof res.nextCursor === 'string' ? res.nextCursor : null,
+    };
+  }
+
+  /**
+   * Retrieves all discussion comments for a feature request (legacy compatibility wrapper).
+   *
+   * Follows the endpoint's keyset pagination until every page has been read, so
+   * threads larger than one page resolve in full (a single request silently
+   * caps the result at the server's 200-comment page size). Prefer
+   * {@link FeedbackClient.listComments} to read pages on demand instead of
+   * buffering a popular thread in memory.
+   *
+   * @deprecated Use {@link FeedbackClient.listComments} and walk `nextCursor`
+   * (or page on demand in the UI) instead.
+   * @param featureRequestId - ID of the feature request.
+   * @param options - Optional request options or an `AbortSignal`.
+   * @returns List of discussion comments, oldest first.
    *
    * @example
    * ```ts
@@ -1567,13 +1655,20 @@ export class FeedbackClient {
     featureRequestId: string,
     options?: RequestOptions | AbortSignal
   ): Promise<FeatureRequestComment[]> {
-    const res = await this.request<{ comments: FeatureRequestComment[] }>({
-      method: 'GET',
-      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
-      signal: extractSignal(options),
-      timeoutMs: extractTimeoutMs(options),
-    });
-    return res.comments || [];
+    const signal = extractSignal(options);
+    const timeoutMs = extractTimeoutMs(options);
+
+    const all: FeatureRequestComment[] = [];
+    let cursor: string | undefined;
+    // Defensive page cap: a misbehaving server that always reports `hasMore`
+    // must not turn this into an unbounded request loop.
+    for (let page = 0; page < MAX_COMMENTS_PAGES; page += 1) {
+      const res = await this.listComments(featureRequestId, { cursor, signal, timeoutMs });
+      all.push(...res.comments);
+      if (!res.hasMore || !res.nextCursor) break;
+      cursor = res.nextCursor;
+    }
+    return all;
   }
 
   /**

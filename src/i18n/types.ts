@@ -132,6 +132,7 @@ export interface FeatureRequestDetailStrings {
 export interface CommentsStrings {
   commentsCount: (count: number) => string;
   emptyComments: string;
+  loadMore: string;
   inputPlaceholder: string;
   namePlaceholder: string;
   postButton: string;

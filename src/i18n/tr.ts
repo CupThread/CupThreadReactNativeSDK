@@ -110,6 +110,7 @@ export const trStrings: CupThreadStrings = {
   comments: {
     commentsCount: (count: number) => `Yorumlar (${count})`,
     emptyComments: 'Henüz yorum yok. Tartışmayı başlatın!',
+    loadMore: 'Daha fazla yorum yükle',
     inputPlaceholder: 'Yorum bırakın...',
     namePlaceholder: 'Adınız (isteğe bağlı)',
     postButton: 'Yorum gönder',
