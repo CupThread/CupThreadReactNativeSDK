@@ -627,3 +627,269 @@ test('useFeatureRequests: a rollback releases the pending entry even when the ro
     renderer.unmount();
   }
 });
+
+test('useFeatureRequests: a settled vote releases its pending entry so a later contradicting page-0 renders the server row (#184)', async () => {
+  // After a vote settles, the pending mutation must be released — a page-0
+  // that later answers with a contradicting `hasVoted` carries the
+  // authoritative row (the identity changed, or the vote moved elsewhere) and
+  // must not be overridden by a merge of the settled optimistic snapshot.
+  // The query round-trip guarantees no intermediate page-0 revisits the row,
+  // so the release cannot rely on a later matching fetch.
+  let plainLoads = 0;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_settled',
+    title,
+    description: 'Settled probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async ({ query }: { query?: string }) => {
+      if (query) return { requests: [], total: 0 };
+      plainLoads += 1;
+      return plainLoads === 1
+        ? { requests: [makeRow('Pre-tap title', 10, false)], total: 1 }
+        : { requests: [makeRow('Post-settle title', 10, false)], total: 1 };
+    },
+    castVote: async () => ({ voted: true, voteCount: 11 }),
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function SettledVoteProbe({ client, query }: { client: FeedbackClient; query: string }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken: 'tok_settled',
+      query,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, 'tok_settled', requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<SettledVoteProbe client={mockClient} query="" />);
+  try {
+    await flush();
+    assert.equal(latest.current!.requests.items.length, 1);
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+    // Vote and let it settle: the server-confirmed result is applied and the
+    // pending mutation must be released.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+    // A query change drops the row from every intermediate page-0.
+    act(() => {
+      renderer.update(<SettledVoteProbe client={mockClient} query="beta" />);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items.length, 0);
+
+    // Back to the plain list: the server answers hasVoted: false.
+    act(() => {
+      renderer.update(<SettledVoteProbe client={mockClient} query="" />);
+    });
+    await flush();
+
+    const row = latest.current!.requests.items[0];
+    assert.ok(row, 'the plain query must bring the row back');
+    assert.equal(
+      row.title,
+      'Post-settle title',
+      'the settled optimistic snapshot must not override the server row'
+    );
+    assert.equal(
+      row.hasVoted,
+      false,
+      'a page-0 after settlement must render the server vote state'
+    );
+    assert.equal(row.voteCount, 10);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: a vote settling mid-refresh survives the stale response but defers to the next page-0 (#184)', async () => {
+  // A page-0 still in flight from before a settlement cannot disprove the
+  // server-confirmed result, so the settled row survives that response — but
+  // the guard is one-shot: the next page-0 starts after the settlement and
+  // its (contradicting) answer wins.
+  let callCount = 0;
+  let deferred: ReturnType<typeof createDeferred<any>> | null = null;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_race',
+    title,
+    description: 'Race probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { requests: [makeRow('Initial title', 10, false)], total: 1 };
+      }
+      if (callCount === 2) {
+        deferred = createDeferred<any>();
+        return deferred.promise;
+      }
+      return { requests: [makeRow('Server truth', 10, false)], total: 1 };
+    },
+    castVote: async () => ({ voted: true, voteCount: 11 }),
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function SettleRaceProbe({ client }: { client: FeedbackClient }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken: 'tok_race',
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, 'tok_race', requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<SettleRaceProbe client={mockClient} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+    // Start a refresh, then vote and let it settle while the refresh is in
+    // flight. The refresh's response was computed before the vote.
+    act(() => {
+      void latest.current!.requests.refresh();
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+    // The pre-vote response lands — with a title the server edited after the
+    // fetch started, newer than the settled guard's snapshot. The settled
+    // vote must survive the response, but only its vote fields may overlay:
+    // the response's non-vote fields stay intact.
+    act(() => {
+      deferred!.resolve({ requests: [makeRow('Edited title', 10, false)], total: 1 });
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+    assert.equal(
+      latest.current!.requests.items[0].title,
+      'Edited title',
+      'the settled guard may only bridge the vote fields, not replay its whole row snapshot'
+    );
+
+    // The next page-0 starts after the settlement: its contradicting answer
+    // is authoritative and the settled snapshot must not replay.
+    act(() => {
+      void latest.current!.requests.refresh();
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+    assert.equal(latest.current!.requests.items[0].voteCount, 10);
+    assert.equal(latest.current!.requests.items[0].title, 'Server truth');
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: switching identity retires pending mutations created under the previous identity (#184)', async () => {
+  // A vote cast as a guest is not attributed to the account the user signs
+  // into. The page-0 under the new identity must present the new identity's
+  // server row — the guest-era optimistic snapshot must neither merge over
+  // it nor survive the switch (previously the mismatch re-merged on every
+  // page-0, pinning the pre-login row until remount).
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_identity',
+    title,
+    description: 'Identity probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const deferredVote = createDeferred<VoteResult>();
+  const mockClient = {
+    fetchFeatureRequests: async ({ userToken }: { userToken?: string }) => {
+      if (userToken === 'tok_guest') {
+        return { requests: [makeRow('Guest view', 10, false)], total: 1 };
+      }
+      return { requests: [makeRow('User view', 7, false)], total: 1 };
+    },
+    castVote: () => deferredVote.promise,
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function IdentityProbe({ client, userToken }: { client: FeedbackClient; userToken: string }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, userToken, requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<IdentityProbe client={mockClient} userToken="tok_guest" />);
+  try {
+    await flush();
+    assert.equal(latest.current!.requests.items[0].title, 'Guest view');
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+    // Tap the vote as the guest; the request stays in flight.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+
+    // The provider resolves a signed-in token and the hook reloads under the
+    // new identity.
+    act(() => {
+      renderer.update(<IdentityProbe client={mockClient} userToken="tok_user" />);
+    });
+    await flush();
+
+    const row = latest.current!.requests.items[0];
+    assert.equal(
+      row.title,
+      'User view',
+      'the guest-era snapshot must not override the signed-in server row'
+    );
+    assert.equal(
+      row.hasVoted,
+      false,
+      "the guest vote must not present as the signed-in identity's vote"
+    );
+    assert.equal(row.voteCount, 7);
+
+    // Settle the stranded guest vote: it was dispatched under tok_guest, so
+    // its result must be dropped entirely instead of being written onto (and
+    // guarded under) the signed-in identity's row.
+    act(() => {
+      deferredVote.resolve({ voted: true, voteCount: 11 });
+    });
+    await flush();
+    assert.equal(
+      latest.current!.requests.items[0].title,
+      'User view',
+      'a settlement from the previous identity must not touch the new identity rows'
+    );
+    assert.equal(
+      latest.current!.requests.items[0].hasVoted,
+      false,
+      'the guest vote result must not present as the signed-in vote'
+    );
+    assert.equal(latest.current!.requests.items[0].voteCount, 7);
+  } finally {
+    renderer.unmount();
+  }
+});
