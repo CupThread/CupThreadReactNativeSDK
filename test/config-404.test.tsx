@@ -77,15 +77,23 @@ test('fetchAppConfig succeeds and resolves allowPublic: true for public apps', a
   const mockConfig: PublicAppConfig = {
     appId: 'app_pub_123',
     appKey: 'app_pub_key',
+    workspaceSlug: 'test-workspace',
     slug: 'public-app',
     name: 'Public App',
     allowPublic: true,
+    hideSiteBranding: false,
     allowedPlatforms: ['ios', 'android'],
     maxAttachmentBytes: 10485760,
     allowAnonymousRoadmap: true,
     allowAnonymousVote: false,
     allowAnonymousFeedback: true,
     allowAnonymousChangelog: true,
+    requireAnonymousVoteTurnstile: false,
+    turnstile: { siteKey: '0x4AAAAAAA_test_site_key' },
+    allowedEmbedOrigins: ['https://example.com'],
+    appStoreUrl: 'https://apps.apple.com/app/id123',
+    googlePlayUrl: null,
+    websiteUrl: 'https://example.com',
     sdk: {
       theme: 'midnight',
       features: {
@@ -120,6 +128,16 @@ test('fetchAppConfig succeeds and resolves allowPublic: true for public apps', a
     assert.equal(result.appId, 'app_pub_123');
     assert.equal(result.allowPublic, true);
     assert.equal(result.name, 'Public App');
+    // Spec-required fields reach hosts untouched (no client-side normalization).
+    assert.equal(result.workspaceSlug, 'test-workspace');
+    assert.equal(result.hideSiteBranding, false);
+    assert.equal(result.requireAnonymousVoteTurnstile, false);
+    // Optional spec fields pass through verbatim, including nulls and absence signals.
+    assert.deepEqual(result.turnstile, { siteKey: '0x4AAAAAAA_test_site_key' });
+    assert.deepEqual(result.allowedEmbedOrigins, ['https://example.com']);
+    assert.equal(result.appStoreUrl, 'https://apps.apple.com/app/id123');
+    assert.equal(result.googlePlayUrl, null);
+    assert.equal(result.websiteUrl, 'https://example.com');
   } finally {
     globalThis.fetch = originalFetch;
   }

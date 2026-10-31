@@ -825,6 +825,15 @@ export interface PublicAppConfig {
   appKey: string;
 
   /**
+   * URL-friendly slug identifier of the workspace that owns the application.
+   *
+   * Together with {@link PublicAppConfig.slug} this identifies the app on the
+   * public portal, e.g. portal deep links have the shape
+   * `/{workspaceSlug}/{slug}/requests/{requestId}`.
+   */
+  workspaceSlug: string;
+
+  /**
    * URL-friendly slug identifier for the application.
    */
   slug: string;
@@ -845,6 +854,21 @@ export interface PublicAppConfig {
   storeKind?: string | null;
 
   /**
+   * Apple App Store listing link if configured.
+   */
+  appStoreUrl?: string | null;
+
+  /**
+   * Google Play listing link if configured.
+   */
+  googlePlayUrl?: string | null;
+
+  /**
+   * Developer website link if configured.
+   */
+  websiteUrl?: string | null;
+
+  /**
    * CDN URL for the application logo/icon.
    */
   iconUrl?: string | null;
@@ -862,9 +886,24 @@ export interface PublicAppConfig {
   allowPublic: boolean;
 
   /**
+   * Whether the host should hide CupThread site branding when embedding or
+   * republishing the public board UI.
+   */
+  hideSiteBranding: boolean;
+
+  /**
    * Target platforms enabled for this application.
    */
   allowedPlatforms: FeedbackPlatform[];
+
+  /**
+   * Exact `https://` origins allowed to frame this app's public portal pages
+   * (SEC-518).
+   *
+   * Present only when the tenant configured at least one origin; absent means
+   * framing is disabled everywhere.
+   */
+  allowedEmbedOrigins?: string[];
 
   /**
    * Maximum allowable size for file attachment uploads in bytes.
@@ -890,6 +929,36 @@ export interface PublicAppConfig {
    * Whether unauthenticated visitors can view changelogs and release notes.
    */
   allowAnonymousChangelog: boolean;
+
+  /**
+   * Whether anonymous votes on this board require a Cloudflare Turnstile token.
+   *
+   * When `true`, hosts should resolve a token proactively and pass it per call
+   * via `CastVoteOptions.turnstileToken` instead of reacting to a
+   * `TurnstileRequiredException` after the vote already failed. (The vote path
+   * reads only the per-call token — it does not consult
+   * {@link FeedbackClientConfig.turnstileTokenProvider}, which backs the
+   * feedback-intake flow.) See also {@link PublicAppConfig.turnstile} for the
+   * embedded-challenge site key.
+   */
+  requireAnonymousVoteTurnstile: boolean;
+
+  /**
+   * Turnstile embedded-challenge configuration.
+   *
+   * Present only when the deployment publishes a Turnstile site key; absent
+   * means native WebView challenges are unavailable and intake needs a
+   * host-supplied token provider. When present, native clients can render
+   * `siteKey` in an embedded WebView against the hosted challenge page on the
+   * portal origin (`app.cupthread.com/turnstile/verify`). Site keys are public
+   * by design.
+   */
+  turnstile?: {
+    /**
+     * Public Turnstile widget site key.
+     */
+    siteKey: string | null;
+  };
 
   /**
    * SDK visual styling and surface feature toggles.

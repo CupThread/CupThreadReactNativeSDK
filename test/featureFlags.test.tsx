@@ -155,15 +155,18 @@ function makeMockAppConfig(features: Partial<SdkFeatures>): PublicAppConfig {
   return {
     appId: 'app_test_123',
     appKey: 'key_test_123',
+    workspaceSlug: 'test-workspace',
     slug: 'test-app',
     name: 'Test App',
     allowPublic: true,
+    hideSiteBranding: false,
     allowedPlatforms: ['ios', 'android'],
     maxAttachmentBytes: 10 * 1024 * 1024,
     allowAnonymousRoadmap: true,
     allowAnonymousVote: true,
     allowAnonymousFeedback: true,
     allowAnonymousChangelog: true,
+    requireAnonymousVoteTurnstile: false,
     sdk: {
       theme: 'system',
       features: {
