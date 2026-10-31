@@ -43,3 +43,4 @@ This repository is optimized for autonomous agents and LLM pair programmers. AI 
 1. Zero native binary dependencies — pure TypeScript and core React Native components.
 2. Expo and bare React Native compatible.
 3. Maintain strict type and contract consistency with CupThread Public API schema.
+4. All generated or edited files in `src` and `test` must pass `npm run format:check` (`prettier --check src test`).

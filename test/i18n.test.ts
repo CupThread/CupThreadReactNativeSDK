@@ -306,13 +306,15 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     assert.ok(typeof loc.common.networkError === 'string' && loc.common.networkError.length > 0);
 
     // feedbackComposer
-    assert.ok(typeof loc.feedbackComposer.uploadFailed === 'string' && loc.feedbackComposer.uploadFailed.length > 0);
-    assert.ok(typeof loc.feedbackComposer.submitFailed === 'string' && loc.feedbackComposer.submitFailed.length > 0);
-    for (const key of [
-      'uploadSizeMissing',
-      'uploadTooLarge',
-      'uploadUnsupportedType',
-    ] as const) {
+    assert.ok(
+      typeof loc.feedbackComposer.uploadFailed === 'string' &&
+        loc.feedbackComposer.uploadFailed.length > 0
+    );
+    assert.ok(
+      typeof loc.feedbackComposer.submitFailed === 'string' &&
+        loc.feedbackComposer.submitFailed.length > 0
+    );
+    for (const key of ['uploadSizeMissing', 'uploadTooLarge', 'uploadUnsupportedType'] as const) {
       assert.ok(
         typeof loc.feedbackComposer[key] === 'string' && loc.feedbackComposer[key].length > 0,
         `${key} must be translated in every locale`
@@ -320,10 +322,16 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     }
 
     // featureRequests
-    assert.ok(typeof loc.featureRequests.voteFailed === 'string' && loc.featureRequests.voteFailed.length > 0);
+    assert.ok(
+      typeof loc.featureRequests.voteFailed === 'string' &&
+        loc.featureRequests.voteFailed.length > 0
+    );
 
     // featureRequestCompose
-    assert.ok(typeof loc.featureRequestCompose.submitFailed === 'string' && loc.featureRequestCompose.submitFailed.length > 0);
+    assert.ok(
+      typeof loc.featureRequestCompose.submitFailed === 'string' &&
+        loc.featureRequestCompose.submitFailed.length > 0
+    );
 
     // comments
     assert.ok(typeof loc.comments.postFailed === 'string' && loc.comments.postFailed.length > 0);
@@ -333,23 +341,56 @@ test('i18n all 14 locales define all newly added error and validation keys', () 
     );
 
     // changelog
-    assert.ok(typeof loc.changelog.subscribeFailed === 'string' && loc.changelog.subscribeFailed.length > 0);
+    assert.ok(
+      typeof loc.changelog.subscribeFailed === 'string' && loc.changelog.subscribeFailed.length > 0
+    );
 
     // feature flags (sectionUnavailable)
-    assert.ok(typeof loc.feedbackComposer.sectionUnavailable === 'string' && loc.feedbackComposer.sectionUnavailable.length > 0);
-    assert.ok(typeof loc.featureRequests.sectionUnavailable === 'string' && loc.featureRequests.sectionUnavailable.length > 0);
-    assert.ok(typeof loc.featureRequestCompose.sectionUnavailable === 'string' && loc.featureRequestCompose.sectionUnavailable.length > 0);
-    assert.ok(typeof loc.roadmap.sectionUnavailable === 'string' && loc.roadmap.sectionUnavailable.length > 0);
-    assert.ok(typeof loc.changelog.sectionUnavailable === 'string' && loc.changelog.sectionUnavailable.length > 0);
+    assert.ok(
+      typeof loc.feedbackComposer.sectionUnavailable === 'string' &&
+        loc.feedbackComposer.sectionUnavailable.length > 0
+    );
+    assert.ok(
+      typeof loc.featureRequests.sectionUnavailable === 'string' &&
+        loc.featureRequests.sectionUnavailable.length > 0
+    );
+    assert.ok(
+      typeof loc.featureRequestCompose.sectionUnavailable === 'string' &&
+        loc.featureRequestCompose.sectionUnavailable.length > 0
+    );
+    assert.ok(
+      typeof loc.roadmap.sectionUnavailable === 'string' &&
+        loc.roadmap.sectionUnavailable.length > 0
+    );
+    assert.ok(
+      typeof loc.changelog.sectionUnavailable === 'string' &&
+        loc.changelog.sectionUnavailable.length > 0
+    );
 
     // userProfile
-    assert.ok(typeof loc.userProfile.loadFailed === 'string' && loc.userProfile.loadFailed.length > 0);
+    assert.ok(
+      typeof loc.userProfile.loadFailed === 'string' && loc.userProfile.loadFailed.length > 0
+    );
     assert.ok(typeof loc.userProfile.notFound === 'string' && loc.userProfile.notFound.length > 0);
-    assert.ok(typeof loc.userProfile.anonymous === 'string' && loc.userProfile.anonymous.length > 0);
-    assert.ok(typeof loc.userProfile.recentComments === 'string' && loc.userProfile.recentComments.length > 0);
-    assert.ok(typeof loc.userProfile.appsSection(2) === 'string' && loc.userProfile.appsSection(2).length > 0);
-    assert.ok(typeof loc.userProfile.requestCount(3) === 'string' && loc.userProfile.requestCount(3).length > 0);
-    assert.ok(typeof loc.userProfile.commentOn('Feature') === 'string' && loc.userProfile.commentOn('Feature').length > 0);
+    assert.ok(
+      typeof loc.userProfile.anonymous === 'string' && loc.userProfile.anonymous.length > 0
+    );
+    assert.ok(
+      typeof loc.userProfile.recentComments === 'string' &&
+        loc.userProfile.recentComments.length > 0
+    );
+    assert.ok(
+      typeof loc.userProfile.appsSection(2) === 'string' &&
+        loc.userProfile.appsSection(2).length > 0
+    );
+    assert.ok(
+      typeof loc.userProfile.requestCount(3) === 'string' &&
+        loc.userProfile.requestCount(3).length > 0
+    );
+    assert.ok(
+      typeof loc.userProfile.commentOn('Feature') === 'string' &&
+        loc.userProfile.commentOn('Feature').length > 0
+    );
   }
 });
 

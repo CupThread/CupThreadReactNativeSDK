@@ -28,7 +28,7 @@ function relativeLuminance(hex: string): number {
  */
 function contrastRatio(foreground: string, background: string): number {
   const [lighter, darker] = [relativeLuminance(foreground), relativeLuminance(background)].sort(
-    (a, b) => b - a,
+    (a, b) => b - a
   );
   return (lighter + 0.05) / (darker + 0.05);
 }
@@ -72,7 +72,7 @@ test('every text token pair meets WCAG AA contrast (4.5:1) in every palette', ()
       const ratio = contrastRatio(palette[foreground], palette[background]);
       assert.ok(
         ratio >= WCAG_AA_NORMAL_TEXT,
-        `${name}.${foreground} on ${background}: expected ≥${WCAG_AA_NORMAL_TEXT}, got ${ratio.toFixed(2)}`,
+        `${name}.${foreground} on ${background}: expected ≥${WCAG_AA_NORMAL_TEXT}, got ${ratio.toFixed(2)}`
       );
     }
   }
@@ -87,7 +87,7 @@ test('muted text stays perceptually closer to the background than secondary and 
     const primary = distanceFromBackground('textPrimary');
     assert.ok(
       muted < secondary && secondary < primary,
-      `${name}: expected textMuted < textSecondary < textPrimary emphasis, got ${muted.toFixed(3)} / ${secondary.toFixed(3)} / ${primary.toFixed(3)}`,
+      `${name}: expected textMuted < textSecondary < textPrimary emphasis, got ${muted.toFixed(3)} / ${secondary.toFixed(3)} / ${primary.toFixed(3)}`
     );
   }
 });

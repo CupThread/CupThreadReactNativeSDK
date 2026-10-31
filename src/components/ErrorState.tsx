@@ -79,9 +79,7 @@ export function ErrorState({
         accessibilityRole="button"
         accessibilityState={{ disabled: isRetrying }}
       >
-        <Text style={[styles.retryButtonText, { color: colors.primaryText }]}>
-          {retryLabel}
-        </Text>
+        <Text style={[styles.retryButtonText, { color: colors.primaryText }]}>{retryLabel}</Text>
       </TouchableOpacity>
     </View>
   );

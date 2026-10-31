@@ -20,9 +20,7 @@ import { UserTokenStore } from '../client/UserTokenStore';
  * await client.subscribeToChangelog(email, effectiveToken);
  * ```
  */
-export async function resolveEffectiveUserToken(
-  contextToken?: string | null
-): Promise<string> {
+export async function resolveEffectiveUserToken(contextToken?: string | null): Promise<string> {
   if (contextToken) {
     return contextToken;
   }

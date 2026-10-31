@@ -493,7 +493,12 @@ function stubUploadSession(
       maxFiles: 8,
     },
     files: [
-      { clientFileId: 'screenshot.png', uploadId: 'upl_1', uploadUrl: '/api/v1/uploads/upl_1', maxSizeBytes: 10485760 },
+      {
+        clientFileId: 'screenshot.png',
+        uploadId: 'upl_1',
+        uploadUrl: '/api/v1/uploads/upl_1',
+        maxSizeBytes: 10485760,
+      },
     ],
   };
 

@@ -53,7 +53,8 @@ export const itStrings: CupThreadStrings = {
       count === 1
         ? '1 file è stato ignorato: formato di allegato non supportato.'
         : `${count} file sono stati ignorati: formato di allegato non supportato.`,
-    uploadSizeMissing: 'Questo file non ha indicato la sua dimensione, quindi non può essere caricato.',
+    uploadSizeMissing:
+      'Questo file non ha indicato la sua dimensione, quindi non può essere caricato.',
     uploadTooLarge: 'Questo file è troppo grande per essere caricato.',
     attachmentTooLarge: (maxSize: string) =>
       `Questo file è troppo grande. Dimensione massima dell'allegato: ${maxSize}.`,

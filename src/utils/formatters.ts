@@ -71,9 +71,12 @@ export function formatDate(
   const diffDays = Math.floor(diffHours / 24);
 
   if (diffSec < 60) return commonStrings?.justNow ?? 'Just now';
-  if (diffMin < 60) return commonStrings?.minutesAgo ? commonStrings.minutesAgo(diffMin) : `${diffMin}m ago`;
-  if (diffHours < 24) return commonStrings?.hoursAgo ? commonStrings.hoursAgo(diffHours) : `${diffHours}h ago`;
-  if (diffDays < 7) return commonStrings?.daysAgo ? commonStrings.daysAgo(diffDays) : `${diffDays}d ago`;
+  if (diffMin < 60)
+    return commonStrings?.minutesAgo ? commonStrings.minutesAgo(diffMin) : `${diffMin}m ago`;
+  if (diffHours < 24)
+    return commonStrings?.hoursAgo ? commonStrings.hoursAgo(diffHours) : `${diffHours}h ago`;
+  if (diffDays < 7)
+    return commonStrings?.daysAgo ? commonStrings.daysAgo(diffDays) : `${diffDays}d ago`;
 
   return formatCalendarDate(date, now, locale);
 }

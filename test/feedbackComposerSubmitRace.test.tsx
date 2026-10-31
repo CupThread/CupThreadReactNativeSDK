@@ -543,8 +543,18 @@ test(
     const batchCalls: number[] = [];
     const harness = createHarness({
       onPickAttachment: async () => [
-        { file: { uri: 'file:///tmp/one.png' }, filename: 'one.png', mimeType: 'image/png', size: 100 },
-        { file: { uri: 'file:///tmp/two.png' }, filename: 'two.png', mimeType: 'image/png', size: 200 },
+        {
+          file: { uri: 'file:///tmp/one.png' },
+          filename: 'one.png',
+          mimeType: 'image/png',
+          size: 100,
+        },
+        {
+          file: { uri: 'file:///tmp/two.png' },
+          filename: 'two.png',
+          mimeType: 'image/png',
+          size: 200,
+        },
       ],
     });
 
@@ -608,7 +618,9 @@ test(
 
     const renderedText = harness.renderer.root
       .findAllByType('Text' as any)
-      .map((node) => (Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children))
+      .map((node) =>
+        Array.isArray(node.props.children) ? node.props.children.join('') : node.props.children
+      )
       .filter((value): value is string => typeof value === 'string');
 
     assert.ok(

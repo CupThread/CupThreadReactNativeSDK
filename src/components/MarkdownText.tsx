@@ -89,13 +89,19 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
 
       if (match[2]) {
         elements.push(
-          <Text key={`${baseKey}-b-${match.index}`} style={{ fontWeight: '700', color: colors.textPrimary }}>
+          <Text
+            key={`${baseKey}-b-${match.index}`}
+            style={{ fontWeight: '700', color: colors.textPrimary }}
+          >
             {match[2]}
           </Text>
         );
       } else if (match[3]) {
         elements.push(
-          <Text key={`${baseKey}-i-${match.index}`} style={{ fontStyle: 'italic', color: colors.textPrimary }}>
+          <Text
+            key={`${baseKey}-i-${match.index}`}
+            style={{ fontStyle: 'italic', color: colors.textPrimary }}
+          >
             {match[3]}
           </Text>
         );

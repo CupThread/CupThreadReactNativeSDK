@@ -158,7 +158,10 @@ async function renderDetail(
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
 
-  const client = new RecordingClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_test_detail' });
+  const client = new RecordingClient({
+    baseUrl: 'https://api.cupthread.com',
+    appKey: 'app_test_detail',
+  });
   configureClient?.(client);
   const voteChangeCalls: FeatureRequestItem[] = [];
 
@@ -270,7 +273,10 @@ test(
   'same-id prop refresh keeps current state and does not clobber settled vote results',
   renderTestOptions,
   async () => {
-    const harness = await renderDetail(makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }), true);
+    const harness = await renderDetail(
+      makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }),
+      true
+    );
     try {
       await act(async () => {
         harness.renderer.root.findByType(VoteButton).props.onPress();
@@ -375,7 +381,10 @@ test(
   renderTestOptions,
   async () => {
     const deferredA = createDeferred<VoteResult>();
-    const harness = await renderDetail(makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }), true);
+    const harness = await renderDetail(
+      makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }),
+      true
+    );
     harness.client.deferredVotes.set('fr_A', deferredA);
     let unmounted = false;
     try {
@@ -415,7 +424,10 @@ test(
   renderTestOptions,
   async () => {
     const deferredA = createDeferred<VoteResult>();
-    const harness = await renderDetail(makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }), true);
+    const harness = await renderDetail(
+      makeItem({ id: 'fr_A', voteCount: 5, hasVoted: false }),
+      true
+    );
     harness.client.deferredVotes.set('fr_A', deferredA);
     let unmounted = false;
     try {
@@ -448,32 +460,27 @@ test(
   }
 );
 
-test(
-  'detail renders calendar dates in the provider locale',
-  renderTestOptions,
-  async () => {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const createdAt = thirtyDaysAgo.toISOString();
-    const item = makeItem({ id: 'fr_locale', createdAt, updatedAt: createdAt });
-    const expected = thirtyDaysAgo.toLocaleDateString('de', {
-      year:
-        thirtyDaysAgo.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-      month: 'short',
-      day: 'numeric',
-    });
+test('detail renders calendar dates in the provider locale', renderTestOptions, async () => {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const createdAt = thirtyDaysAgo.toISOString();
+  const item = makeItem({ id: 'fr_locale', createdAt, updatedAt: createdAt });
+  const expected = thirtyDaysAgo.toLocaleDateString('de', {
+    year: thirtyDaysAgo.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+    month: 'short',
+    day: 'numeric',
+  });
 
-    const harness = await renderDetail(item, true, 'de');
-    try {
-      assert.ok(
-        collectText(harness.renderer.root).includes(expected),
-        `Expected "${expected}" in the rendered detail`
-      );
-    } finally {
-      harness.restoreFetch();
-      harness.renderer.unmount();
-    }
+  const harness = await renderDetail(item, true, 'de');
+  try {
+    assert.ok(
+      collectText(harness.renderer.root).includes(expected),
+      `Expected "${expected}" in the rendered detail`
+    );
+  } finally {
+    harness.restoreFetch();
+    harness.renderer.unmount();
   }
-);
+});
 
 test(
   'a reply armed in the comments section does not survive the documented item swap',
@@ -524,10 +531,7 @@ test(
 
       const text = collectText(harness.renderer.root);
       assert.ok(!text.includes('Replying to @Alice'), "A's reply bar must not survive the swap");
-      assert.ok(
-        !text.includes("Alice's comment on fr_A"),
-        "A's comments must not render under B"
-      );
+      assert.ok(!text.includes("Alice's comment on fr_A"), "A's comments must not render under B");
       assert.ok(text.includes("Bob's comment on fr_B"), "B's thread must render");
 
       // Posting after the swap must target B with no parent from A's thread.
@@ -546,7 +550,7 @@ test(
       assert.equal(
         harness.client.postCalls[0].draft.parentId,
         undefined,
-        'no parentId of A\'s comments may leak into the post against B'
+        "no parentId of A's comments may leak into the post against B"
       );
     } finally {
       harness.restoreFetch();

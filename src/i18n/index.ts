@@ -99,33 +99,37 @@ export function getLocaleStrings(
   customOverrides?: DeepPartial<CupThreadStrings>
 ): CupThreadStrings {
   const norm = locale.toLowerCase().replace(/_/g, '-');
-  const base = norm.startsWith('zh-hant') || norm.startsWith('zh-tw') || norm.startsWith('zh-hk') || norm.startsWith('zh-mo')
-    ? zhHantStrings
-    : norm.startsWith('zh')
-      ? zhHansStrings
-      : norm.startsWith('ja')
-        ? jaStrings
-        : norm.startsWith('fr')
-          ? frStrings
-          : norm.startsWith('es')
-            ? esStrings
-            : norm.startsWith('de')
-              ? deStrings
-              : norm.startsWith('it')
-                ? itStrings
-                : norm.startsWith('pt')
-                  ? ptStrings
-                  : norm.startsWith('ko')
-                    ? koStrings
-                    : norm.startsWith('pl')
-                      ? plStrings
-                      : norm.startsWith('no') || norm.startsWith('nb')
-                        ? noStrings
-                        : norm.startsWith('tr')
-                          ? trStrings
-                          : norm.startsWith('vi')
-                            ? viStrings
-                            : enStrings;
+  const base =
+    norm.startsWith('zh-hant') ||
+    norm.startsWith('zh-tw') ||
+    norm.startsWith('zh-hk') ||
+    norm.startsWith('zh-mo')
+      ? zhHantStrings
+      : norm.startsWith('zh')
+        ? zhHansStrings
+        : norm.startsWith('ja')
+          ? jaStrings
+          : norm.startsWith('fr')
+            ? frStrings
+            : norm.startsWith('es')
+              ? esStrings
+              : norm.startsWith('de')
+                ? deStrings
+                : norm.startsWith('it')
+                  ? itStrings
+                  : norm.startsWith('pt')
+                    ? ptStrings
+                    : norm.startsWith('ko')
+                      ? koStrings
+                      : norm.startsWith('pl')
+                        ? plStrings
+                        : norm.startsWith('no') || norm.startsWith('nb')
+                          ? noStrings
+                          : norm.startsWith('tr')
+                            ? trStrings
+                            : norm.startsWith('vi')
+                              ? viStrings
+                              : enStrings;
   if (!customOverrides) {
     return base;
   }

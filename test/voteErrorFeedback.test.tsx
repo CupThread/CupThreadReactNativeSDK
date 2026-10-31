@@ -23,21 +23,39 @@ const TextStub = (props: any) => {
   return React.createElement('Text', props, props.children ?? null);
 };
 
-const FlatListStub = ({ data, renderItem, ListHeaderComponent, ListFooterComponent, ListEmptyComponent }: any) => {
+const FlatListStub = ({
+  data,
+  renderItem,
+  ListHeaderComponent,
+  ListFooterComponent,
+  ListEmptyComponent,
+}: any) => {
   return React.createElement(
     'FlatList',
     null,
-    ListHeaderComponent ? (typeof ListHeaderComponent === 'function' ? React.createElement(ListHeaderComponent) : ListHeaderComponent) : null,
+    ListHeaderComponent
+      ? typeof ListHeaderComponent === 'function'
+        ? React.createElement(ListHeaderComponent)
+        : ListHeaderComponent
+      : null,
     data && data.length > 0
       ? data.map((item: any, index: number) =>
-          React.createElement(React.Fragment, { key: item.id ?? index }, renderItem({ item, index }))
+          React.createElement(
+            React.Fragment,
+            { key: item.id ?? index },
+            renderItem({ item, index })
+          )
         )
       : ListEmptyComponent
         ? typeof ListEmptyComponent === 'function'
           ? React.createElement(ListEmptyComponent)
           : ListEmptyComponent
         : null,
-    ListFooterComponent ? (typeof ListFooterComponent === 'function' ? React.createElement(ListFooterComponent) : ListFooterComponent) : null
+    ListFooterComponent
+      ? typeof ListFooterComponent === 'function'
+        ? React.createElement(ListFooterComponent)
+        : ListFooterComponent
+      : null
   );
 };
 
@@ -273,7 +291,11 @@ test('acceptance 3: new attempt on the same item clears previous error at tap ti
   // Tap again: must clear previous error immediately at tap time before request resolves
   harness.result.toggleVote(stateItem);
   assert.equal(harness.result.voteError, null, 'voteError must be cleared at tap time');
-  assert.equal(harness.result.getVoteError('item_3'), null, 'item voteError must be cleared at tap time');
+  assert.equal(
+    harness.result.getVoteError('item_3'),
+    null,
+    'item voteError must be cleared at tap time'
+  );
 
   // Finish pending request
   pendingResolve({ voted: true, voteCount: 2 });
@@ -544,7 +566,11 @@ test(
         const content = t.props?.children;
         return typeof content === 'string' && content.includes('Failed to update vote');
       });
-      assert.equal(errorNoticeAfter, undefined, 'Failure banner must be removed after successful retry');
+      assert.equal(
+        errorNoticeAfter,
+        undefined,
+        'Failure banner must be removed after successful retry'
+      );
     } finally {
       renderer.unmount();
     }
