@@ -841,6 +841,9 @@ test('FeedbackClient.postComment rejects malformed create responses with Invalid
     { comment: { id: 'c_partial' } },
     { comment: { id: 'c_partial', body: 'no date' } },
     { comment: { id: 'c_partial', createdAt: '2026-10-25T00:00:00.000Z' } },
+    // A non-string authorName would crash the card render (Avatar's initial
+    // fallback calls name.trim()); absent and null stay tolerated.
+    { comment: { id: 'c_x', body: 'b', createdAt: '2026-10-25T00:00:00.000Z', authorName: 42 } },
   ];
   let next = 0;
 

@@ -1826,7 +1826,11 @@ export class FeedbackClient {
       typeof record.body !== 'string' ||
       record.body.length === 0 ||
       typeof record.createdAt !== 'string' ||
-      record.createdAt.length === 0
+      record.createdAt.length === 0 ||
+      // `authorName` may be absent or `null` (the card renders "Anonymous"),
+      // but any other non-string value would crash the card's render
+      // (`Avatar`'s initial fallback calls `name.trim()`).
+      (record.authorName != null && typeof record.authorName !== 'string')
     ) {
       // A `null` body, a bare array, an empty envelope, `{"comment": []}`, or
       // a record missing its schema-required `id`/`body`/`createdAt` must
