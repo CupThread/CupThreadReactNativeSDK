@@ -2,6 +2,7 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React, { useState } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -46,24 +47,7 @@ if (supportsModuleMocks) {
       ScrollView: ({ children }: any) => children ?? null,
       Modal: ({ children }: any) => children ?? null,
       SafeAreaView: ({ children }: any) => children ?? null,
-      // Instantiates the header exactly like VirtualizedList: an element prop
-      // is rendered verbatim, a component prop is wrapped in
-      // `React.createElement(...)`.
-      FlatList: ({ data, renderItem, keyExtractor, ListHeaderComponent }: any) => {
-        const header = ListHeaderComponent
-          ? React.isValidElement(ListHeaderComponent)
-            ? ListHeaderComponent
-            : React.createElement(ListHeaderComponent)
-          : null;
-        const items = (Array.isArray(data) ? data : []).map((item: any, index: number) =>
-          React.createElement(
-            React.Fragment,
-            { key: keyExtractor ? keyExtractor(item, index) : String(index) },
-            renderItem({ item, index, separators: {} })
-          )
-        );
-        return React.createElement(React.Fragment, null, header, ...items);
-      },
+      FlatList: createFlatListStub(),
       RefreshControl: () => null,
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },
       Alert: { alert: () => {} },

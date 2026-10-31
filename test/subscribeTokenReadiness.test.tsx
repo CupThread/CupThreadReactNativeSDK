@@ -2,6 +2,7 @@ import test, { type TestOptions } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
+import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import { UserTokenStore } from '../src/client/UserTokenStore';
 import type { TokenStorageAdapter } from '../src/client/UserTokenStore';
@@ -46,20 +47,7 @@ if (supportsModuleMocks) {
       SafeAreaView: ({ children }: any) => children ?? null,
       // The subscribe card is the list header, so the FlatList stub must
       // render it (and any rows) for the button to appear in the tree.
-      FlatList: ({ ListHeaderComponent, data, renderItem }: any) => (
-        <>
-          {typeof ListHeaderComponent === 'function' ? (
-            <ListHeaderComponent />
-          ) : (
-            (ListHeaderComponent ?? null)
-          )}
-          {(data ?? []).map((item: any, index: number) => (
-            <React.Fragment key={item?.id ?? index}>
-              {renderItem ? renderItem({ item, index }) : null}
-            </React.Fragment>
-          ))}
-        </>
-      ),
+      FlatList: createFlatListStub(),
       RefreshControl: () => null,
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },
       Alert: { alert: (...args: any[]) => alertCalls.push(args) },
