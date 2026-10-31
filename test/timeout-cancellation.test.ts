@@ -601,6 +601,16 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
       });
     }
     if (s.includes('/comments')) {
+      // Writes receive the documented `FeatureRequestCommentCreated` envelope;
+      // reads receive the list page.
+      if (init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            comment: { id: 'c_signal', body: 'hello', createdAt: new Date().toISOString() },
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       return new Response(JSON.stringify({ comments: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

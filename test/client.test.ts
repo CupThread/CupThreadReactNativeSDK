@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
-import { InsecureBaseUrlException } from '../src/client/FeedbackException';
+import {
+  InsecureBaseUrlException,
+  InvalidResponseException,
+} from '../src/client/FeedbackException';
 import { FeedbackPlatformUtil } from '../src/utils/platform';
 
 test('FeedbackClient normalizes baseUrl and holds config', () => {
@@ -195,8 +198,18 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
   const originalFetch = globalThis.fetch;
   const interceptedUrls: string[] = [];
 
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     interceptedUrls.push(url.toString());
+    // The table only asserts URLs, but `postComment` validates its response as
+    // a created-comment record, so its route needs a spec-shaped envelope.
+    if (init?.method === 'POST' && url.toString().endsWith('/comments')) {
+      return new Response(
+        JSON.stringify({
+          comment: { id: 'c_enc', body: 'ok', createdAt: '2026-10-25T00:00:00.000Z' },
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -319,8 +332,17 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
   const originalFetch = globalThis.fetch;
   const interceptedUrls: string[] = [];
 
-  globalThis.fetch = (async (url: string | URL | Request) => {
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     interceptedUrls.push(url.toString());
+    // Same spec-shaped envelope requirement as the hostile-segment table.
+    if (init?.method === 'POST' && url.toString().endsWith('/comments')) {
+      return new Response(
+        JSON.stringify({
+          comment: { id: 'c_plain', body: 'ok', createdAt: '2026-10-25T00:00:00.000Z' },
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -602,8 +624,12 @@ test('FeedbackClient.postComment sends only schema-accepted body fields over the
       headers,
       body: init?.body ? JSON.parse(String(init.body)) : undefined,
     });
+    // Documented wire shape: `FeatureRequestCommentCreated` wraps the record
+    // in a `comment` envelope.
     return new Response(
-      JSON.stringify({ id: 'c_1', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' }),
+      JSON.stringify({
+        comment: { id: 'c_1', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' },
+      }),
       { status: 201, headers: { 'Content-Type': 'application/json' } }
     );
   }) as any;
@@ -662,7 +688,9 @@ test('FeedbackClient.postComment with a sessionToken sends Bearer auth and no X-
     });
     captured.push({ headers, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     return new Response(
-      JSON.stringify({ id: 'c_2', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' }),
+      JSON.stringify({
+        comment: { id: 'c_2', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' },
+      }),
       { status: 201, headers: { 'Content-Type': 'application/json' } }
     );
   }) as any;
@@ -733,6 +761,119 @@ test('FeedbackClient.postComment maps a 401 authentication_required rejection to
       }
     );
     assert.equal(requestCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment unwraps the documented FeatureRequestCommentCreated envelope', async () => {
+  const originalFetch = globalThis.fetch;
+  const innerComment = {
+    id: 'c_new',
+    body: 'Wire truth',
+    authorName: 'Alice',
+    createdAt: '2026-10-25T12:00:00.000Z',
+  };
+
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ comment: innerComment }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    const comment = await client.postComment('fr_123', { body: 'Wire truth' }, 'usr_tok', {
+      sessionToken: 'clerk_jwt',
+    });
+
+    // The resolved value must be the record itself, not the `{ comment }`
+    // wrapper — a wrapper leaking through would be appended to threads as a
+    // blank card (id/author/body/date all undefined).
+    assert.deepEqual(comment, innerComment);
+    assert.equal(comment.id, 'c_new');
+    assert.equal((comment as any).comment, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment tolerates a bare comment record for proxies that pre-unwrapped', async () => {
+  const originalFetch = globalThis.fetch;
+  const bareComment = { id: 'c_bare', body: 'Bare', createdAt: '2026-10-25T12:00:00.000Z' };
+
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify(bareComment), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    const comment = await client.postComment('fr_123', { body: 'Bare' }, 'usr_tok');
+    assert.deepEqual(comment, bareComment);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment rejects malformed create responses with InvalidResponseException', async () => {
+  const originalFetch = globalThis.fetch;
+  // Each body is answered verbatim: bare junk (`null`, `[]`, `{}`) as well as
+  // envelopes that fail to carry a usable comment record — including records
+  // missing the schema-required `body` or `createdAt`, which would otherwise
+  // render a partially blank card in the thread.
+  const malformedBodies: unknown[] = [
+    null,
+    {},
+    [],
+    { comment: null },
+    { comment: [] },
+    { comment: {} },
+    { comment: { id: 'c_partial' } },
+    { comment: { id: 'c_partial', body: 'no date' } },
+    { comment: { id: 'c_partial', createdAt: '2026-10-25T00:00:00.000Z' } },
+    { comment: { id: 'c_partial', body: 'b', createdAt: 'not-a-date' } },
+    // A non-string authorName would crash the card render (Avatar's initial
+    // fallback calls name.trim()); absent and null stay tolerated.
+    { comment: { id: 'c_x', body: 'b', createdAt: '2026-10-25T00:00:00.000Z', authorName: 42 } },
+  ];
+  let next = 0;
+
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify(malformedBodies[next++]), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    for (const body of malformedBodies) {
+      await assert.rejects(
+        () => client.postComment('fr_123', { body: 'nope' }, 'usr_tok'),
+        (err: unknown) => {
+          assert.ok(
+            err instanceof InvalidResponseException,
+            `expected InvalidResponseException for ${JSON.stringify(body)}`
+          );
+          assert.match(err.message, /returned no comment record/);
+          return true;
+        }
+      );
+    }
+    assert.equal(next, malformedBodies.length, 'every malformed body must be exercised');
   } finally {
     globalThis.fetch = originalFetch;
   }

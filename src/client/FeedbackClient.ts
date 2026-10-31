@@ -1769,7 +1769,9 @@ export class FeedbackClient {
    * @param draft - Comment message content and optional reply pointers.
    * @param userToken - User token of the commenter (legacy anonymous credential; unused when `sessionToken` is provided).
    * @param options - Optional `sessionToken`, request options, or an `AbortSignal`.
-   * @returns The created comment record.
+   * @returns The created comment record, unwrapped from the documented
+   * `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`).
+   * @throws {@link InvalidResponseException} When the response carries no usable comment record (empty object, bare array, an envelope without a comment, or a record missing its schema-required `id`/`body`/`createdAt`).
    * @throws {@link AuthenticationRequiredException} When the endpoint requires sign-in and no (valid) session was presented.
    *
    * @example
@@ -1792,7 +1794,12 @@ export class FeedbackClient {
     const postOpts = isOptionsObject ? (options as PostCommentOptions) : undefined;
     const sessionToken = postOpts?.sessionToken?.trim() || undefined;
 
-    return this.request<FeatureRequestComment>({
+    // The published contract answers comment writes with a
+    // `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`), the same
+    // wrapper convention `fetchFeatureRequest` unwraps for single reads.
+    // Unwrap it here so callers receive the record itself; a bare comment
+    // body is still tolerated for proxies that already unwrapped it.
+    const res = await this.request<{ comment?: FeatureRequestComment }>({
       method: 'POST',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
       body: {
@@ -1808,6 +1815,35 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    const comment = res && typeof res === 'object' && !Array.isArray(res) ? res.comment : undefined;
+    const record = (comment ?? res) as FeatureRequestComment | undefined;
+    if (
+      !record ||
+      typeof record !== 'object' ||
+      Array.isArray(record) ||
+      typeof record.id !== 'string' ||
+      record.id.length === 0 ||
+      typeof record.body !== 'string' ||
+      record.body.length === 0 ||
+      typeof record.createdAt !== 'string' ||
+      record.createdAt.length === 0 ||
+      // The schema pins `createdAt` to `date-time`; a non-parseable string
+      // would fall through `formatDate` as raw copy inside the card.
+      isNaN(new Date(record.createdAt).getTime()) ||
+      // `authorName` may be absent or `null` (the card renders "Anonymous"),
+      // but any other non-string value would crash the card's render
+      // (`Avatar`'s initial fallback calls `name.trim()`).
+      (record.authorName != null && typeof record.authorName !== 'string')
+    ) {
+      // A `null` body, a bare array, an empty envelope, `{"comment": []}`, or
+      // a record missing its schema-required `id`/`body`/`createdAt` must
+      // surface as a typed parse failure — not a TypeError, and not a value
+      // the UI would append to the thread as a blank card.
+      throw new InvalidResponseException(
+        `Comment create for ${featureRequestId} returned no comment record`
+      );
+    }
+    return record;
   }
 
   /**
