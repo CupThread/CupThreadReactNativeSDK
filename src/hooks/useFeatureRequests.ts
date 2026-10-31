@@ -38,6 +38,17 @@ export interface UseFeatureRequestsSearchLimiterOptions {
 interface PendingItemMutation {
   item: FeatureRequestItem;
   userToken: string;
+
+  /**
+   * For rows enrolled by a host push through the exported `setItems`, the
+   * monotonic local revision at the moment of the push. It scopes the
+   * enrollment to the page-0 fetches the push predates (#186): a fetch that
+   * starts at or after the revision retires the entry up front, and a fetch
+   * already in flight consumes it on its single reconciliation, so pushed
+   * snapshots act as one-shot guards instead of lifetime pins. Vote-driven
+   * entries carry no revision and keep their lifecycle-managed protection.
+   */
+  hostRevision?: number;
 }
 
 /**
@@ -215,6 +226,14 @@ export interface UseFeatureRequestsResult {
 
   /**
    * Direct state setter for `items`.
+   *
+   * Each push also enrolls its rows as one-shot guards against page-0
+   * responses that were already in flight (#186): such a response predates
+   * the pushed snapshot and overlays the pushed rows exactly once, while any
+   * page-0 that starts after the push decides the rows outright. The guard
+   * entries are released on that single reconciliation (or retired by the
+   * next fetch start), so pushed snapshots neither accumulate for the hook's
+   * lifetime nor replay stale host state over fresher server data.
    */
   setItems: React.Dispatch<React.SetStateAction<FeatureRequestItem[]>>;
 
@@ -412,12 +431,33 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const wrappedSetItems: React.Dispatch<React.SetStateAction<FeatureRequestItem[]>> = useCallback(
     (action) => {
       localRevisionRef.current += 1;
+      // The push's revision scopes its per-row enrollments (#186): page-0
+      // fetches already in flight (older revision) receive exactly one
+      // protective overlay of the pushed rows; fetches starting from this
+      // revision onward retire the enrollments up front and decide the rows.
+      // Captured before the updater runs (React defers and double-invokes
+      // updaters), so every enrollment carries the push moment, not a later
+      // revision.
+      const pushedRevision = localRevisionRef.current;
       setItems((prev) => {
         const next = typeof action === 'function' ? action(prev) : action;
         for (const item of next) {
+          // A push must not strip an in-flight optimistic vote of its
+          // lifecycle-managed protection: when the row's existing entry is a
+          // same-identity vote entry (no `hostRevision`), it stays untagged so
+          // `isFinal`/`isRollback` keep owning its release and the superseded
+          // retirement below cannot drop the vote's protection mid-flight.
+          // Any other entry — a previous host push, or one pinned by a
+          // switched-away identity — is re-tagged to this push.
+          const existing = pendingItemMutationsRef.current.get(item.id);
+          const preserveVoteLifecycle =
+            existing !== undefined &&
+            existing.userToken === userTokenRef.current &&
+            existing.hostRevision === undefined;
           pendingItemMutationsRef.current.set(item.id, {
             item,
             userToken: userTokenRef.current,
+            hostRevision: preserveVoteLifecycle ? undefined : pushedRevision,
           });
           settledItemMutationsRef.current.delete(item.id);
         }
@@ -478,6 +518,20 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           settledItemMutationsRef.current.delete(id);
         }
       }
+      // Host-set entries this fetch cannot need (#186): a page-0 starting at
+      // or after the push decides those rows outright. Only pushes that
+      // happen while this fetch is in flight survive to the reconciliation
+      // below, which releases them after one overlay — entries for rows the
+      // response never returns stay retired instead of accumulating for the
+      // hook's lifetime.
+      const retireSupersededHostEntries = (boundaryRevision: number): void => {
+        for (const [id, entry] of pendingItemMutationsRef.current) {
+          if (entry.hostRevision !== undefined && entry.hostRevision <= boundaryRevision) {
+            pendingItemMutationsRef.current.delete(id);
+          }
+        }
+      };
+      retireSupersededHostEntries(rev);
 
       try {
         if (skipped) return;
@@ -516,6 +570,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
               settledItemMutationsRef.current.delete(id);
             }
           }
+          // React defers a host push's state updater, so an enrollment can
+          // land here after the start-time retirement already ran: the push
+          // bumped the revision before this fetch captured it, but the entry
+          // was only inserted during the flush. Re-run the retirement so a
+          // pre-fetch push cannot win a protective overlay from this
+          // response (#186).
+          retireSupersededHostEntries(rev);
           if (
             pendingItemMutationsRef.current.size === 0 &&
             settledItemMutationsRef.current.size === 0
@@ -530,6 +591,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
                 pendingItemMutationsRef.current.delete(item.id);
                 return item;
               }
+              if (pending.hostRevision !== undefined) {
+                // A host push from while this fetch was in flight (pushes
+                // predating the fetch were retired at fetch start): the
+                // response predates the push and cannot disprove it, but the
+                // protection is one-shot (#186) — overlay the pushed snapshot
+                // once and release the entry so the next page-0, started
+                // after the push, decides the row.
+                pendingItemMutationsRef.current.delete(item.id);
+              }
+              // An in-flight optimistic vote keeps protecting the row until
+              // its lifecycle settles (isFinal/isRollback) or a response
+              // confirms it above.
               return {
                 ...item,
                 ...pending.item,

@@ -893,3 +893,417 @@ test('useFeatureRequests: switching identity retires pending mutations created u
     renderer.unmount();
   }
 });
+
+test('useFeatureRequests: a host setItems push mid-flight survives that page-0 exactly once and defers to the next one (#186)', async () => {
+  // The host pushes rows while a page-0 is in flight. That response predates
+  // the push, so the pushed snapshot must win it — but only once: the next
+  // page-0 starts after the push and its contradicting answer is the server
+  // truth the row must converge to (previously the pushed snapshot replayed
+  // over every later page-0 and was pinned for the hook's lifetime).
+  let callCount = 0;
+  let deferred: ReturnType<typeof createDeferred<any>> | null = null;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_host',
+    title,
+    description: 'Host push probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { requests: [makeRow('Initial title', 10, false)], total: 1 };
+      }
+      if (callCount === 2) {
+        deferred = createDeferred<any>();
+        return deferred.promise;
+      }
+      return { requests: [makeRow('Server truth', 10, false)], total: 1 };
+    },
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function HostPushProbe({ client }: { client: FeedbackClient }) {
+    latest.current = useFeatureRequests({
+      client,
+      userToken: 'tok_host',
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<HostPushProbe client={mockClient} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'Initial title');
+
+    // Start a refresh, then push a contradicting snapshot while it is in
+    // flight.
+    act(() => {
+      void latest.current!.refresh();
+    });
+    await flush();
+    act(() => {
+      latest.current!.setItems([makeRow('Host truth', 11, true)]);
+    });
+    await flush();
+
+    // The pre-push response lands: the pushed snapshot must survive it.
+    act(() => {
+      deferred!.resolve({ requests: [makeRow('Stale server title', 10, false)], total: 1 });
+    });
+    await flush();
+    assert.equal(
+      latest.current!.items[0].hasVoted,
+      true,
+      'a page-0 that started before the push must not clobber the pushed vote state'
+    );
+    assert.equal(latest.current!.items[0].voteCount, 11);
+    assert.equal(
+      latest.current!.items[0].title,
+      'Host truth',
+      'a page-0 that started before the push must not clobber the pushed row'
+    );
+
+    // The next page-0 starts after the push: its contradicting answer is
+    // authoritative and the pushed snapshot must not replay.
+    act(() => {
+      void latest.current!.refresh();
+    });
+    await flush();
+    assert.equal(
+      latest.current!.items[0].hasVoted,
+      false,
+      'a page-0 after the push must render the server vote state'
+    );
+    assert.equal(latest.current!.items[0].voteCount, 10);
+    assert.equal(
+      latest.current!.items[0].title,
+      'Server truth',
+      'the pushed snapshot must be a one-shot guard, not a lifetime pin'
+    );
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: a mid-flight host push matching the late response is released without replay (#186)', async () => {
+  // When the pre-push response already agrees with the pushed vote state,
+  // the enrollment closes on that response: the server row renders and no
+  // pushed field may override it later.
+  let callCount = 0;
+  let deferred: ReturnType<typeof createDeferred<any>> | null = null;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_match',
+    title,
+    description: 'Host match probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { requests: [makeRow('Initial title', 10, false)], total: 1 };
+      }
+      if (callCount === 2) {
+        deferred = createDeferred<any>();
+        return deferred.promise;
+      }
+      return { requests: [makeRow('Server truth', 10, false)], total: 1 };
+    },
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function HostMatchProbe({ client }: { client: FeedbackClient }) {
+    latest.current = useFeatureRequests({
+      client,
+      userToken: 'tok_match',
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<HostMatchProbe client={mockClient} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'Initial title');
+
+    // Push a row with the same vote state as the server, but a host-edited
+    // title, while the refresh is in flight.
+    act(() => {
+      void latest.current!.refresh();
+    });
+    await flush();
+    act(() => {
+      latest.current!.setItems([makeRow('Host title', 10, false)]);
+    });
+    await flush();
+
+    // The response agrees on hasVoted: the server row renders and the
+    // enrollment is released.
+    act(() => {
+      deferred!.resolve({ requests: [makeRow('Server title', 10, false)], total: 1 });
+    });
+    await flush();
+    assert.equal(
+      latest.current!.items[0].title,
+      'Server title',
+      'a response that already reflects the pushed vote state decides the row'
+    );
+
+    // The next page-0 renders freely — proof the entry no longer replays.
+    act(() => {
+      void latest.current!.refresh();
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'Server truth');
+    assert.equal(latest.current!.items[0].hasVoted, false);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: a host-pushed row absent from later page-0s cannot replay its snapshot when it returns (#186)', async () => {
+  // A push can enroll rows that the following page-0s never return (query
+  // changes, deletions). Such entries must be retired by the next fetch
+  // start instead of accumulating: when the row eventually returns from the
+  // server with contradicting state, the server row renders — previously
+  // the stranded entry replayed the host snapshot over it until remount.
+  let plainLoads = 0;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_ghost',
+    title,
+    description: 'Ghost push probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async ({ query }: { query?: string }) => {
+      if (query) return { requests: [], total: 0 };
+      plainLoads += 1;
+      return plainLoads === 1
+        ? { requests: [makeRow('Pre-push title', 3, false)], total: 1 }
+        : { requests: [makeRow('Server truth', 3, false)], total: 1 };
+    },
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function GhostPushProbe({ client, query }: { client: FeedbackClient; query: string }) {
+    latest.current = useFeatureRequests({
+      client,
+      userToken: 'tok_ghost',
+      query,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<GhostPushProbe client={mockClient} query="" />);
+  try {
+    await flush();
+    assert.equal(latest.current!.items.length, 1);
+
+    // Push a contradicting snapshot of the row while no fetch is in flight.
+    act(() => {
+      latest.current!.setItems([makeRow('Ghost title', 99, true)]);
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'Ghost title');
+
+    // A query change pages the row out; the fetch starts after the push, so
+    // its start must retire the stranded enrollment.
+    act(() => {
+      renderer.update(<GhostPushProbe client={mockClient} query="beta" />);
+    });
+    await flush();
+    assert.equal(latest.current!.items.length, 0);
+
+    // The row returns from the server with the old vote state: the server
+    // row must render, not the pinned host snapshot.
+    act(() => {
+      renderer.update(<GhostPushProbe client={mockClient} query="" />);
+    });
+    await flush();
+
+    const row = latest.current!.items[0];
+    assert.ok(row, 'the restored query must bring the row back');
+    assert.equal(
+      row.title,
+      'Server truth',
+      'a page-0 that started after the push must not replay the stranded snapshot'
+    );
+    assert.equal(row.hasVoted, false, 'the stranded host snapshot must not present a phantom vote');
+    assert.equal(row.voteCount, 3);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: a host push enrolled after a fetch started cannot overlay that fetch (#186)', async () => {
+  // React defers the push's state updater whenever another update is already
+  // queued: when the enrollment lands only at flush time, the fetch that
+  // started in the same batch captures the push's revision before the entry
+  // exists, so the start-time retirement misses it. The reconciliation must
+  // re-run the retirement — a fetch that started at or after the push
+  // decides the rows, exactly like one scheduled later. (Two pushes force
+  // the deferral deterministically: the first dispatch runs eagerly, the
+  // second waits for the flush.)
+  let callCount = 0;
+  let deferred: ReturnType<typeof createDeferred<any>> | null = null;
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_late',
+    title,
+    description: 'Deferred push probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { requests: [makeRow('Initial title', 10, false)], total: 1 };
+      }
+      deferred = createDeferred<any>();
+      return deferred.promise;
+    },
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function LateEnrollProbe({ client }: { client: FeedbackClient }) {
+    latest.current = useFeatureRequests({
+      client,
+      userToken: 'tok_late',
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<LateEnrollProbe client={mockClient} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'Initial title');
+
+    // Two pushes, then refresh, in one batch: the second push's enrollment
+    // flushes only after the fetch below has captured its revision.
+    act(() => {
+      latest.current!.setItems([makeRow('First push', 10, false)]);
+      latest.current!.setItems([makeRow('Host truth', 11, true)]);
+      void latest.current!.refresh();
+    });
+    await flush();
+
+    // The response decides the row — the late-enrolled snapshot must not
+    // overlay it.
+    act(() => {
+      deferred!.resolve({ requests: [makeRow('Server truth', 10, false)], total: 1 });
+    });
+    await flush();
+    assert.equal(
+      latest.current!.items[0].hasVoted,
+      false,
+      'a fetch that started at the push revision must not be overridden by the pushed snapshot'
+    );
+    assert.equal(latest.current!.items[0].title, 'Server truth');
+    assert.equal(latest.current!.items[0].voteCount, 10);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests: a host push keeps an in-flight optimistic vote protected until it settles (#186)', async () => {
+  // Pushing a row must not strip a same-identity in-flight vote of its
+  // lifecycle-managed protection: the page-0 that starts after the push
+  // still cannot wipe the optimistic vote, which only the settlement (or a
+  // rollback) releases. Otherwise the row would flicker back to the
+  // pre-vote state for one response before the vote lands.
+  let callCount = 0;
+  let deferredRefresh: ReturnType<typeof createDeferred<any>> | null = null;
+  const deferredVote = createDeferred<any>();
+  const makeRow = (title: string, voteCount: number, hasVoted: boolean) => ({
+    id: 'fr_pushvote',
+    title,
+    description: 'Push vote probe',
+    voteCount,
+    hasVoted,
+    isOwnRequest: false,
+  });
+  const mockClient = {
+    fetchFeatureRequests: async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { requests: [makeRow('Initial title', 10, false)], total: 1 };
+      }
+      deferredRefresh = createDeferred<any>();
+      return deferredRefresh.promise;
+    },
+    castVote: () => deferredVote.promise,
+  } as unknown as FeedbackClient;
+  const latest: { current: any } = { current: null };
+
+  function PushVoteProbe({ client }: { client: FeedbackClient }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken: 'tok_pushvote',
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, 'tok_pushvote', requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<PushVoteProbe client={mockClient} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+    // Tap the vote; the optimistic state and its pending entry land while
+    // the vote request hangs.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+
+    // The host pushes a mirrored row. The push replaces the vote entry, but
+    // the entry must stay lifecycle-managed, not become a host guard.
+    act(() => {
+      latest.current!.requests.setItems([makeRow('Host mirror', 11, true)]);
+    });
+    await flush();
+
+    // A page-0 that starts after the push lands with the pre-vote server
+    // state while the vote is still in flight: the optimistic vote must
+    // survive it.
+    act(() => {
+      void latest.current!.requests.refresh();
+    });
+    await flush();
+    act(() => {
+      deferredRefresh!.resolve({ requests: [makeRow('Pre-vote title', 10, false)], total: 1 });
+    });
+    await flush();
+    assert.equal(
+      latest.current!.requests.items[0].hasVoted,
+      true,
+      'the in-flight optimistic vote must survive a page-0 that started after the host push'
+    );
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+    // The settlement then applies the server-confirmed result and releases
+    // the entry.
+    act(() => {
+      deferredVote.resolve({ voted: true, voteCount: 11 });
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 11);
+  } finally {
+    renderer.unmount();
+  }
+});
