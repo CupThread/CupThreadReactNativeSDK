@@ -52,4 +52,5 @@ export * from './utils/linkUrl';
 export * from './utils/platform';
 export * from './utils/featureFlags';
 export * from './utils/composer-state';
+export * from './utils/attachments';
 export * from './utils/userToken';
