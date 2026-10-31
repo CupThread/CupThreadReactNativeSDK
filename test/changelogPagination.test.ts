@@ -209,6 +209,53 @@ test('fetchChangelog makes a single request when the server reports no more page
   }
 });
 
+test('fetchChangelog rejects a server that echoes the cursor back while claiming more pages', async () => {
+  // A `hasMore` page handing back the cursor it just received would replay
+  // this page until the defensive cap, duplicating every entry it holds.
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-01-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-1',
+        },
+      },
+    ],
+    [
+      'cur-1',
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-01-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-1',
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+  try {
+    await assert.rejects(
+      () => makeClient().fetchChangelog(),
+      (err: any) => {
+        assert.equal(err.name, 'InvalidResponseException');
+        assert.match(err.message, /unchanged cursor/);
+        return true;
+      }
+    );
+    assert.equal(
+      fetchMock.requests.length,
+      2,
+      'the walk must stop at the echoed cursor instead of replaying it to the page cap'
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('fetchChangelog caps runaway pagination instead of looping forever', async () => {
   const pages = new Map<string | null, { status: number; body?: unknown }>();
   pages.set(null, { status: 200, body: { entries: [], hasMore: true, nextCursor: 'cur-1' } });

@@ -119,6 +119,13 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     },
     []
   );
+  // Set once `handleLoadMore` follows a cursor. A comment posted ahead of the
+  // first page seeds `hasMore: false` / `nextCursor: null` — until a real walk
+  // happens, a freshly landed page's own pagination metadata must win, or the
+  // seed would discard the server cursor and the load-more affordance would
+  // never appear. Read inside `mergePage` only, mutated outside any updater,
+  // so the updater stays idempotent under StrictMode.
+  const hasWalkedRef = useRef<boolean>(false);
   const mergePage = useCallback(
     (
       local: ListFeatureRequestCommentsResult | null,
@@ -127,9 +134,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       comments: mergeComments(local?.comments ?? null, incoming.comments),
       total: Math.max(incoming.total, local?.total ?? 0),
       // A late first-page landing must not unwind a load-more walk already
-      // past it: the accumulated walk position is authoritative when present.
-      hasMore: local ? local.hasMore : incoming.hasMore,
-      nextCursor: local ? local.nextCursor : incoming.nextCursor,
+      // past it: after a real walk the accumulated position is authoritative.
+      hasMore: local && hasWalkedRef.current ? local.hasMore : incoming.hasMore,
+      nextCursor: local && hasWalkedRef.current ? local.nextCursor : incoming.nextCursor,
     }),
     [mergeComments]
   );
@@ -186,6 +193,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
+      // Flip before the updater runs (never inside it): from here on the
+      // accumulated walk position outranks a stale page's metadata.
+      hasWalkedRef.current = true;
       setCommentsData((prev) => {
         if (!prev) return prev;
         const seen = new Set(prev.comments.map((c) => c.id));

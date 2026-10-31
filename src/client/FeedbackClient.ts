@@ -1666,6 +1666,13 @@ export class FeedbackClient {
       const res = await this.listComments(featureRequestId, { cursor, signal, timeoutMs });
       all.push(...res.comments);
       if (!res.hasMore || !res.nextCursor) break;
+      if (res.nextCursor === cursor) {
+        // A server echoing back the cursor it just received would replay the
+        // same page until the cap, duplicating every comment it returned.
+        throw new InvalidResponseException(
+          `Comments pagination returned an unchanged cursor for ${featureRequestId}`
+        );
+      }
       cursor = res.nextCursor;
     }
     return all;
@@ -1817,6 +1824,11 @@ export class FeedbackClient {
       const res = await this.listChangelog({ cursor, signal, timeoutMs });
       all.push(...res.entries);
       if (!res.hasMore || !res.nextCursor) break;
+      if (res.nextCursor === cursor) {
+        // A server echoing back the cursor it just received would replay the
+        // same page until the cap, duplicating every entry it returned.
+        throw new InvalidResponseException('Changelog pagination returned an unchanged cursor');
+      }
       cursor = res.nextCursor;
     }
     return all.sort(

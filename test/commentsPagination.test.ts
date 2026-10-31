@@ -231,6 +231,45 @@ test('fetchComments caps runaway pagination instead of looping forever', async (
   }
 });
 
+test('fetchComments rejects a server that echoes the cursor back while claiming more pages', async () => {
+  // A `hasMore` page handing back the cursor it just received would replay
+  // this page until the defensive cap, duplicating every comment it holds.
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: { comments: [makeComment('c1')], total: 5, hasMore: true, nextCursor: 'cur-1' },
+      },
+    ],
+    [
+      'cur-1',
+      {
+        status: 200,
+        body: { comments: [makeComment('c1')], total: 5, hasMore: true, nextCursor: 'cur-1' },
+      },
+    ],
+  ]);
+  const fetchMock = installCommentsFetch(pages);
+  try {
+    await assert.rejects(
+      () => makeClient().fetchComments('fr_1'),
+      (err: any) => {
+        assert.equal(err.name, 'InvalidResponseException');
+        assert.match(err.message, /unchanged cursor/);
+        return true;
+      }
+    );
+    assert.equal(
+      fetchMock.requests.length,
+      2,
+      'the walk must stop at the echoed cursor instead of replaying it to the page cap'
+    );
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('fetchComments stops safely when a page reports hasMore without a nextCursor', async () => {
   const pages = new Map<string | null, { status: number; body?: unknown }>([
     [
@@ -264,6 +303,7 @@ const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 
 const TouchableOpacityStub = (props: any) => props.children ?? null;
 const TextStub = (props: any) => props.children ?? null;
+const TextInputStub = () => null;
 
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
@@ -273,7 +313,7 @@ if (supportsModuleMocks) {
       // the rendered tree.
       View: ({ children }: any) => children ?? null,
       Text: TextStub,
-      TextInput: () => null,
+      TextInput: TextInputStub,
       TouchableOpacity: TouchableOpacityStub,
       ActivityIndicator: () => null,
       Image: () => null,
@@ -660,6 +700,133 @@ test(
       harness.unmount();
     } finally {
       harness.restore();
+    }
+  }
+);
+
+test(
+  'a comment posted before the first page resolves keeps the load-more affordance',
+  renderTestOptions,
+  async () => {
+    // Regression: the optimistic seed for a post that lands ahead of the
+    // first page carries `hasMore: false` / `nextCursor: null`. That seed is
+    // not a walk position, so the late first page's own cursor must win —
+    // otherwise the load-more control never appears and the thread stays
+    // silently truncated at one page.
+    const originalFetch = globalThis.fetch;
+    const requests: RecordedRequest[] = [];
+    let releaseFirstPage: () => void = () => {};
+    const firstPageGate = new Promise<void>((resolve) => {
+      releaseFirstPage = resolve;
+    });
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: { method?: string }) => {
+      const target = url.toString();
+      if (target.includes('/comments')) {
+        if (init?.method && init.method !== 'GET') {
+          // postComment: the write route shares the path with the read route.
+          return new Response(JSON.stringify(makeComment('c_posted', { body: 'First!' })), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const query = new URLSearchParams(target.split('?')[1] ?? '');
+        const cursor = query.get('cursor');
+        requests.push({ url: target, cursor, limit: query.get('limit') });
+        if (cursor === null) {
+          await firstPageGate;
+          return new Response(
+            JSON.stringify({
+              comments: [makeComment('c1')],
+              total: 2,
+              hasMore: true,
+              nextCursor: 'cur-2',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c2')],
+            total: 2,
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // The provider's config fetch is the only other call; it may 404.
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client: makeClient(),
+            userToken: 'usr_tok_test',
+            commentSessionProvider: async () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+          })
+        );
+      });
+      await settle();
+
+      // The first page is still gated: post a comment into the empty thread.
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('First!');
+      });
+      const send = findPressable(renderer.root, strings.comments.postButton);
+      assert.ok(send, 'composer must be pressable while the first page is pending');
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+
+      // The list body stays behind the loading state until the first page
+      // lands, but the optimistic seed must already drive the heading total.
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (1)'),
+        'the posted comment must be seeded into the page state while the first page is pending'
+      );
+      assert.equal(
+        requests.some((r) => r.cursor === 'cur-2'),
+        false,
+        'no follow-up page may be requested before the first page resolves'
+      );
+
+      // Now let the real first page land behind the seed.
+      releaseFirstPage();
+      await waitForText(renderer, (t) => t === 'Comment c1');
+      assert.ok(
+        collectTexts(renderer.root).includes('First!'),
+        'the locally posted comment must survive the merge with the late first page'
+      );
+
+      const button = findPressable(renderer.root, strings.comments.loadMore);
+      assert.ok(
+        button,
+        'the late first page must restore the load-more affordance the seed could not know about'
+      );
+      await act(async () => {
+        button.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Comment c2');
+
+      const text = collectTexts(renderer.root);
+      assert.equal(
+        text.includes(strings.comments.loadMore),
+        false,
+        'footer must disappear once the walked thread is complete'
+      );
+      assert.ok(text.includes('First!'), 'the locally posted comment must survive the merge');
+      renderer.unmount();
+    } finally {
+      releaseFirstPage();
+      globalThis.fetch = originalFetch;
     }
   }
 );
