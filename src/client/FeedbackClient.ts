@@ -9,11 +9,13 @@ import type {
   DigestUnsubscribeResult,
   FeatureRequestComment,
   FeatureRequestDraft,
+  FeatureRequestItem,
   FeatureRequestSubmissionResult,
   FeedbackAttachment,
   FeedbackClientConfig,
   FeedbackDraft,
   FeedbackSubmissionResult,
+  FetchFeatureRequestOptions,
   FetchUserProfileOptions,
   ListFeatureRequestsResult,
   ListFeatureRequestCommentsResult,
@@ -1416,6 +1418,73 @@ export class FeedbackClient {
       signal: options.signal,
       timeoutMs: options.timeoutMs,
     });
+  }
+
+  /**
+   * Fetches a single feature request by id — the deep-link read.
+   *
+   * A client holding one request id (a push-notification tap, a shared deep
+   * link, an id stored from a previous session) resolves it directly instead
+   * of paging the whole board with {@link FeedbackClient.fetchFeatureRequests}
+   * and scanning for the id, which can sit beyond the fetched pages on a large
+   * board.
+   *
+   * Identity: when `options.userToken` is provided it travels as the
+   * `X-User-Token` HTTP header and the record comes back personalized with the
+   * caller's `hasVoted` and `isOwnRequest` state. This route personalizes
+   * exclusively through the header — unlike the board listing, the published
+   * contract defines no query-parameter fallback.
+   *
+   * Existence hiding: a missing id, an id on a private or deactivated app, and
+   * a not-yet-approved submission all answer the same uniform `404`, which
+   * surfaces as {@link UnexpectedStatusException}. Callers must not present
+   * "this request was deleted" for what may simply be a pending submission.
+   *
+   * @param featureRequestId - ID of the feature request to read.
+   * @param options - Optional request options (including `userToken`, `signal`, and `timeoutMs`) or an `AbortSignal`.
+   * @returns The feature request record, in the same shape the board listing serves per item.
+   * @throws {@link UnexpectedStatusException} When the request cannot be read (uniform HTTP 404 for missing, unapproved, or access-disabled ids), or the server returns another unexpected status code.
+   * @throws {@link AuthenticationRequiredException} When the board requires sign-in for roadmap reads and no identity was presented (401).
+   * @throws {@link RateLimitedException} When the shared per-IP public-read budget is spent (429).
+   *
+   * @example
+   * ```ts
+   * try {
+   *   const request = await client.fetchFeatureRequest('fr_123', { userToken });
+   *   console.log(`${request.title} — ${request.voteCount} votes`);
+   * } catch (err) {
+   *   if (err instanceof UnexpectedStatusException && err.status === 404) {
+   *     // Missing, unapproved, or access-disabled: show the board instead of
+   *     // claiming the request was deleted.
+   *   }
+   * }
+   * ```
+   */
+  public async fetchFeatureRequest(
+    featureRequestId: string,
+    options?: FetchFeatureRequestOptions | AbortSignal
+  ): Promise<FeatureRequestItem> {
+    const isOptionsObject =
+      options &&
+      typeof options === 'object' &&
+      !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
+    const userToken = isOptionsObject
+      ? (options as FetchFeatureRequestOptions).userToken?.trim() || undefined
+      : undefined;
+
+    const res = await this.request<{ request?: FeatureRequestItem }>({
+      method: 'GET',
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}`,
+      userToken,
+      signal: extractSignal(options),
+      timeoutMs: extractTimeoutMs(options),
+    });
+    if (!res.request) {
+      throw new InvalidResponseException(
+        `Feature request read for ${featureRequestId} returned no request record`
+      );
+    }
+    return res.request;
   }
 
   /**
