@@ -442,10 +442,22 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       setItems((prev) => {
         const next = typeof action === 'function' ? action(prev) : action;
         for (const item of next) {
+          // A push must not strip an in-flight optimistic vote of its
+          // lifecycle-managed protection: when the row's existing entry is a
+          // same-identity vote entry (no `hostRevision`), it stays untagged so
+          // `isFinal`/`isRollback` keep owning its release and the superseded
+          // retirement below cannot drop the vote's protection mid-flight.
+          // Any other entry — a previous host push, or one pinned by a
+          // switched-away identity — is re-tagged to this push.
+          const existing = pendingItemMutationsRef.current.get(item.id);
+          const preserveVoteLifecycle =
+            existing !== undefined &&
+            existing.userToken === userTokenRef.current &&
+            existing.hostRevision === undefined;
           pendingItemMutationsRef.current.set(item.id, {
             item,
             userToken: userTokenRef.current,
-            hostRevision: pushedRevision,
+            hostRevision: preserveVoteLifecycle ? undefined : pushedRevision,
           });
           settledItemMutationsRef.current.delete(item.id);
         }
@@ -506,17 +518,20 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           settledItemMutationsRef.current.delete(id);
         }
       }
-      // Host-set entries this fetch cannot need (#186): a page-0 starting
-      // now postdates the host's push, so its response decides those rows
-      // outright. Only pushes that happen while this fetch is in flight
-      // survive to the reconciliation below, which releases them after one
-      // overlay — entries for rows the response never returns stay retired
-      // instead of accumulating for the hook's lifetime.
-      for (const [id, entry] of pendingItemMutationsRef.current) {
-        if (entry.hostRevision !== undefined && entry.hostRevision <= rev) {
-          pendingItemMutationsRef.current.delete(id);
+      // Host-set entries this fetch cannot need (#186): a page-0 starting at
+      // or after the push decides those rows outright. Only pushes that
+      // happen while this fetch is in flight survive to the reconciliation
+      // below, which releases them after one overlay — entries for rows the
+      // response never returns stay retired instead of accumulating for the
+      // hook's lifetime.
+      const retireSupersededHostEntries = (boundaryRevision: number): void => {
+        for (const [id, entry] of pendingItemMutationsRef.current) {
+          if (entry.hostRevision !== undefined && entry.hostRevision <= boundaryRevision) {
+            pendingItemMutationsRef.current.delete(id);
+          }
         }
-      }
+      };
+      retireSupersededHostEntries(rev);
 
       try {
         if (skipped) return;
@@ -555,6 +570,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
               settledItemMutationsRef.current.delete(id);
             }
           }
+          // React defers a host push's state updater, so an enrollment can
+          // land here after the start-time retirement already ran: the push
+          // bumped the revision before this fetch captured it, but the entry
+          // was only inserted during the flush. Re-run the retirement so a
+          // pre-fetch push cannot win a protective overlay from this
+          // response (#186).
+          retireSupersededHostEntries(rev);
           if (
             pendingItemMutationsRef.current.size === 0 &&
             settledItemMutationsRef.current.size === 0
