@@ -450,3 +450,101 @@ test(
     }
   }
 );
+
+test(
+  'a real client against the documented `{ comment }` wire envelope renders the posted comment immediately',
+  renderTestOptions,
+  async () => {
+    // No client stubbing here: `globalThis.fetch` is mocked so the real
+    // `postComment` response — the documented `FeatureRequestCommentCreated`
+    // envelope — flows through the SDK exactly as the production API serves
+    // it. Regression for #188: an unwrapped envelope appended to the thread
+    // rendered a blank card (no id, author, body, or date).
+    const originalFetch = globalThis.fetch;
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return new Response('not found', { status: 404 });
+      }
+      if (target.endsWith('/comments') && init?.method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            comment: {
+              id: 'c_wire',
+              authorName: 'Alice Wire',
+              body: 'Rendered from the envelope',
+              createdAt: '2020-01-15T00:00:00.000Z',
+            },
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (target.includes('/comments')) {
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c_seed')],
+            total: 1,
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    try {
+      const client = new FeedbackClient({
+        baseUrl: 'https://api.cupthread.com',
+        appKey: 'app_wire_envelope_test',
+      });
+
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: 'usr_tok_test',
+            commentSessionProvider: () => 'clerk_jwt_wire',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_wire' }),
+          })
+        );
+      });
+      await flush();
+
+      const input = renderer!.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Rendered from the envelope');
+      });
+      const send = findButtonByText(renderer!.root, 'Post Comment');
+      assert.ok(send, 'send button must exist with a session source');
+      await act(async () => {
+        send!.props.onPress();
+      });
+      await flush();
+
+      const text = collectText(renderer!.root);
+      assert.ok(
+        text.includes('Rendered from the envelope'),
+        'the posted body must render immediately after the post resolves'
+      );
+      assert.ok(
+        text.includes('Alice Wire'),
+        'the posted author must render immediately (not the Anonymous fallback)'
+      );
+      assert.ok(
+        text.includes('2020'),
+        'the posted comment date must render immediately (calendar year of createdAt)'
+      );
+      assert.equal(
+        renderer!.root.findByType(TextInputStub as any).props.value,
+        '',
+        'input must clear after a successful post'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);

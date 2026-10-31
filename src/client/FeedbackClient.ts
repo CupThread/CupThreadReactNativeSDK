@@ -1769,7 +1769,9 @@ export class FeedbackClient {
    * @param draft - Comment message content and optional reply pointers.
    * @param userToken - User token of the commenter (legacy anonymous credential; unused when `sessionToken` is provided).
    * @param options - Optional `sessionToken`, request options, or an `AbortSignal`.
-   * @returns The created comment record.
+   * @returns The created comment record, unwrapped from the documented
+   * `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`).
+   * @throws {@link InvalidResponseException} When the response carries no usable comment record (empty object, bare array, or an envelope without a comment).
    * @throws {@link AuthenticationRequiredException} When the endpoint requires sign-in and no (valid) session was presented.
    *
    * @example
@@ -1792,7 +1794,12 @@ export class FeedbackClient {
     const postOpts = isOptionsObject ? (options as PostCommentOptions) : undefined;
     const sessionToken = postOpts?.sessionToken?.trim() || undefined;
 
-    return this.request<FeatureRequestComment>({
+    // The published contract answers comment writes with a
+    // `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`), the same
+    // wrapper convention `fetchFeatureRequest` unwraps for single reads.
+    // Unwrap it here so callers receive the record itself; a bare comment
+    // body is still tolerated for proxies that already unwrapped it.
+    const res = await this.request<{ comment?: FeatureRequestComment }>({
       method: 'POST',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
       body: {
@@ -1808,6 +1815,23 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    const comment = res && typeof res === 'object' && !Array.isArray(res) ? res.comment : undefined;
+    const record = (comment ?? res) as FeatureRequestComment | undefined;
+    if (
+      !record ||
+      typeof record !== 'object' ||
+      Array.isArray(record) ||
+      typeof record.id !== 'string' ||
+      record.id.length === 0
+    ) {
+      // A `null` body, a bare array, an empty envelope, or `{"comment": []}`
+      // must surface as a typed parse failure — not a TypeError, and not a
+      // malformed value the UI would append to the thread as a blank card.
+      throw new InvalidResponseException(
+        `Comment create for ${featureRequestId} returned no comment record`
+      );
+    }
+    return record;
   }
 
   /**
