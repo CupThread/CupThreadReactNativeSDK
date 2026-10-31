@@ -109,6 +109,16 @@ export interface VoteChangeMeta {
    * snapshot over fresher server data after a login/identity switch (#184).
    */
   isFinal?: boolean;
+
+  /**
+   * The user identity the vote was dispatched under, captured at tap time.
+   * A vote can settle after the host switched identities (login/logout
+   * re-resolving the provider token); appliers that scope their state by
+   * identity — such as {@link useFeatureRequests}' `applyItemChange` — use
+   * this to drop the change instead of writing the old identity's result
+   * onto the new identity's rows.
+   */
+  userToken?: string;
 }
 
 /**
@@ -286,8 +296,12 @@ export function useToggleVote(
           // lifecycle: release the pending mutation along with the update
           // (see VoteChangeMeta.isFinal) so later server snapshots win for
           // the row again and settled snapshots cannot accumulate (#184).
+          // The tap-time identity rides along so a settlement landing after
+          // an identity switch is dropped instead of rewritten onto the new
+          // identity's rows.
           applyChangeRef.current(item.id, (current) => withServerVote(current, res), {
             isFinal: true,
+            userToken,
           });
           setErrorsByItemId((prev) => {
             if (!prev[item.id]) return prev;
@@ -307,9 +321,12 @@ export function useToggleVote(
           // keep a pending mutation for the item (so an in-flight vote
           // survives concurrent refreshes) must release it here, or the
           // rolled-back snapshot would pin the row over every later server
-          // snapshot (#139).
+          // snapshot (#139). The tap-time identity rides along so a rollback
+          // landing after an identity switch cannot restore guest-era vote
+          // fields onto the new identity's row.
           applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot), {
             isRollback: true,
+            userToken,
           });
           const errorObj = err instanceof Error ? err : new Error(String(err));
           setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));

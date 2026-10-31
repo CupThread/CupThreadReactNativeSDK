@@ -227,7 +227,9 @@ export interface UseFeatureRequestsResult {
    * a failed vote, or {@link VoteChangeMeta.isFinal} for the server-confirmed
    * result of a successful vote: both end the optimistic-vote lifecycle, so
    * the pending entry is released and later server snapshots win for that row
-   * again.
+   * again. A change carrying {@link VoteChangeMeta.userToken} that differs
+   * from the hook's current identity is dropped entirely: it belongs to the
+   * previous identity's session and must not touch this identity's rows.
    */
   applyItemChange: (
     itemId: string,
@@ -346,6 +348,15 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       transform: (item: FeatureRequestItem) => FeatureRequestItem,
       meta?: VoteChangeMeta
     ) => {
+      // A change dispatched under a different identity than the hook's
+      // current one (a vote settling or rolling back after
+      // setToken/resetToken re-resolved the provider token) must not touch
+      // this identity's rows or bookkeeping: the old identity's result does
+      // not apply to the new identity's data, and the switched-away entry is
+      // retired by reconcileWithPending's identity prune (#184).
+      if (meta?.userToken !== undefined && meta.userToken !== userTokenRef.current) {
+        return;
+      }
       localRevisionRef.current += 1;
       const previousPending = pendingItemMutationsRef.current.get(itemId);
       if (meta?.isRollback || meta?.isFinal) {
@@ -528,10 +539,18 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
             if (settled) {
               // The response predates this vote's settlement (the fetch
               // started before it), so it cannot disprove the server-confirmed
-              // result: keep the settled row and consume the guard — the next
+              // result: keep the settled vote and consume the guard — the next
               // page-0 starts after the settlement and decides the row (#184).
+              // Only the vote fields overlay: the response may still carry
+              // non-vote edits (title, status) newer than the guard's snapshot.
               settledItemMutationsRef.current.delete(item.id);
-              return item.hasVoted === settled.item.hasVoted ? item : { ...item, ...settled.item };
+              return item.hasVoted === settled.item.hasVoted
+                ? item
+                : {
+                    ...item,
+                    hasVoted: settled.item.hasVoted,
+                    voteCount: settled.item.voteCount,
+                  };
             }
             return item;
           });

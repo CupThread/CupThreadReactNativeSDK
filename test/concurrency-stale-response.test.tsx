@@ -771,17 +771,20 @@ test('useFeatureRequests: a vote settling mid-refresh survives the stale respons
     assert.equal(latest.current!.requests.items[0].hasVoted, true);
     assert.equal(latest.current!.requests.items[0].voteCount, 11);
 
-    // The pre-vote response lands: the settled vote must survive it.
+    // The pre-vote response lands — with a title the server edited after the
+    // fetch started, newer than the settled guard's snapshot. The settled
+    // vote must survive the response, but only its vote fields may overlay:
+    // the response's non-vote fields stay intact.
     act(() => {
-      deferred!.resolve({ requests: [makeRow('Initial title', 10, false)], total: 1 });
+      deferred!.resolve({ requests: [makeRow('Edited title', 10, false)], total: 1 });
     });
     await flush();
     assert.equal(latest.current!.requests.items[0].hasVoted, true);
     assert.equal(latest.current!.requests.items[0].voteCount, 11);
     assert.equal(
       latest.current!.requests.items[0].title,
-      'Initial title',
-      'the settled snapshot may only bridge the pre-settle response'
+      'Edited title',
+      'the settled guard may only bridge the vote fields, not replay its whole row snapshot'
     );
 
     // The next page-0 starts after the settlement: its contradicting answer
@@ -868,12 +871,24 @@ test('useFeatureRequests: switching identity retires pending mutations created u
     );
     assert.equal(row.voteCount, 7);
 
-    // Settle the stranded guest vote so the test ends without a dangling
-    // rejection.
+    // Settle the stranded guest vote: it was dispatched under tok_guest, so
+    // its result must be dropped entirely instead of being written onto (and
+    // guarded under) the signed-in identity's row.
     act(() => {
       deferredVote.resolve({ voted: true, voteCount: 11 });
     });
     await flush();
+    assert.equal(
+      latest.current!.requests.items[0].title,
+      'User view',
+      'a settlement from the previous identity must not touch the new identity rows'
+    );
+    assert.equal(
+      latest.current!.requests.items[0].hasVoted,
+      false,
+      'the guest vote result must not present as the signed-in vote'
+    );
+    assert.equal(latest.current!.requests.items[0].voteCount, 7);
   } finally {
     renderer.unmount();
   }
