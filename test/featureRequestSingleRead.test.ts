@@ -23,6 +23,7 @@ function makeRequestRecord(
     title: 'Dark mode',
     description: 'Please ship a theme.',
     status: 'planned',
+    approved: true,
     voteCount: 7,
     commentCount: 2,
     hasVoted: false,
@@ -30,7 +31,7 @@ function makeRequestRecord(
     createdAt: '2026-10-01T00:00:00.000Z',
     updatedAt: '2026-10-02T00:00:00.000Z',
     ...overrides,
-  } as FeatureRequestItem;
+  };
 }
 
 interface RecordedRequest {
@@ -209,20 +210,25 @@ test('fetchFeatureRequest maps 401 and 429 to their typed exceptions', async () 
   }
 });
 
-test('fetchFeatureRequest rejects a malformed 200 body without a request record', async () => {
-  const fetchMock = installSingleReadFetch(() => ({ status: 200, body: { requests: [] } }));
+test('fetchFeatureRequest rejects a malformed 200 body without a usable request record', async () => {
+  // A missing record, a bare array envelope, a non-record `request` value,
+  // and a `null` body must all surface as InvalidResponseException — never a
+  // TypeError, and never an array returned as a record.
+  for (const body of [{ requests: [] }, { request: [] }, { request: null }, 'null']) {
+    const fetchMock = installSingleReadFetch(() => ({ status: 200, body }));
 
-  try {
-    await assert.rejects(
-      () => makeClient().fetchFeatureRequest('fr_1'),
-      (err: any) => {
-        assert.ok(err instanceof InvalidResponseException);
-        assert.match(err.message, /no request record/);
-        return true;
-      }
-    );
-  } finally {
-    fetchMock.restore();
+    try {
+      await assert.rejects(
+        () => makeClient().fetchFeatureRequest('fr_1'),
+        (err: any) => {
+          assert.ok(err instanceof InvalidResponseException, `body ${JSON.stringify(body)}`);
+          assert.match(err.message, /no request record/);
+          return true;
+        }
+      );
+    } finally {
+      fetchMock.restore();
+    }
   }
 });
 

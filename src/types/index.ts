@@ -1221,6 +1221,12 @@ export interface FeatureRequestItem {
   hasMoreCommenters?: boolean;
 
   /**
+   * Number of visible comments on the request's discussion thread. Absent on
+   * payloads from before the field was populated.
+   */
+  commentCount?: number;
+
+  /**
    * ISO 8601 creation timestamp.
    */
   createdAt: string;

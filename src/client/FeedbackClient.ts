@@ -1479,12 +1479,15 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
-    if (!res.request) {
+    const record = res && typeof res === 'object' && !Array.isArray(res) ? res.request : undefined;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      // A `null` body, a bare array, or `{"request": []}` must surface as a
+      // typed parse failure, not a TypeError or a bogus record.
       throw new InvalidResponseException(
         `Feature request read for ${featureRequestId} returned no request record`
       );
     }
-    return res.request;
+    return record;
   }
 
   /**
