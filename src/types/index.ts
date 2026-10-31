@@ -332,6 +332,18 @@ export interface CastVoteOptions extends RequestOptions {
 }
 
 /**
+ * Options for reading a single feature request ({@link FeedbackClient.fetchFeatureRequest}).
+ */
+export interface FetchFeatureRequestOptions extends RequestOptions {
+  /**
+   * Optional identity token used to personalize the record with the caller's
+   * `hasVoted` and `isOwnRequest` state. When omitted, the request is
+   * anonymous and the record reflects public state.
+   */
+  userToken?: string;
+}
+
+/**
  * Options for fetching a public user profile ({@link FeedbackClient.fetchUserProfile}).
  */
 export interface FetchUserProfileOptions extends RequestOptions {
@@ -1207,6 +1219,12 @@ export interface FeatureRequestItem {
    * Whether additional commenters participated beyond the preview slice.
    */
   hasMoreCommenters?: boolean;
+
+  /**
+   * Number of visible comments on the request's discussion thread. Absent on
+   * payloads from before the field was populated.
+   */
+  commentCount?: number;
 
   /**
    * ISO 8601 creation timestamp.
