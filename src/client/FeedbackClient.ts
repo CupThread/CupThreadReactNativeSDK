@@ -719,6 +719,7 @@ export class FeedbackClient {
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
+   * @throws {@link TypeError} If `draft.title` or `draft.description` is empty, whitespace-only, or not a string.
    * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
    * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
@@ -740,6 +741,15 @@ export class FeedbackClient {
     userToken?: string,
     options?: RequestOptions | AbortSignal
   ): Promise<FeedbackSubmissionResult> {
+    const title = typeof draft?.title === 'string' ? draft.title.trim() : '';
+    if (!title) {
+      throw new TypeError('Expected a non-empty string for draft.title');
+    }
+    const description = typeof draft?.description === 'string' ? draft.description.trim() : '';
+    if (!description) {
+      throw new TypeError('Expected a non-empty string for draft.description');
+    }
+
     let resolvedUserToken = userToken;
     let resolvedOptions = options;
     if (typeof userToken === 'object' && userToken !== null) {
@@ -774,13 +784,13 @@ export class FeedbackClient {
     // created their session. When a draft carries session uploads and no token
     // was passed, fall back to the same store identity `uploadAttachment` uses
     // so a direct caller cannot trip `uploader_mismatch` by omission.
+    const trimmedToken = typeof resolvedUserToken === 'string' ? resolvedUserToken.trim() : '';
     const submissionToken =
-      resolvedUserToken ||
-      (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
+      trimmedToken || (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
     const payload = {
       appKey: this.config.appKey,
-      title: draft.title.trim(),
-      description: draft.description.trim(),
+      title,
+      description,
       reporterName: draft.reporterName?.trim() || undefined,
       reporterEmail: draft.reporterEmail?.trim() || undefined,
       platform,

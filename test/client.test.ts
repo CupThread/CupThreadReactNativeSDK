@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
+import { UserTokenStore } from '../src/client/UserTokenStore';
 import {
   InsecureBaseUrlException,
   InvalidResponseException,
@@ -799,6 +800,212 @@ test('FeedbackClient.submitFeatureRequest trims whitespace from userToken and dr
     assert.equal(capturedBody.description, 'Add CSV export button to metrics view');
     assert.equal(capturedBody.requesterName, 'Taylor');
     assert.equal(capturedBody.requesterToken, 'usr_padded_token_123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit rejects invalid draft title or description without issuing network requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(JSON.stringify({ feedbackId: 'fb_test', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_draft_validation',
+    });
+
+    const invalidValues: any[] = ['', '   ', '\t\n', null, undefined, 123, {}];
+
+    for (const invalidTitle of invalidValues) {
+      await assert.rejects(
+        () =>
+          client.submit({
+            title: invalidTitle,
+            description: 'Valid Description',
+          } as any),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for draft\.title/);
+          return true;
+        }
+      );
+    }
+
+    for (const invalidDesc of invalidValues) {
+      await assert.rejects(
+        () =>
+          client.submit({
+            title: 'Valid Title',
+            description: invalidDesc,
+          } as any),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for draft\.description/);
+          return true;
+        }
+      );
+    }
+
+    // null or undefined draft
+    await assert.rejects(
+      () => client.submit(null as any),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a non-empty string for draft\.title/);
+        return true;
+      }
+    );
+
+    assert.equal(networkCalls, 0, 'No network requests should be issued for invalid draft fields');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit trims whitespace from draft title and description in request body', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+    return new Response(JSON.stringify({ feedbackId: 'fb_test_trim', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_trim_test',
+    });
+
+    await client.submit({
+      title: '   Settings screen layout glitch   ',
+      description: '   Elements overlap on rotation   ',
+    });
+
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.title, 'Settings screen layout glitch');
+    assert.equal(capturedBody.description, 'Elements overlap on rotation');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit with attachments falls back to UserTokenStore when userToken is empty or whitespace-only', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedHeaders: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedHeaders = new Headers(init?.headers);
+    return new Response(JSON.stringify({ feedbackId: 'fb_test_store', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_store_token_test',
+    });
+
+    const storeToken = await UserTokenStore.shared.getToken();
+    assert.ok(storeToken, 'UserTokenStore should provide an identity token');
+
+    await client.submit(
+      {
+        title: 'Crash report with screenshot',
+        description: 'App terminated unexpectedly',
+        attachments: [
+          {
+            kind: 'image',
+            key: 'screenshot.png',
+            uploadId: 'upl_session_file_1',
+          },
+        ],
+      },
+      '   '
+    );
+
+    assert.ok(capturedHeaders);
+    assert.equal(capturedHeaders.get('x-user-token'), storeToken);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit trims whitespace from userToken in X-User-Token header', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedHeaders: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedHeaders = new Headers(init?.headers);
+    return new Response(JSON.stringify({ feedbackId: 'fb_test_padded', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_padded_token_test',
+    });
+
+    await client.submit(
+      {
+        title: 'Feature suggestion',
+        description: 'Add dark mode toggle',
+      },
+      '   usr_padded_custom_token   '
+    );
+
+    assert.ok(capturedHeaders);
+    assert.equal(capturedHeaders.get('x-user-token'), 'usr_padded_custom_token');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit without attachments omits X-User-Token header when userToken is whitespace-only', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedHeaders: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedHeaders = new Headers(init?.headers);
+    return new Response(JSON.stringify({ feedbackId: 'fb_test_empty_token', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_empty_token_test',
+    });
+
+    await client.submit(
+      {
+        title: 'Feature suggestion',
+        description: 'Add export option',
+      },
+      '   \t\n  '
+    );
+
+    assert.ok(capturedHeaders);
+    assert.equal(capturedHeaders.get('x-user-token'), null);
   } finally {
     globalThis.fetch = originalFetch;
   }
