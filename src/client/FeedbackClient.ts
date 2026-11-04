@@ -573,7 +573,7 @@ export class FeedbackClient {
       throw new InsecureBaseUrlException();
     }
     const appKey = typeof config.appKey === 'string' ? config.appKey.trim() : '';
-    if (!appKey) {
+    if (!appKey || appKey === '.' || appKey === '..') {
       throw new TypeError('Expected a non-empty string for appKey');
     }
 
@@ -597,13 +597,13 @@ export class FeedbackClient {
    * target. The server decodes path segments before matching, so values
    * without reserved characters produce byte-identical URLs.
    *
-   * Rejects empty, whitespace-only, or non-string inputs with a {@link TypeError}
-   * to prevent routing to collection endpoints (e.g. `/api/v1/feature-requests/`)
+   * Rejects empty, whitespace-only, non-string inputs, and dot segments (`.` / `..`)
+   * with a {@link TypeError} to prevent routing to collection endpoints (e.g. `/api/v1/feature-requests/`)
    * or forming malformed double-slash URLs (e.g. `//vote`).
    */
   private static encodeSegment(segment: string, paramName = 'segment'): string {
     const trimmed = typeof segment === 'string' ? segment.trim() : '';
-    if (!trimmed) {
+    if (!trimmed || trimmed === '.' || trimmed === '..') {
       throw new TypeError(`Expected a non-empty string for ${paramName}`);
     }
     return encodeURIComponent(trimmed);

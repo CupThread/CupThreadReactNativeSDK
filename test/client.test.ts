@@ -907,6 +907,17 @@ test('FeedbackClient constructor rejects empty, whitespace-only, or missing appK
     }
   );
 
+  for (const dotKey of ['.', '..', ' . ', ' .. ']) {
+    assert.throws(
+      () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: dotKey }),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a non-empty string for appKey/);
+        return true;
+      }
+    );
+  }
+
   // Whitespace-padded appKey is trimmed cleanly
   const client = new FeedbackClient({
     baseUrl: 'https://api.cupthread.com',
@@ -915,7 +926,7 @@ test('FeedbackClient constructor rejects empty, whitespace-only, or missing appK
   assert.equal(client.config.appKey, 'app_trimmed_123');
 });
 
-test('FeedbackClient rejects empty or whitespace-only featureRequestId before issuing requests', async () => {
+test('FeedbackClient rejects empty, whitespace-only, or dot segment featureRequestId before issuing requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCallCount = 0;
   globalThis.fetch = (async () => {
@@ -929,7 +940,7 @@ test('FeedbackClient rejects empty or whitespace-only featureRequestId before is
       appKey: 'app_id_test',
     });
 
-    for (const emptyId of ['', '   ', '\t\n']) {
+    for (const emptyId of ['', '   ', '\t\n', '.', '..', ' . ', ' .. ']) {
       await assert.rejects(
         () => client.fetchFeatureRequest(emptyId),
         (err: any) => {
@@ -986,7 +997,7 @@ test('FeedbackClient rejects empty or whitespace-only featureRequestId before is
   }
 });
 
-test('FeedbackClient rejects empty or whitespace-only userId before issuing requests', async () => {
+test('FeedbackClient rejects empty, whitespace-only, or dot segment userId before issuing requests', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCallCount = 0;
   globalThis.fetch = (async () => {
@@ -1000,7 +1011,7 @@ test('FeedbackClient rejects empty or whitespace-only userId before issuing requ
       appKey: 'app_id_test',
     });
 
-    for (const emptyUserId of ['', '   ', '\t']) {
+    for (const emptyUserId of ['', '   ', '\t', '.', '..', ' . ', ' .. ']) {
       await assert.rejects(
         () => client.fetchUserProfile(emptyUserId),
         (err: any) => {
