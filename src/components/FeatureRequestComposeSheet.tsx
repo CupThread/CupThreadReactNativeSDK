@@ -260,6 +260,7 @@ export function FeatureRequestComposeSheet({
         title: title.trim(),
         description: description.trim(),
         requesterName: requesterName.trim() || undefined,
+        turnstileToken: initialDraft?.turnstileToken,
       };
 
       const effectiveToken = await resolveEffectiveUserToken(userToken);
