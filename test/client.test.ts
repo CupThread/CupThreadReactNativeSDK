@@ -1686,3 +1686,57 @@ test('initUploadSession validates slot uploadId when uploadUrl is omitted', asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+test('subscribeToChangelog validates and trims email parameter', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  let sentBody: any = null;
+
+  globalThis.fetch = (async (_url: string, init: any) => {
+    fetchCalled = true;
+    sentBody = JSON.parse(init.body);
+    return new Response(JSON.stringify({ subscribed: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_key_abc',
+    });
+
+    const invalidEmails = [
+      '',
+      '   ',
+      'not-an-email',
+      'user@',
+      '@domain.com',
+      null as any,
+      undefined as any,
+      123 as any,
+    ];
+    for (const invalid of invalidEmails) {
+      fetchCalled = false;
+      await assert.rejects(
+        () => client.subscribeToChangelog(invalid, 'usr_tok'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.equal(err.message, 'Expected a valid email address');
+          return true;
+        }
+      );
+      assert.strictEqual(fetchCalled, false, 'network call must not be made for invalid email');
+    }
+
+    // Valid email with padding should trim and reach the wire
+    fetchCalled = false;
+    const res = await client.subscribeToChangelog('   padded@example.com   ', 'usr_tok');
+    assert.strictEqual(fetchCalled, true);
+    assert.strictEqual(res.subscribed, true);
+    assert.deepStrictEqual(sentBody, { email: 'padded@example.com' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
