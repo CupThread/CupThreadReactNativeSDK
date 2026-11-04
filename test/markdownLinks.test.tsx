@@ -37,8 +37,12 @@ if (supportsModuleMocks) {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { MarkdownText } = await import('../src/components/MarkdownText');
+const { CupThreadProvider } = supportsModuleMocks
+  ? await import('../src/theme/CupThreadThemeProvider')
+  : ({} as any);
+const { MarkdownText } = supportsModuleMocks
+  ? await import('../src/components/MarkdownText')
+  : ({} as any);
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -221,7 +225,7 @@ test(
           client: mockClient,
           children: React.createElement(MarkdownText, {
             content: 'See [Custom](https://en.wikipedia.org/wiki/Test_(paren) "Title")',
-            onLinkPress: (url) => {
+            onLinkPress: (url: string) => {
               intercepted.push(url);
               return true; // handled
             },
