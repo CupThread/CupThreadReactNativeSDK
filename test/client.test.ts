@@ -576,6 +576,90 @@ test('FeedbackClient.removeVote sends DELETE /api/v1/feature-requests/:id/vote w
   }
 });
 
+test('FeedbackClient.castVote and removeVote reject empty or whitespace userToken without issuing network requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(JSON.stringify({ voted: true, voteCount: 1 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_validation',
+    });
+
+    const invalidTokens: any[] = ['', '   ', '\t\n', null, undefined, 123, {}];
+
+    for (const invalidToken of invalidTokens) {
+      await assert.rejects(
+        () => client.castVote('fr_100', invalidToken),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for userToken/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.removeVote('fr_100', invalidToken),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for userToken/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.toggleVote('fr_100', invalidToken),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for userToken/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(networkCalls, 0, 'No network requests should be issued for invalid userTokens');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.castVote and removeVote trim whitespace from userToken in request body', async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedBodies: any[] = [];
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBodies.push(init?.body ? JSON.parse(String(init.body)) : undefined);
+    return new Response(JSON.stringify({ voted: true, voteCount: 1 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_trim_test',
+    });
+
+    await client.castVote('fr_100', '   usr_padded_token_1   ');
+    await client.removeVote('fr_100', ' \t usr_padded_token_2 \n ');
+
+    assert.equal(capturedBodies.length, 2);
+    assert.equal(capturedBodies[0].userToken, 'usr_padded_token_1');
+    assert.equal(capturedBodies[1].userToken, 'usr_padded_token_2');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async () => {
   const originalFetch = globalThis.fetch;
   const methods: string[] = [];
