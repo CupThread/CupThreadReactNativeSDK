@@ -720,7 +720,7 @@ export class FeedbackClient {
    * @param draft - The feedback payload including title, description, and optional attachments.
    * @param userToken - Optional persistent anonymous or authenticated user token.
    * @returns A promise resolving to the submission result metadata.
-   * @throws {@link TypeError} If `draft` is not an object or `draft.title` / `draft.description` is empty, whitespace-only, or not a string.
+   * @throws {@link TypeError} If `draft` is not an object, `draft.title` / `draft.description` is empty, whitespace-only, or not a string, or `draft.reporterEmail` is not a valid email address.
    * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
    * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
@@ -753,6 +753,25 @@ export class FeedbackClient {
     if (!description) {
       throw new TypeError('Expected a non-empty string for draft.description');
     }
+
+    if (
+      draft.reporterEmail !== undefined &&
+      draft.reporterEmail !== null &&
+      typeof draft.reporterEmail !== 'string'
+    ) {
+      throw new TypeError('Expected a valid email address for draft.reporterEmail');
+    }
+    const trimmedEmail = typeof draft.reporterEmail === 'string' ? draft.reporterEmail.trim() : '';
+    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+      throw new TypeError('Expected a valid email address for draft.reporterEmail');
+    }
+
+    const reporterName =
+      typeof draft.reporterName === 'string' ? draft.reporterName.trim() || undefined : undefined;
+    const appVersion =
+      typeof draft.appVersion === 'string' ? draft.appVersion.trim() || undefined : undefined;
+    const buildNumber =
+      typeof draft.buildNumber === 'string' ? draft.buildNumber.trim() || undefined : undefined;
 
     let resolvedUserToken = userToken;
     let resolvedOptions = options;
@@ -791,15 +810,16 @@ export class FeedbackClient {
     const trimmedToken = typeof resolvedUserToken === 'string' ? resolvedUserToken.trim() : '';
     const submissionToken =
       trimmedToken || (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
+
     const payload = {
       appKey: this.config.appKey,
       title,
       description,
-      reporterName: draft.reporterName?.trim() || undefined,
-      reporterEmail: draft.reporterEmail?.trim() || undefined,
+      reporterName,
+      reporterEmail: trimmedEmail || undefined,
       platform,
-      appVersion: draft.appVersion?.trim() || undefined,
-      buildNumber: draft.buildNumber?.trim() || undefined,
+      appVersion,
+      buildNumber,
       metadata: {
         ...(draft.metadata || {}),
         sdk: 'cupthread-react-native',
