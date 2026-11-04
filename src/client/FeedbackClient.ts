@@ -1435,8 +1435,9 @@ export class FeedbackClient {
 
     // The API resolves a cursor request from the keyset and ignores `offset`
     // entirely, so a cursor request must not carry an offset parameter.
-    if (options.cursor) {
-      params.append('cursor', options.cursor);
+    const trimmedCursor = typeof options.cursor === 'string' ? options.cursor.trim() : '';
+    if (trimmedCursor) {
+      params.append('cursor', trimmedCursor);
     } else {
       params.append('offset', String(options.offset ?? 0));
     }
@@ -1746,7 +1747,8 @@ export class FeedbackClient {
   ): Promise<ListFeatureRequestCommentsResult> {
     const limit = Math.min(Math.max(options?.limit ?? DEFAULT_COMMENTS_PAGE_SIZE, 1), 200);
     const params = new URLSearchParams({ limit: String(limit) });
-    if (options?.cursor) params.append('cursor', options.cursor);
+    const trimmedCursor = typeof options?.cursor === 'string' ? options.cursor.trim() : '';
+    if (trimmedCursor) params.append('cursor', trimmedCursor);
 
     const res = await this.request<Partial<ListFeatureRequestCommentsResult>>({
       method: 'GET',
@@ -1966,7 +1968,8 @@ export class FeedbackClient {
   }): Promise<ListPublicChangelogResult> {
     const limit = Math.min(Math.max(options?.limit ?? DEFAULT_CHANGELOG_PAGE_SIZE, 1), 100);
     const params = new URLSearchParams({ limit: String(limit) });
-    if (options?.cursor) params.append('cursor', options.cursor);
+    const trimmedCursor = typeof options?.cursor === 'string' ? options.cursor.trim() : '';
+    if (trimmedCursor) params.append('cursor', trimmedCursor);
 
     const res = await this.request<Partial<ListPublicChangelogResult>>({
       method: 'GET',
