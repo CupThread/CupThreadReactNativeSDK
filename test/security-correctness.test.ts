@@ -1078,7 +1078,7 @@ test('fetchFeatureRequests & request normalize whitespace userToken (#214)', asy
     capturedUrl = url.toString();
     const headersBag = new Headers(init?.headers);
     capturedHeaders = {};
-    headersBag.forEach((value, key) => {
+    headersBag.forEach((value: string, key: string) => {
       capturedHeaders[key.toLowerCase()] = value;
     });
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
