@@ -58,6 +58,7 @@ import {
   hmacSha256Hex,
 } from '../utils/userAttributesSigning';
 import { isValidEmail } from '../utils/email';
+import { isSurfaceEnabled } from '../utils/featureFlags';
 import { SDK_VERSION } from '../generated/version';
 import { UserTokenStore } from './UserTokenStore';
 
@@ -2095,8 +2096,8 @@ export class FeedbackClient {
     const signal = options?.signal;
     const timeoutMs = options?.timeoutMs;
     const config = await this.fetchAppConfig({ signal, timeoutMs });
-    if (!config.sdk?.features?.changelog) return null;
-    const limit = Math.min(Math.max(config.sdk.changelogOverlay?.entryCount || 3, 1), 10);
+    if (!isSurfaceEnabled(config, 'changelog')) return null;
+    const limit = Math.min(Math.max(config.sdk?.changelogOverlay?.entryCount || 3, 1), 10);
     // The overlay only ever displays `limit` entries, so request exactly that
     // page instead of pulling the full history.
     const page = await this.listChangelog({ limit, signal, timeoutMs });
