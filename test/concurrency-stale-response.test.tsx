@@ -1307,3 +1307,162 @@ test('useFeatureRequests: a host push keeps an in-flight optimistic vote protect
     renderer.unmount();
   }
 });
+
+test('useFeatureRequests paired with useToggleVote: padded userToken normalizes identity so both settlement and rollback remove the optimistic row (#236)', async () => {
+  const paddedToken = '   tok_padded_pair   ';
+
+  // --- Sub-scenario 1: Settlement releases optimistic row ---
+  {
+    let plainLoads = 0;
+    const makeRow = (hasVoted: boolean, voteCount: number) => ({
+      id: 'fr_padded_settled',
+      title: 'Settled Padded Probe',
+      description: 'Desc',
+      voteCount,
+      hasVoted,
+      isOwnRequest: false,
+    });
+
+    const mockClient = {
+      fetchFeatureRequests: async ({ query }: { query?: string }) => {
+        if (query) return { requests: [], total: 0 };
+        plainLoads += 1;
+        return plainLoads === 1
+          ? { requests: [makeRow(false, 10)], total: 1 }
+          : { requests: [makeRow(false, 10)], total: 1 };
+      },
+      castVote: async () => ({ voted: true, voteCount: 11 }),
+    } as unknown as FeedbackClient;
+
+    const latest: { current: any } = { current: null };
+    function SettledPaddedProbe({ client, query }: { client: FeedbackClient; query: string }) {
+      const requests = useFeatureRequests({
+        client,
+        userToken: paddedToken,
+        query,
+        searchRateLimiterOptions: { minSpacingMs: 0 },
+      });
+      const vote = useToggleVote(client, paddedToken, requests.applyItemChange);
+      latest.current = { requests, vote };
+      return null;
+    }
+
+    const renderer = TestRenderer.create(<SettledPaddedProbe client={mockClient} query="" />);
+    try {
+      await flush();
+      assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+      // Optimistic tap
+      act(() => {
+        latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+      });
+      await flush();
+      assert.equal(latest.current!.requests.items[0].hasVoted, true);
+      assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+      // Switch query off-list
+      act(() => {
+        renderer.update(<SettledPaddedProbe client={mockClient} query="other" />);
+      });
+      await flush();
+      assert.equal(latest.current!.requests.items.length, 0);
+
+      // Switch back: server answers hasVoted: false
+      act(() => {
+        renderer.update(<SettledPaddedProbe client={mockClient} query="" />);
+      });
+      await flush();
+
+      const row = latest.current!.requests.items[0];
+      assert.ok(row);
+      assert.equal(
+        row.hasVoted,
+        false,
+        'settlement under padded userToken must release the pending entry so subsequent page-0 renders server row'
+      );
+    } finally {
+      renderer.unmount();
+    }
+  }
+
+  // --- Sub-scenario 2: Rollback releases optimistic row ---
+  {
+    let plainLoads = 0;
+    const makeRow = (hasVoted: boolean, voteCount: number) => ({
+      id: 'fr_padded_rollback',
+      title: 'Rollback Padded Probe',
+      description: 'Desc',
+      voteCount,
+      hasVoted,
+      isOwnRequest: false,
+    });
+
+    const voteAttempt = createDeferred<VoteResult>();
+    const mockClient = {
+      fetchFeatureRequests: async ({ query }: { query?: string }) => {
+        if (query) return { requests: [], total: 0 };
+        plainLoads += 1;
+        return plainLoads === 1
+          ? { requests: [makeRow(false, 10)], total: 1 }
+          : { requests: [makeRow(false, 10)], total: 1 };
+      },
+      castVote: () => voteAttempt.promise,
+    } as unknown as FeedbackClient;
+
+    const latest: { current: any } = { current: null };
+    function RollbackPaddedProbe({ client, query }: { client: FeedbackClient; query: string }) {
+      const requests = useFeatureRequests({
+        client,
+        userToken: paddedToken,
+        query,
+        searchRateLimiterOptions: { minSpacingMs: 0 },
+      });
+      const vote = useToggleVote(client, paddedToken, requests.applyItemChange);
+      latest.current = { requests, vote };
+      return null;
+    }
+
+    const renderer = TestRenderer.create(<RollbackPaddedProbe client={mockClient} query="" />);
+    try {
+      await flush();
+      assert.equal(latest.current!.requests.items[0].hasVoted, false);
+
+      // Optimistic tap
+      act(() => {
+        latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+      });
+      await flush();
+      assert.equal(latest.current!.requests.items[0].hasVoted, true);
+      assert.equal(latest.current!.requests.items[0].voteCount, 11);
+
+      // Row leaves the list mid-flight
+      act(() => {
+        renderer.update(<RollbackPaddedProbe client={mockClient} query="other" />);
+      });
+      await flush();
+      assert.equal(latest.current!.requests.items.length, 0);
+
+      // Vote fails while row is off-list
+      act(() => {
+        voteAttempt.reject(new Error('Network failure'));
+      });
+      await flush();
+
+      // Return to plain query
+      act(() => {
+        renderer.update(<RollbackPaddedProbe client={mockClient} query="" />);
+      });
+      await flush();
+
+      const row = latest.current!.requests.items[0];
+      assert.ok(row);
+      assert.equal(
+        row.hasVoted,
+        false,
+        'rollback under padded userToken must release the pending entry so restored page-0 renders server row'
+      );
+    } finally {
+      renderer.unmount();
+    }
+  }
+});

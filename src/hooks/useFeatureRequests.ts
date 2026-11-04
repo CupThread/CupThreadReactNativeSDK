@@ -78,7 +78,8 @@ function buildSearchKey(
   query: string,
   versionId: string | null | undefined
 ): string {
-  return `${userToken}|${query}|${versionId || ''}`;
+  const normalizedToken = typeof userToken === 'string' ? userToken.trim() : '';
+  return `${normalizedToken}|${query}|${versionId || ''}`;
 }
 
 /**
@@ -294,6 +295,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       ? options.pageSize
       : DEFAULT_FEATURE_REQUESTS_PAGE_SIZE;
   const pageSize = Math.min(Math.max(Math.floor(rawPageSize), 1), 100);
+  const normalizedUserToken = typeof userToken === 'string' ? userToken.trim() : '';
 
   const [items, setItems] = useState<FeatureRequestItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -363,8 +365,8 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
   // The identity of the most recent render, read by the mutation appliers
   // (which are stable callbacks and must not close over the prop).
-  const userTokenRef = useRef<string>(userToken);
-  userTokenRef.current = userToken;
+  const userTokenRef = useRef<string>(normalizedUserToken);
+  userTokenRef.current = normalizedUserToken;
 
   const applyItemChange = useCallback(
     (
@@ -378,7 +380,9 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       // this identity's rows or bookkeeping: the old identity's result does
       // not apply to the new identity's data, and the switched-away entry is
       // retired by reconcileWithPending's identity prune (#184).
-      if (meta?.userToken !== undefined && meta.userToken !== userTokenRef.current) {
+      const metaToken =
+        typeof meta?.userToken === 'string' ? meta.userToken.trim() : meta?.userToken;
+      if (metaToken !== undefined && metaToken !== userTokenRef.current) {
         return;
       }
       localRevisionRef.current += 1;
@@ -542,7 +546,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         if (skipped) return;
 
         const res = await client.fetchFeatureRequests({
-          userToken,
+          userToken: normalizedUserToken,
           versionId: versionId || undefined,
           query: trimmedQuery || undefined,
           limit: pageSize,
@@ -566,12 +570,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           // the signed-in account, and retaining such an entry would replay
           // the stale row over every later page-0 indefinitely (#184).
           for (const [id, entry] of pendingItemMutationsRef.current) {
-            if (entry.userToken !== userToken) {
+            if (entry.userToken !== normalizedUserToken) {
               pendingItemMutationsRef.current.delete(id);
             }
           }
           for (const [id, entry] of settledItemMutationsRef.current) {
-            if (entry.userToken !== userToken) {
+            if (entry.userToken !== normalizedUserToken) {
               settledItemMutationsRef.current.delete(id);
             }
           }
@@ -679,7 +683,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // failure against the previous list no longer applies.
         setLoadMoreError(null);
         if (isSearch) {
-          lastSearchKeyRef.current = buildSearchKey(userToken, trimmedQuery, versionId);
+          lastSearchKeyRef.current = buildSearchKey(normalizedUserToken, trimmedQuery, versionId);
           setIsRateLimited(false);
         } else {
           lastSearchKeyRef.current = null;
@@ -705,7 +709,16 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         }
       }
     },
-    [client, userToken, isTokenReady, versionId, query, pageSize, enabled, enterSearchCooldown]
+    [
+      client,
+      normalizedUserToken,
+      isTokenReady,
+      versionId,
+      query,
+      pageSize,
+      enabled,
+      enterSearchCooldown,
+    ]
   );
 
   useEffect(() => {
@@ -734,7 +747,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // loaded successfully — keep the results on screen and do not refetch.
     if (
       isSearch &&
-      lastSearchKeyRef.current === buildSearchKey(userToken, trimmedQuery, versionId)
+      lastSearchKeyRef.current === buildSearchKey(normalizedUserToken, trimmedQuery, versionId)
     ) {
       // The on-screen list was loaded under exactly this key, so it is valid
       // for the current generation: re-publish so a loadMore blocked by a
@@ -807,7 +820,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       if (timer) clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady, query, versionId, userToken, enabled]);
+  }, [loadPage0, debounceMs, isTokenReady, query, versionId, normalizedUserToken, enabled]);
 
   // Load next page
   const loadMore = useCallback(async () => {
@@ -865,7 +878,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       // dedupe would rewind the offset and re-read rows this list has already
       // shown.
       const res = await client.fetchFeatureRequests({
-        userToken,
+        userToken: normalizedUserToken,
         versionId: versionId || undefined,
         query: trimmedQuery || undefined,
         limit: pageSize,
@@ -979,7 +992,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     }
   }, [
     client,
-    userToken,
+    normalizedUserToken,
     isTokenReady,
     enabled,
     isLoading,
