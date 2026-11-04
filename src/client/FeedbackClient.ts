@@ -904,14 +904,22 @@ export class FeedbackClient {
       expiresAt: session.expiresAt,
       maxFileSizeBytes: session.maxFileSizeBytes,
       maxFiles: session.maxFiles,
-      files: slots.map((slot) => ({
-        clientFileId: slot.clientFileId,
-        uploadId: slot.uploadId,
-        uploadUrl:
-          slot.uploadUrl ||
-          `/api/v1/uploads/${FeedbackClient.encodeSegment(slot.uploadId, 'uploadId')}`,
-        maxSizeBytes: slot.maxSizeBytes,
-      })),
+      files: slots.map((slot) => {
+        let uploadUrl = slot.uploadUrl;
+        if (!uploadUrl) {
+          const uploadId = typeof slot.uploadId === 'string' ? slot.uploadId.trim() : '';
+          if (!uploadId || uploadId === '.' || uploadId === '..') {
+            throw new UnreadableUploadResponseException();
+          }
+          uploadUrl = `/api/v1/uploads/${encodeURIComponent(uploadId)}`;
+        }
+        return {
+          clientFileId: slot.clientFileId,
+          uploadId: slot.uploadId,
+          uploadUrl,
+          maxSizeBytes: slot.maxSizeBytes,
+        };
+      }),
     };
   }
 

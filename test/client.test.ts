@@ -4,6 +4,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   InsecureBaseUrlException,
   InvalidResponseException,
+  UnreadableUploadResponseException,
 } from '../src/client/FeedbackException';
 import { FeedbackPlatformUtil } from '../src/utils/platform';
 
@@ -1080,6 +1081,56 @@ test('FeedbackClient trims valid resource IDs and encodes reserved characters sa
       requestedUrls[1],
       'https://api.cupthread.com/api/v1/users/u_user%2Fwith%20space/profile?appKey=app_id_test'
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('initUploadSession validates slot uploadId when uploadUrl is omitted', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_id_test',
+    });
+
+    for (const invalidUploadId of ['', '   ', '.', '..', undefined, null]) {
+      globalThis.fetch = (async () => {
+        return new Response(
+          JSON.stringify({
+            session: {
+              sessionId: 'ups_1',
+              sessionToken: 'tok_1',
+              expiresAt: '2026-10-23T13:00:00.000Z',
+              maxFileSizeBytes: 10485760,
+              maxFiles: 8,
+            },
+            files: [
+              {
+                clientFileId: 'f1',
+                uploadId: invalidUploadId,
+                maxSizeBytes: 10485760,
+              },
+            ],
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }) as any;
+
+      await assert.rejects(
+        () =>
+          client.uploadAttachment({
+            file: { uri: 'file:///tmp/a.png' },
+            filename: 'a.png',
+            mimeType: 'image/png',
+            size: 100,
+          }),
+        (err: any) => {
+          assert.ok(err instanceof UnreadableUploadResponseException);
+          return true;
+        }
+      );
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
