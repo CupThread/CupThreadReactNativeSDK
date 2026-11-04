@@ -40,6 +40,28 @@ import {
 import { userFacingErrorMessage } from '../utils/errors';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 
+declare const __DEV__: boolean | undefined;
+
+/**
+ * Emits a diagnostic warning to `console.warn` only in development environments.
+ *
+ * @param message - Diagnostic message describing the caught failure.
+ * @param error - Optional caught error or exception details.
+ */
+function warnInDev(message: string, error?: unknown): void {
+  const isDev =
+    typeof (globalThis as any).__DEV__ !== 'undefined'
+      ? Boolean((globalThis as any).__DEV__)
+      : typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  if (isDev) {
+    if (error !== undefined) {
+      console.warn(message, error);
+    } else {
+      console.warn(message);
+    }
+  }
+}
+
 /**
  * Props for configuring the {@link FeatureRequestComposeSheet} modal or embedded form.
  */
@@ -271,12 +293,32 @@ export function FeatureRequestComposeSheet({
       }
 
       if (onSubmitSuccess) {
-        onSubmitSuccess(result, { ownsForm });
+        try {
+          const ret: unknown = onSubmitSuccess(result, { ownsForm });
+          Promise.resolve(ret).catch((asyncErr) => {
+            warnInDev(
+              '[CupThread] FeatureRequestComposeSheet: onSubmitSuccess async rejection:',
+              asyncErr
+            );
+          });
+        } catch (callbackErr) {
+          warnInDev(
+            '[CupThread] FeatureRequestComposeSheet: onSubmitSuccess callback threw:',
+            callbackErr
+          );
+        }
       } else if (ownsForm && onClose) {
         // Closing is only safe while the composer still shows the session this
         // submit belongs to; otherwise it would dismiss a form the user just
         // re-engaged.
-        onClose();
+        try {
+          const ret: unknown = onClose();
+          Promise.resolve(ret).catch((asyncErr) => {
+            warnInDev('[CupThread] FeatureRequestComposeSheet: onClose async rejection:', asyncErr);
+          });
+        } catch (closeErr) {
+          warnInDev('[CupThread] FeatureRequestComposeSheet: onClose callback threw:', closeErr);
+        }
       }
     } catch (err: any) {
       if (submitId === submitSeqRef.current) {
