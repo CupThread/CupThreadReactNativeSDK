@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, View, StyleSheet, Linking, TextStyle } from 'react-native';
 import { useCupThreadTheme } from '../theme/CupThreadThemeProvider';
 import { isSafeLinkUrl, sanitizeSafeLinkUrl } from '../utils/linkUrl';
+import { tokenizeMarkdownInline } from '../utils/markdownInline';
 
 /**
  * Props for the {@link MarkdownText} lightweight renderer.
@@ -73,85 +74,69 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
   const lines = content.split('\n');
 
   const parseInline = (text: string, baseKey: string) => {
-    const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-    const elements: React.ReactNode[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        elements.push(
-          <Text key={`${baseKey}-txt-${lastIndex}`} style={{ color: colors.textPrimary }}>
-            {text.substring(lastIndex, match.index)}
-          </Text>
-        );
+    const tokens = tokenizeMarkdownInline(text);
+    return tokens.map((token, index) => {
+      switch (token.type) {
+        case 'text':
+          return (
+            <Text key={`${baseKey}-txt-${index}`} style={{ color: colors.textPrimary }}>
+              {token.content}
+            </Text>
+          );
+        case 'bold':
+          return (
+            <Text
+              key={`${baseKey}-b-${index}`}
+              style={{ fontWeight: '700', color: colors.textPrimary }}
+            >
+              {token.content}
+            </Text>
+          );
+        case 'italic':
+          return (
+            <Text
+              key={`${baseKey}-i-${index}`}
+              style={{ fontStyle: 'italic', color: colors.textPrimary }}
+            >
+              {token.content}
+            </Text>
+          );
+        case 'code':
+          return (
+            <Text
+              key={`${baseKey}-c-${index}`}
+              style={{
+                fontFamily: 'Courier',
+                backgroundColor: colors.chipBg,
+                color: colors.primary,
+                fontSize: 13,
+              }}
+            >
+              {` ${token.content} `}
+            </Text>
+          );
+        case 'link': {
+          const url = token.url;
+          // Links with disallowed schemes render as plain text unless the host app
+          // supplies an onLinkPress interceptor that opts into handling them.
+          const isPressable = Boolean(onLinkPress) || isSafeLinkUrl(url);
+          return (
+            <Text
+              key={`${baseKey}-a-${index}`}
+              style={
+                isPressable
+                  ? { color: colors.primary, textDecorationLine: 'underline' }
+                  : { color: colors.textPrimary }
+              }
+              onPress={isPressable ? () => handleLinkPress(url) : undefined}
+              accessibilityRole={isPressable ? 'link' : undefined}
+            >
+              {token.text}
+            </Text>
+          );
+        }
       }
-
-      if (match[2]) {
-        elements.push(
-          <Text
-            key={`${baseKey}-b-${match.index}`}
-            style={{ fontWeight: '700', color: colors.textPrimary }}
-          >
-            {match[2]}
-          </Text>
-        );
-      } else if (match[3]) {
-        elements.push(
-          <Text
-            key={`${baseKey}-i-${match.index}`}
-            style={{ fontStyle: 'italic', color: colors.textPrimary }}
-          >
-            {match[3]}
-          </Text>
-        );
-      } else if (match[4]) {
-        elements.push(
-          <Text
-            key={`${baseKey}-c-${match.index}`}
-            style={{
-              fontFamily: 'Courier',
-              backgroundColor: colors.chipBg,
-              color: colors.primary,
-              fontSize: 13,
-            }}
-          >
-            {` ${match[4]} `}
-          </Text>
-        );
-      } else if (match[5] && match[6]) {
-        const url = match[6];
-        // Links with disallowed schemes render as plain text unless the host app
-        // supplies an onLinkPress interceptor that opts into handling them.
-        const isPressable = Boolean(onLinkPress) || isSafeLinkUrl(url);
-        elements.push(
-          <Text
-            key={`${baseKey}-a-${match.index}`}
-            style={
-              isPressable
-                ? { color: colors.primary, textDecorationLine: 'underline' }
-                : { color: colors.textPrimary }
-            }
-            onPress={isPressable ? () => handleLinkPress(url) : undefined}
-            accessibilityRole={isPressable ? 'link' : undefined}
-          >
-            {match[5]}
-          </Text>
-        );
-      }
-
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < text.length) {
-      elements.push(
-        <Text key={`${baseKey}-txt-end`} style={{ color: colors.textPrimary }}>
-          {text.substring(lastIndex)}
-        </Text>
-      );
-    }
-
-    return elements;
+    });
   };
 
   return (

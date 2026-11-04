@@ -53,4 +53,5 @@ export * from './utils/platform';
 export * from './utils/featureFlags';
 export * from './utils/composer-state';
 export * from './utils/attachments';
+export * from './utils/markdownInline';
 export * from './utils/userToken';
