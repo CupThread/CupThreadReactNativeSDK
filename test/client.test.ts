@@ -904,6 +904,110 @@ test('FeedbackClient.submit trims whitespace from draft title and description in
   }
 });
 
+test('FeedbackClient.submit validates reporterEmail and defensively handles optional fields (#231)', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    networkCalls++;
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+    return new Response(JSON.stringify({ feedbackId: 'fb_test_email', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_email_validation',
+    });
+
+    const invalidEmails: any[] = [
+      'invalid-email',
+      'user@',
+      '@domain.com',
+      'a..b@example.com',
+      'user@domain..com',
+      123,
+      true,
+      {},
+      ['user@example.com'],
+    ];
+
+    for (const invalidEmail of invalidEmails) {
+      networkCalls = 0;
+      await assert.rejects(
+        () =>
+          client.submit({
+            title: 'Bug report',
+            description: 'Something crashed',
+            reporterEmail: invalidEmail,
+          }),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a valid email address for draft\.reporterEmail/);
+          return true;
+        }
+      );
+      assert.equal(
+        networkCalls,
+        0,
+        `network call must not be made for invalid reporterEmail: ${JSON.stringify(invalidEmail)}`
+      );
+    }
+
+    // Padded valid email and padded optional string fields should be trimmed
+    networkCalls = 0;
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      reporterEmail: '   user@example.com   ',
+      reporterName: '   Jane Doe   ',
+      appVersion: '   2.1.0   ',
+      buildNumber: '   456   ',
+    });
+    assert.equal(networkCalls, 1);
+    assert.equal(capturedBody.reporterEmail, 'user@example.com');
+    assert.equal(capturedBody.reporterName, 'Jane Doe');
+    assert.equal(capturedBody.appVersion, '2.1.0');
+    assert.equal(capturedBody.buildNumber, '456');
+
+    // Empty or whitespace-only optional strings should be normalized to undefined
+    networkCalls = 0;
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      reporterEmail: '   ',
+      reporterName: '   ',
+      appVersion: '',
+      buildNumber: '   ',
+    });
+    assert.equal(networkCalls, 1);
+    assert.equal(capturedBody.reporterEmail, undefined);
+    assert.equal(capturedBody.reporterName, undefined);
+    assert.equal(capturedBody.appVersion, undefined);
+    assert.equal(capturedBody.buildNumber, undefined);
+
+    // Non-string values for reporterName, appVersion, buildNumber should not throw TypeError
+    networkCalls = 0;
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      reporterName: 123 as any,
+      appVersion: 1.5 as any,
+      buildNumber: 108 as any,
+    });
+    assert.equal(networkCalls, 1);
+    assert.equal(capturedBody.reporterName, undefined);
+    assert.equal(capturedBody.appVersion, undefined);
+    assert.equal(capturedBody.buildNumber, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('FeedbackClient.submit with attachments falls back to UserTokenStore when userToken is empty or whitespace-only', async () => {
   const originalFetch = globalThis.fetch;
   let capturedHeaders: any = null;
