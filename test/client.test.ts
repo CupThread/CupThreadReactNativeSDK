@@ -928,6 +928,8 @@ test('FeedbackClient.submit validates reporterEmail and defensively handles opti
       'invalid-email',
       'user@',
       '@domain.com',
+      '.user@example.com',
+      'user.@example.com',
       'a..b@example.com',
       'user@domain..com',
       123,
@@ -1019,6 +1021,16 @@ test('FeedbackClient.submit validates reporterEmail and defensively handles opti
     assert.equal(capturedBody.reporterName, undefined);
     assert.equal(capturedBody.appVersion, undefined);
     assert.equal(capturedBody.buildNumber, undefined);
+
+    // Valid email with quoted local part containing dots should reach the wire
+    networkCalls = 0;
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      reporterEmail: '   ".user."@example.com   ',
+    });
+    assert.equal(networkCalls, 1);
+    assert.equal(capturedBody.reporterEmail, '".user."@example.com');
 
     // Non-string values for reporterName, appVersion, buildNumber should not throw TypeError
     networkCalls = 0;
@@ -1847,6 +1859,8 @@ test('subscribeToChangelog validates and trims email parameter', async () => {
       'not-an-email',
       'user@',
       '@domain.com',
+      '.user@example.com',
+      'user.@example.com',
       'a..b@example.com',
       null as any,
       undefined as any,
