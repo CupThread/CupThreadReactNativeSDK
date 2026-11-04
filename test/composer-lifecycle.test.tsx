@@ -510,3 +510,57 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestComposeSheet falls back to turnstileTokenProvider when initialDraft omits turnstileToken (#223)',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const frSubmits: any[] = [];
+    const restoreFetch = stubSubmitFetch([], frSubmits);
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_fr_turnstile_provider',
+      turnstileTokenProvider: async () => 'cf_provider_token_fallback',
+    });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_provider',
+          children: React.createElement(FeatureRequestComposeSheet, {
+            visible: true,
+            initialDraft: {
+              title: 'Provider token fallback',
+              description: 'Draft without explicit token should use provider.',
+            },
+          }),
+        })
+      );
+    });
+    await flush();
+
+    try {
+      const submitButtons = renderer.root.findAll(
+        (node) =>
+          (node.type as any) === 'TouchableOpacity' && typeof node.props?.onPress === 'function'
+      );
+      const submitBtn = submitButtons[submitButtons.length - 1];
+      await act(async () => {
+        await submitBtn.props.onPress();
+      });
+      await flush();
+
+      assert.equal(frSubmits.length, 1);
+      assert.equal(frSubmits[0].title, 'Provider token fallback');
+      assert.equal(frSubmits[0].description, 'Draft without explicit token should use provider.');
+      assert.equal(frSubmits[0].turnstileToken, 'cf_provider_token_fallback');
+    } finally {
+      restoreFetch();
+      renderer.unmount();
+    }
+  }
+);
