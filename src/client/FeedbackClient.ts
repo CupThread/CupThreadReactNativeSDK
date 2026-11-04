@@ -86,6 +86,11 @@ export const DEFAULT_CHANGELOG_PAGE_SIZE = 100;
 export const DEFAULT_COMMENTS_PAGE_SIZE = 200;
 
 /**
+ * Server-side default page size for the feature requests endpoint.
+ */
+export const DEFAULT_FEATURE_REQUESTS_PAGE_SIZE = 50;
+
+/**
  * Maximum number of files one upload session may reserve (API limit).
  */
 export const MAX_UPLOAD_FILES = 8;
@@ -1411,11 +1416,11 @@ export class FeedbackClient {
      */
     userToken?: string;
     /**
-     * Maximum number of items to return per page (default: 50).
+     * Maximum number of items to return per page (default: 50, clamped to 1–100).
      */
     limit?: number;
     /**
-     * Page offset index (default: 0).
+     * Page offset index (default: 0, clamped to >= 0).
      */
     offset?: number;
     /**
@@ -1449,9 +1454,15 @@ export class FeedbackClient {
     tokenTransport?: 'query' | 'header' | 'both';
   }): Promise<ListFeatureRequestsResult> {
     const transport = options.tokenTransport ?? this.config.tokenTransport ?? 'header';
+    const rawLimit =
+      typeof options.limit === 'number' && Number.isFinite(options.limit)
+        ? options.limit
+        : DEFAULT_FEATURE_REQUESTS_PAGE_SIZE;
+    const limit = Math.min(Math.max(Math.floor(rawLimit), 1), 100);
+
     const params = new URLSearchParams({
       appKey: this.config.appKey,
-      limit: String(options.limit ?? 50),
+      limit: String(limit),
     });
 
     // The API resolves a cursor request from the keyset and ignores `offset`
@@ -1460,7 +1471,10 @@ export class FeedbackClient {
     if (trimmedCursor) {
       params.append('cursor', trimmedCursor);
     } else {
-      params.append('offset', String(options.offset ?? 0));
+      const rawOffset =
+        typeof options.offset === 'number' && Number.isFinite(options.offset) ? options.offset : 0;
+      const offset = Math.max(Math.floor(rawOffset), 0);
+      params.append('offset', String(offset));
     }
 
     const trimmedUserToken = typeof options.userToken === 'string' ? options.userToken.trim() : '';
@@ -1471,8 +1485,11 @@ export class FeedbackClient {
       }
     }
 
-    if (options.versionId) params.append('versionId', options.versionId);
-    if (options.query) params.append('q', options.query);
+    const trimmedVersionId = typeof options.versionId === 'string' ? options.versionId.trim() : '';
+    if (trimmedVersionId) params.append('versionId', trimmedVersionId);
+
+    const trimmedQuery = typeof options.query === 'string' ? options.query.trim() : '';
+    if (trimmedQuery) params.append('q', trimmedQuery);
 
     const sendHeader = (transport === 'header' || transport === 'both') && !!trimmedUserToken;
 
