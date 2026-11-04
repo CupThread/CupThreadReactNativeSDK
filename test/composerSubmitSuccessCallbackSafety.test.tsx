@@ -59,7 +59,6 @@ test(
 
     client.fetchAppConfig = (async () => ({})) as any;
     let submitCalled = false;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submit = (async () => {
       submitCalled = true;
       return { submissionId: 'sub_test_196', forwardedToGithub: false };
@@ -154,7 +153,6 @@ test(
 
     client.fetchAppConfig = (async () => ({})) as any;
     let submitCalled = false;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submit = (async () => {
       submitCalled = true;
       return { submissionId: 'sub_test_196_close', forwardedToGithub: false };
@@ -240,7 +238,6 @@ test(
 
     client.fetchAppConfig = (async () => ({})) as any;
     let submitCalled = false;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submitFeatureRequest = (async () => {
       submitCalled = true;
       return {
@@ -343,7 +340,6 @@ test(
 
     client.fetchAppConfig = (async () => ({})) as any;
     let submitCalled = false;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submitFeatureRequest = (async () => {
       submitCalled = true;
       return {
@@ -439,7 +435,6 @@ test(
     });
 
     client.fetchAppConfig = (async () => ({})) as any;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submit = (async () => ({
       submissionId: 'sub_async_1',
       forwardedToGithub: false,
@@ -514,7 +509,6 @@ test(
     });
 
     client.fetchAppConfig = (async () => ({})) as any;
-    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
     client.submitFeatureRequest = (async () => ({
       id: 'fr_test_async',
       title: 'Feature Proposal',
