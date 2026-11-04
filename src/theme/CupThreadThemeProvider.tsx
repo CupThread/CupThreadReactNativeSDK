@@ -392,6 +392,7 @@ export function CupThreadProvider({
       return;
     }
     let cancelled = false;
+    setResolvedUserToken('');
     setIsTokenReady(false);
     const resolve = () => {
       UserTokenStore.shared.getToken().then((token) => {

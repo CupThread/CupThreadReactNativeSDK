@@ -231,6 +231,67 @@ test(
 );
 
 test(
+  'transitioning userToken from explicit to whitespace clears token immediately and waits for store',
+  renderTestOptions,
+  async () => {
+    let resolveRead!: (val: string | null) => void;
+    let readPromise = new Promise<string | null>((res) => {
+      resolveRead = res;
+    });
+    UserTokenStore.configure({
+      getItem: () => readPromise,
+      setItem: async () => {},
+    });
+    const observations: Observation[] = [];
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={makeClient()} userToken="initial-explicit-token">
+          <TokenProbe observations={observations} />
+        </CupThreadProvider>
+      );
+    });
+
+    const initial = observations[observations.length - 1];
+    assert.equal(initial.ready, true);
+    assert.equal(initial.token, 'initial-explicit-token');
+
+    // Update the prop to whitespace
+    await act(async () => {
+      renderer.update(
+        <CupThreadProvider client={makeClient()} userToken="   ">
+          <TokenProbe observations={observations} />
+        </CupThreadProvider>
+      );
+    });
+
+    // Before store resolves, previous identity must NOT leak; token should be cleared and ready false
+    const duringRecovery = observations[observations.length - 1];
+    assert.equal(
+      duringRecovery.ready,
+      false,
+      'isTokenReady must be false while recovering store token'
+    );
+    assert.equal(
+      duringRecovery.token,
+      '',
+      'resolvedUserToken must be cleared to prevent stale identity leak'
+    );
+
+    await act(async () => {
+      resolveRead('store-token-after-transition');
+    });
+    await flush();
+
+    const settled = observations[observations.length - 1];
+    assert.equal(settled.ready, true);
+    assert.equal(settled.token, 'store-token-after-transition');
+    renderer!.unmount();
+  }
+);
+
+test(
   'whitespace-padded userToken prop is trimmed cleanly and marks token ready immediately',
   renderTestOptions,
   async () => {
