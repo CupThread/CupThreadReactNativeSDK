@@ -351,7 +351,7 @@ export function useToggleVote(
 
             // A warning means the vote was saved but an optional opt-in was
             // refused, so it must not be routed through the error path.
-            if (res.warning) {
+            if (res?.warning) {
               try {
                 onVoteWarningRef.current?.(res.warning, item);
               } catch (warningErr) {
@@ -394,6 +394,9 @@ export function useToggleVote(
         .finally(() => {
           pendingIdsRef.current.delete(item.id);
           setPendingIds(Array.from(pendingIdsRef.current));
+        })
+        .catch((unexpectedErr: unknown) => {
+          warnInDev('[CupThread] useToggleVote: unexpected error in vote handler:', unexpectedErr);
         });
     },
     [client, userToken, shipNotifyEmail]

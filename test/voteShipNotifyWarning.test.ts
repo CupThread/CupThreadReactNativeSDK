@@ -416,3 +416,35 @@ test('useToggleVote: a throwing applyChange during success settlement does not t
     process.off('unhandledRejection', onUnhandled);
   }
 });
+
+test('useToggleVote: malformed null server response or handler error does not leak unhandled rejection and clears isVoting', async () => {
+  const { client } = makeStubClient(null as any);
+
+  let stateItem = makeItem({ id: 'fr_null_res', voteCount: 10, hasVoted: false });
+  const applyChange = (_id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    stateItem = transform(stateItem);
+  };
+
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() => useToggleVote(client, 'usr_token', applyChange));
+
+    harness.result.toggleVote(stateItem);
+    assert.equal(harness.result.isVoting('fr_null_res'), true);
+
+    await flush();
+    harness.rerender();
+
+    assert.equal(harness.result.isVoting('fr_null_res'), false);
+    assert.equal(unhandledRejections.length, 0, 'no unhandled rejections');
+
+    harness.unmount();
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
