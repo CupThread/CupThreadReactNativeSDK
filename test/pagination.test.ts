@@ -1117,6 +1117,45 @@ test('FeedbackClient.fetchFeatureRequests serializes cursor and omits offset for
   }
 });
 
+test('FeedbackClient.fetchFeatureRequests normalizes whitespace cursor and falls back to offset (#228)', async () => {
+  const intercepted: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    intercepted.push(url.toString());
+    return new Response(
+      JSON.stringify({ requests: [], total: 0, hasMore: false, nextCursor: null }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_cursor_whitespace_test',
+    });
+
+    // Whitespace-only cursor is suppressed and falls back to offset=0
+    await client.fetchFeatureRequests({ cursor: '   \t\n  ' });
+    let parsed = new URL(intercepted[0]);
+    assert.equal(parsed.searchParams.get('cursor'), null);
+    assert.equal(parsed.searchParams.get('offset'), '0');
+
+    // Whitespace-only cursor preserves provided offset
+    await client.fetchFeatureRequests({ cursor: '   ', offset: 40 });
+    parsed = new URL(intercepted[1]);
+    assert.equal(parsed.searchParams.get('cursor'), null);
+    assert.equal(parsed.searchParams.get('offset'), '40');
+
+    // Padded cursor is trimmed and suppresses offset
+    await client.fetchFeatureRequests({ cursor: '  cur_trimmed_xyz  ', offset: 20 });
+    parsed = new URL(intercepted[2]);
+    assert.equal(parsed.searchParams.get('cursor'), 'cur_trimmed_xyz');
+    assert.equal(parsed.searchParams.get('offset'), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('useFeatureRequests: an exhausted cursor walk never falls back to an offset request (#170)', async () => {
   const requestsSeen: Array<Record<string, any>> = [];
   const mockClient = {

@@ -154,6 +154,27 @@ test('listComments forwards limit and cursor and clamps out-of-range limits', as
   }
 });
 
+test('listComments normalizes whitespace cursor parameter (#228)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [null, { status: 200, body: { comments: [] } }],
+    ['cur-comm-trimmed', { status: 200, body: { comments: [] } }],
+  ]);
+  const fetchMock = installCommentsFetch(pages);
+  try {
+    const client = makeClient();
+
+    // Whitespace-only cursor is suppressed
+    await client.listComments('fr_1', { cursor: '   \t\n  ' });
+    assert.equal(fetchMock.requests[0].cursor, null);
+
+    // Padded cursor is trimmed
+    await client.listComments('fr_1', { cursor: '  cur-comm-trimmed  ' });
+    assert.equal(fetchMock.requests[1].cursor, 'cur-comm-trimmed');
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('listComments normalizes a malformed pagination payload', async () => {
   const pages = new Map([
     [

@@ -137,6 +137,27 @@ test('listChangelog forwards limit and cursor and clamps out-of-range limits', a
   }
 });
 
+test('listChangelog normalizes whitespace cursor parameter (#228)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [null, { status: 200, body: { entries: [] } }],
+    ['cur-trimmed', { status: 200, body: { entries: [] } }],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+  try {
+    const client = makeClient();
+
+    // Whitespace-only cursor is suppressed
+    await client.listChangelog({ cursor: '   \t\n  ' });
+    assert.equal(fetchMock.requests[0].cursor, null);
+
+    // Padded cursor is trimmed
+    await client.listChangelog({ cursor: '  cur-trimmed  ' });
+    assert.equal(fetchMock.requests[1].cursor, 'cur-trimmed');
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('listChangelog normalizes a malformed pagination payload', async () => {
   const pages = new Map([
     [null, { status: 200, body: { entries: [], hasMore: 'yes', nextCursor: 42 } }],
