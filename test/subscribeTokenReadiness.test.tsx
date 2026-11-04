@@ -144,6 +144,38 @@ test('subscribeToChangelog silently omits the header for an empty token', async 
   );
 });
 
+test('subscribeToChangelog normalizes whitespace and padded tokens', async () => {
+  const { subscribeCalls } = installFetch();
+  const client = makeClient();
+
+  // Whitespace-only token should omit the header
+  await client.subscribeToChangelog('user@example.com', '   \t\n   ');
+  assert.equal(subscribeCalls.length, 1);
+  assert.equal(
+    (subscribeCalls[0].headers as any)?.['X-User-Token'],
+    undefined,
+    'whitespace-only token must not reach the wire'
+  );
+
+  // Padded token should be trimmed
+  await client.subscribeToChangelog('user@example.com', '   tok_padded_99   ');
+  assert.equal(subscribeCalls.length, 2);
+  assert.equal(
+    (subscribeCalls[1].headers as any)?.['X-User-Token'],
+    'tok_padded_99',
+    'padded token must be trimmed'
+  );
+
+  // Non-string token should omit the header
+  await client.subscribeToChangelog('user@example.com', undefined as any);
+  assert.equal(subscribeCalls.length, 3);
+  assert.equal(
+    (subscribeCalls[2].headers as any)?.['X-User-Token'],
+    undefined,
+    'non-string token must not reach the wire'
+  );
+});
+
 test('resolveEffectiveUserToken prefers a truthy context token and trims padding', async () => {
   UserTokenStore.configure(makeSeededAdapter('store_tok'));
   const resolved = await resolveEffectiveUserToken('ctx_tok');

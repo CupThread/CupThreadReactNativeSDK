@@ -57,6 +57,7 @@ import {
   buildUserAttributesCanonicalString,
   hmacSha256Hex,
 } from '../utils/userAttributesSigning';
+import { isValidEmail } from '../utils/email';
 import { SDK_VERSION } from '../generated/version';
 import { UserTokenStore } from './UserTokenStore';
 
@@ -2086,7 +2087,9 @@ export class FeedbackClient {
    *
    * @param email - Target email address to subscribe.
    * @param userToken - Current user token.
+   * @param options - Optional request options (`signal`, `timeoutMs`).
    * @returns Subscription status confirmation.
+   * @throws {@link TypeError} If `email` is empty, whitespace-only, not a string, or not a valid email address.
    *
    * @example
    * ```ts
@@ -2101,11 +2104,16 @@ export class FeedbackClient {
     userToken: string,
     options?: RequestOptions | AbortSignal
   ): Promise<ChangelogSubscriptionResult> {
+    const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      throw new TypeError('Expected a valid email address');
+    }
+    const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
     return this.request<ChangelogSubscriptionResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/changelog/subscribe`,
-      body: { email: email.trim() },
-      userToken,
+      body: { email: trimmedEmail },
+      userToken: trimmedToken || undefined,
       accepted: [200, 201],
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),

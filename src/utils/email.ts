@@ -27,5 +27,11 @@ export function isValidEmail(value: string): boolean {
   // quadratic backtracking on a long pasted value. The trailing alphanumeric
   // requirement rejects paste artifacts riding at the end of the TLD
   // (`jane@example.com,`) — no real domain ends in punctuation.
-  return /^[^\s@]+@[^.\s@]+(?:\.[^.\s@]+)+$/.test(value) && /[a-zA-Z0-9]$/.test(value);
+  //
+  // Reject consecutive dots in an unquoted local part (`a..b@example.com`
+  // fails under RFC 5322 §3.4.1), while continuing to accept quoted local
+  // parts such as `"a..b"@example.com`.
+  return (
+    /^(?![^"@]*\.\.)[^\s@]+@[^.\s@]+(?:\.[^.\s@]+)+$/.test(value) && /[a-zA-Z0-9]$/.test(value)
+  );
 }
