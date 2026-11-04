@@ -1713,6 +1713,7 @@ test('subscribeToChangelog validates and trims email parameter', async () => {
       'not-an-email',
       'user@',
       '@domain.com',
+      'a..b@example.com',
       null as any,
       undefined as any,
       123 as any,
@@ -1729,6 +1730,12 @@ test('subscribeToChangelog validates and trims email parameter', async () => {
       );
       assert.strictEqual(fetchCalled, false, 'network call must not be made for invalid email');
     }
+
+    // Valid email with quoted local part containing dots should reach the wire
+    fetchCalled = false;
+    await client.subscribeToChangelog('"a..b"@example.com', 'usr_tok');
+    assert.strictEqual(fetchCalled, true);
+    assert.deepStrictEqual(sentBody, { email: '"a..b"@example.com' });
 
     // Valid email with padding should trim and reach the wire
     fetchCalled = false;
