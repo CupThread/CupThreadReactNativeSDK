@@ -1834,6 +1834,7 @@ export class FeedbackClient {
    * @param options - Optional `sessionToken`, request options, or an `AbortSignal`.
    * @returns The created comment record, unwrapped from the documented
    * `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`).
+   * @throws {@link TypeError} If `draft` is not an object or `draft.body` is empty, whitespace-only, or not a string.
    * @throws {@link InvalidResponseException} When the response carries no usable comment record (empty object, bare array, an envelope without a comment, or a record missing its schema-required `id`/`body`/`createdAt`).
    * @throws {@link AuthenticationRequiredException} When the endpoint requires sign-in and no (valid) session was presented.
    *
@@ -1850,12 +1851,28 @@ export class FeedbackClient {
     userToken: string,
     options?: PostCommentOptions | AbortSignal
   ): Promise<FeatureRequestComment> {
+    if (!draft || typeof draft !== 'object') {
+      throw new TypeError('Expected a draft object for postComment');
+    }
+    const body = typeof draft.body === 'string' ? draft.body.trim() : '';
+    if (!body) {
+      throw new TypeError('Expected a non-empty string for draft.body');
+    }
+
     const isOptionsObject =
       options &&
       typeof options === 'object' &&
       !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
     const postOpts = isOptionsObject ? (options as PostCommentOptions) : undefined;
     const sessionToken = postOpts?.sessionToken?.trim() || undefined;
+
+    const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
+    const parentId =
+      typeof draft.parentId === 'string' ? draft.parentId.trim() || undefined : undefined;
+    const replyToAuthorName =
+      typeof draft.replyToAuthorName === 'string'
+        ? draft.replyToAuthorName.trim() || undefined
+        : undefined;
 
     // The published contract answers comment writes with a
     // `FeatureRequestCommentCreated` envelope (`{"comment": {…}}`), the same
@@ -1866,13 +1883,13 @@ export class FeedbackClient {
       method: 'POST',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/comments`,
       body: {
-        body: draft.body.trim(),
-        parentId: draft.parentId || undefined,
-        replyToAuthorName: draft.replyToAuthorName?.trim() || undefined,
+        body,
+        parentId,
+        replyToAuthorName,
       },
       // Comment writes authenticate with the Clerk session only; the anonymous
       // token surface does not apply to this route, so a session suppresses it.
-      ...(sessionToken ? {} : { userToken }),
+      ...(sessionToken ? {} : trimmedToken ? { userToken: trimmedToken } : {}),
       ...(sessionToken ? { headers: { Authorization: `Bearer ${sessionToken}` } } : {}),
       accepted: [200, 201],
       signal: extractSignal(options),
