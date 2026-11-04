@@ -1584,6 +1584,10 @@ export class FeedbackClient {
     userToken: string,
     options?: CastVoteOptions | AbortSignal
   ): Promise<VoteResult> {
+    const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
+    if (!trimmedToken) {
+      throw new TypeError('Expected a non-empty string for userToken');
+    }
     const isOptionsObject =
       options &&
       typeof options === 'object' &&
@@ -1597,7 +1601,7 @@ export class FeedbackClient {
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
         appKey: this.config.appKey,
-        userToken,
+        userToken: trimmedToken,
         ...(shipNotifyEmail ? { shipNotifyEmail } : {}),
         ...(turnstileToken ? { turnstileToken } : {}),
       },
@@ -1630,12 +1634,16 @@ export class FeedbackClient {
     userToken: string,
     options?: RequestOptions | AbortSignal
   ): Promise<VoteResult> {
+    const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
+    if (!trimmedToken) {
+      throw new TypeError('Expected a non-empty string for userToken');
+    }
     return this.request<VoteResult>({
       method: 'DELETE',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
         appKey: this.config.appKey,
-        userToken,
+        userToken: trimmedToken,
       },
       accepted: [200],
       signal: extractSignal(options),
