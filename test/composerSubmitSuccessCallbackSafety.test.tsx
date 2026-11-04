@@ -428,3 +428,163 @@ test(
     }
   }
 );
+
+test(
+  'FeedbackComposer: asynchronously rejecting onSubmitSuccess and onClose are caught without unhandled rejection (#196)',
+  renderTestOptions,
+  async () => {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_cb_safety',
+    });
+
+    client.fetchAppConfig = (async () => ({})) as any;
+    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
+    client.submit = (async () => ({
+      submissionId: 'sub_async_1',
+      forwardedToGithub: false,
+    })) as any;
+
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: any[]) => {
+      warnings.push(args.map(String).join(' '));
+    };
+
+    const unhandledRejections: unknown[] = [];
+    const onUnhandled = (err: unknown) => {
+      unhandledRejections.push(err);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer;
+      act(() => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: 'usr_test_cb_safety',
+            children: React.createElement(FeedbackComposer, {
+              visible: true,
+              isModal: false,
+              initialDraft: {
+                title: 'Valid feedback title',
+                description: 'Valid feedback description of sufficient length',
+              },
+              onSubmitSuccess: async () => {
+                throw new Error('Async onSubmitSuccess rejection');
+              },
+            }),
+          })
+        );
+      });
+
+      const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+      const submitBtn = buttons.find((btn) => {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        return style.some((s: any) => s && s.paddingVertical === 14);
+      });
+      assert.ok(submitBtn, 'submit button should be found');
+
+      act(() => {
+        submitBtn.props.onPress();
+      });
+
+      await flush();
+
+      assert.ok(
+        warnings.some((w) => w.includes('FeedbackComposer: onSubmitSuccess async rejection:')),
+        'async warning must be emitted in dev'
+      );
+      assert.equal(unhandledRejections.length, 0, 'no unhandled promise rejections');
+    } finally {
+      console.warn = origWarn;
+      process.off('unhandledRejection', onUnhandled);
+    }
+  }
+);
+
+test(
+  'FeatureRequestComposeSheet: asynchronously rejecting onSubmitSuccess is caught without unhandled rejection (#196)',
+  renderTestOptions,
+  async () => {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_cb_safety',
+    });
+
+    client.fetchAppConfig = (async () => ({})) as any;
+    client.getConfig = (async () => ({ appKey: 'app_test_cb_safety' })) as any;
+    client.submitFeatureRequest = (async () => ({
+      id: 'fr_test_async',
+      title: 'Feature Proposal',
+      description: 'Detailed proposal description',
+      voteCount: 1,
+      hasVoted: true,
+      status: 'open',
+      authorName: 'Tester',
+      createdAt: new Date().toISOString(),
+      pending: false,
+    })) as any;
+
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: any[]) => {
+      warnings.push(args.map(String).join(' '));
+    };
+
+    const unhandledRejections: unknown[] = [];
+    const onUnhandled = (err: unknown) => {
+      unhandledRejections.push(err);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer;
+      act(() => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: 'usr_test_cb_safety',
+            children: React.createElement(FeatureRequestComposeSheet, {
+              visible: true,
+              isModal: false,
+              initialDraft: {
+                title: 'Valid proposal title',
+                description: 'Valid proposal description of sufficient length',
+              },
+              showSuccessFeedback: false,
+              onSubmitSuccess: async () => {
+                throw new Error('Async FR onSubmitSuccess rejection');
+              },
+            }),
+          })
+        );
+      });
+
+      const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+      const submitBtn = buttons.find((btn) => {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        return style.some((s: any) => s && s.paddingVertical === 14);
+      });
+      assert.ok(submitBtn, 'submit button should be found');
+
+      act(() => {
+        submitBtn.props.onPress();
+      });
+
+      await flush();
+
+      assert.ok(
+        warnings.some((w) =>
+          w.includes('FeatureRequestComposeSheet: onSubmitSuccess async rejection:')
+        ),
+        'async warning must be emitted in dev'
+      );
+      assert.equal(unhandledRejections.length, 0, 'no unhandled promise rejections');
+    } finally {
+      console.warn = origWarn;
+      process.off('unhandledRejection', onUnhandled);
+    }
+  }
+);
