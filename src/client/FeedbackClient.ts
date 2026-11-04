@@ -705,12 +705,12 @@ export class FeedbackClient {
    * force a specific token per submission.
    */
   private async resolveTurnstileToken(explicit?: string): Promise<string | undefined> {
-    const trimmed = explicit?.trim();
-    if (trimmed) return trimmed;
+    const trimmedExplicit = typeof explicit === 'string' ? explicit.trim() : undefined;
+    if (trimmedExplicit) return trimmedExplicit;
     const provider = this.config.turnstileTokenProvider;
     if (!provider) return undefined;
     const token = await provider();
-    return token?.trim() || undefined;
+    return typeof token === 'string' && token.trim() ? token.trim() : undefined;
   }
 
   /**
@@ -1578,7 +1578,7 @@ export class FeedbackClient {
    * @param draft - Feature request proposal details (title, description, requesterName).
    * @param userToken - Current user identifier token.
    * @returns Submission confirmation and moderation pending status.
-   * @throws {@link TypeError} If `userToken`, `draft.title`, or `draft.description` is empty, whitespace-only, or not a string.
+   * @throws {@link TypeError} If `draft` is not an object, or `userToken`, `draft.title`, or `draft.description` is empty, whitespace-only, or not a string.
    * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
    * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
@@ -1601,14 +1601,19 @@ export class FeedbackClient {
     if (!trimmedToken) {
       throw new TypeError('Expected a non-empty string for userToken');
     }
-    const title = typeof draft?.title === 'string' ? draft.title.trim() : '';
+    if (!draft || typeof draft !== 'object') {
+      throw new TypeError('Expected a draft object for submitFeatureRequest');
+    }
+    const title = typeof draft.title === 'string' ? draft.title.trim() : '';
     if (!title) {
       throw new TypeError('Expected a non-empty string for draft.title');
     }
-    const description = typeof draft?.description === 'string' ? draft.description.trim() : '';
+    const description = typeof draft.description === 'string' ? draft.description.trim() : '';
     if (!description) {
       throw new TypeError('Expected a non-empty string for draft.description');
     }
+    const requesterName =
+      typeof draft.requesterName === 'string' ? draft.requesterName.trim() || undefined : undefined;
     const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
     return this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
@@ -1617,7 +1622,7 @@ export class FeedbackClient {
         appKey: this.config.appKey,
         title,
         description,
-        requesterName: draft.requesterName?.trim() || undefined,
+        requesterName,
         requesterToken: trimmedToken,
         ...(turnstileToken ? { turnstileToken } : {}),
       },
