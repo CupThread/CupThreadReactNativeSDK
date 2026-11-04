@@ -958,6 +958,36 @@ test('FeedbackClient.submit validates reporterEmail and defensively handles opti
       );
     }
 
+    // Turnstile provider must not be invoked if reporterEmail is invalid
+    let turnstileCalls = 0;
+    const clientWithTurnstile = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_email_turnstile',
+      turnstileTokenProvider: async () => {
+        turnstileCalls++;
+        throw new Error('turnstileTokenProvider should not be called');
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        clientWithTurnstile.submit({
+          title: 'Bug report',
+          description: 'Something crashed',
+          reporterEmail: 'bad-email',
+        }),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a valid email address for draft\.reporterEmail/);
+        return true;
+      }
+    );
+    assert.equal(
+      turnstileCalls,
+      0,
+      'turnstile provider must not be called when reporterEmail is invalid'
+    );
+
     // Padded valid email and padded optional string fields should be trimmed
     networkCalls = 0;
     await client.submit({

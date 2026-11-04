@@ -754,6 +754,25 @@ export class FeedbackClient {
       throw new TypeError('Expected a non-empty string for draft.description');
     }
 
+    if (
+      draft.reporterEmail !== undefined &&
+      draft.reporterEmail !== null &&
+      typeof draft.reporterEmail !== 'string'
+    ) {
+      throw new TypeError('Expected a valid email address for draft.reporterEmail');
+    }
+    const trimmedEmail = typeof draft.reporterEmail === 'string' ? draft.reporterEmail.trim() : '';
+    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+      throw new TypeError('Expected a valid email address for draft.reporterEmail');
+    }
+
+    const reporterName =
+      typeof draft.reporterName === 'string' ? draft.reporterName.trim() || undefined : undefined;
+    const appVersion =
+      typeof draft.appVersion === 'string' ? draft.appVersion.trim() || undefined : undefined;
+    const buildNumber =
+      typeof draft.buildNumber === 'string' ? draft.buildNumber.trim() || undefined : undefined;
+
     let resolvedUserToken = userToken;
     let resolvedOptions = options;
     if (typeof userToken === 'object' && userToken !== null) {
@@ -791,25 +810,6 @@ export class FeedbackClient {
     const trimmedToken = typeof resolvedUserToken === 'string' ? resolvedUserToken.trim() : '';
     const submissionToken =
       trimmedToken || (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
-
-    if (
-      draft.reporterEmail !== undefined &&
-      draft.reporterEmail !== null &&
-      typeof draft.reporterEmail !== 'string'
-    ) {
-      throw new TypeError('Expected a valid email address for draft.reporterEmail');
-    }
-    const trimmedEmail = typeof draft.reporterEmail === 'string' ? draft.reporterEmail.trim() : '';
-    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
-      throw new TypeError('Expected a valid email address for draft.reporterEmail');
-    }
-
-    const reporterName =
-      typeof draft.reporterName === 'string' ? draft.reporterName.trim() || undefined : undefined;
-    const appVersion =
-      typeof draft.appVersion === 'string' ? draft.appVersion.trim() || undefined : undefined;
-    const buildNumber =
-      typeof draft.buildNumber === 'string' ? draft.buildNumber.trim() || undefined : undefined;
 
     const payload = {
       appKey: this.config.appKey,
