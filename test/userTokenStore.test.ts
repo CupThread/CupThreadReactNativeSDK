@@ -307,6 +307,74 @@ test('UserTokenStore notifies subscribers on explicit identity switches', async 
   assert.equal(changes, 2, 'unsubscribed listeners stop receiving notifications');
 });
 
+test('UserTokenStore: setToken rejects empty, whitespace-only, or non-string token without corrupting state', async () => {
+  const mem: Record<string, string> = { [TOKEN_KEY]: 'initial-valid-token' };
+  let setItemCalls = 0;
+  const adapter = {
+    getItem: (key: string) => mem[key] ?? null,
+    setItem: (key: string, val: string) => {
+      setItemCalls++;
+      mem[key] = val;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  const initialToken = await store.getToken();
+  assert.equal(initialToken, 'initial-valid-token');
+
+  let changeCount = 0;
+  store.subscribe(() => {
+    changeCount++;
+  });
+
+  const invalidTokens: any[] = ['', '   ', '\t\n\r', null, undefined, 12345, {}, false];
+
+  for (const invalid of invalidTokens) {
+    await assert.rejects(
+      () => store.setToken(invalid),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a non-empty string for token/);
+        return true;
+      }
+    );
+
+    // State must remain uncorrupted
+    assert.equal(store.token, 'initial-valid-token');
+    assert.equal(await store.getToken(), 'initial-valid-token');
+    assert.equal(mem[TOKEN_KEY], 'initial-valid-token');
+    assert.equal(setItemCalls, 0, 'storage setItem should not be called on rejection');
+    assert.equal(changeCount, 0, 'listeners should not be notified on rejection');
+  }
+});
+
+test('UserTokenStore: setToken trims whitespace-padded token and notifies only on true identity change', async () => {
+  const mem: Record<string, string> = {};
+  const adapter = {
+    getItem: (key: string) => mem[key] ?? null,
+    setItem: (key: string, val: string) => {
+      mem[key] = val;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  let changes = 0;
+  store.subscribe(() => {
+    changes++;
+  });
+
+  await store.setToken('   usr_padded_999   ');
+  assert.equal(store.token, 'usr_padded_999');
+  assert.equal(await store.getToken(), 'usr_padded_999');
+  assert.equal(mem[TOKEN_KEY], 'usr_padded_999');
+  assert.equal(changes, 1, 'setting new trimmed token notifies once');
+
+  // Setting the same token with different padding must not re-notify
+  await store.setToken(' \t usr_padded_999 \n ');
+  assert.equal(store.token, 'usr_padded_999');
+  assert.equal(changes, 1, 'identical trimmed token must not notify');
+});
+
 test('UserTokenStore getToken notifies only on identity change', async () => {
   const EXISTING_TOKEN = 'persisted-identity-token';
   const mem: Record<string, string> = { [TOKEN_KEY]: EXISTING_TOKEN };

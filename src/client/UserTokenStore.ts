@@ -455,7 +455,7 @@ export class UserTokenStore {
    *
    * Explicit identities installed via {@link UserTokenStore.setToken} or
    * {@link UserTokenStore.resetToken} are authoritative: `getToken()` never
-   * re-reads storage past one, and a storage read that was already in flight
+   * re-read storage past one, and a storage read that was already in flight
    * when the explicit identity was installed cannot revert it either. This
    * also holds when the explicit identity's own persistence write failed
    * (storage keeps an older token while the cache holds the explicit one).
@@ -546,25 +546,33 @@ export class UserTokenStore {
    * including after a failed persistence write (storage may keep an older
    * token; the in-memory identity still wins).
    *
+   * Rejects empty, whitespace-only, or non-string inputs with a {@link TypeError}
+   * to prevent locking the store to an empty identity, causing cache desynchronization
+   * and unconstrained UUID regeneration.
+   *
    * @example
    * ```ts
    * await UserTokenStore.shared.setToken(user.id);
    * ```
    */
   public async setToken(token: string): Promise<void> {
+    const trimmed = typeof token === 'string' ? token.trim() : '';
+    if (!trimmed) {
+      throw new TypeError('Expected a non-empty string for token');
+    }
     const previous = this.cachedToken;
     this.identityLocked = true;
-    this.cachedToken = token;
+    this.cachedToken = trimmed;
     if (this.storage) {
       try {
-        await this.storage.setItem(STORAGE_KEY, token);
+        await this.storage.setItem(STORAGE_KEY, trimmed);
       } catch {
         // ignore
       }
     }
     // Notify only after storage has settled so a re-resolving subscriber reads
     // the new value, and only on an actual identity change.
-    if (previous !== token) {
+    if (previous !== trimmed) {
       this.emitChange();
     }
   }
