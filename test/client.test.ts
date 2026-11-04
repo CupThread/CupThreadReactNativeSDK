@@ -4,6 +4,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   InsecureBaseUrlException,
   InvalidResponseException,
+  UnreadableUploadResponseException,
 } from '../src/client/FeedbackException';
 import { FeedbackPlatformUtil } from '../src/utils/platform';
 
@@ -874,6 +875,262 @@ test('FeedbackClient.postComment rejects malformed create responses with Invalid
       );
     }
     assert.equal(next, malformedBodies.length, 'every malformed body must be exercised');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient constructor rejects empty, whitespace-only, or missing appKey', () => {
+  assert.throws(
+    () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: '' }),
+    (err: any) => {
+      assert.ok(err instanceof TypeError);
+      assert.match(err.message, /Expected a non-empty string for appKey/);
+      return true;
+    }
+  );
+
+  assert.throws(
+    () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: '   ' }),
+    (err: any) => {
+      assert.ok(err instanceof TypeError);
+      assert.match(err.message, /Expected a non-empty string for appKey/);
+      return true;
+    }
+  );
+
+  assert.throws(
+    () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: null as any }),
+    (err: any) => {
+      assert.ok(err instanceof TypeError);
+      assert.match(err.message, /Expected a non-empty string for appKey/);
+      return true;
+    }
+  );
+
+  for (const dotKey of ['.', '..', ' . ', ' .. ']) {
+    assert.throws(
+      () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: dotKey }),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a non-empty string for appKey/);
+        return true;
+      }
+    );
+  }
+
+  // Whitespace-padded appKey is trimmed cleanly
+  const client = new FeedbackClient({
+    baseUrl: 'https://api.cupthread.com',
+    appKey: '  app_trimmed_123  ',
+  });
+  assert.equal(client.config.appKey, 'app_trimmed_123');
+});
+
+test('FeedbackClient rejects empty, whitespace-only, or dot segment featureRequestId before issuing requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCallCount = 0;
+  globalThis.fetch = (async () => {
+    fetchCallCount++;
+    return new Response(JSON.stringify({}), { status: 200 });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_id_test',
+    });
+
+    for (const emptyId of ['', '   ', '\t\n', '.', '..', ' . ', ' .. ']) {
+      await assert.rejects(
+        () => client.fetchFeatureRequest(emptyId),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for featureRequestId/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.castVote(emptyId, 'usr_1'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for featureRequestId/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.removeVote(emptyId, 'usr_1'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for featureRequestId/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.listComments(emptyId),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for featureRequestId/);
+          return true;
+        }
+      );
+
+      await assert.rejects(
+        () => client.postComment(emptyId, { body: 'hello' }, 'usr_1'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for featureRequestId/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(
+      fetchCallCount,
+      0,
+      'zero network requests should be dispatched when ID validation fails'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient rejects empty, whitespace-only, or dot segment userId before issuing requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCallCount = 0;
+  globalThis.fetch = (async () => {
+    fetchCallCount++;
+    return new Response(JSON.stringify({}), { status: 200 });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_id_test',
+    });
+
+    for (const emptyUserId of ['', '   ', '\t', '.', '..', ' . ', ' .. ']) {
+      await assert.rejects(
+        () => client.fetchUserProfile(emptyUserId),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for userId/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(
+      fetchCallCount,
+      0,
+      'zero network requests should be dispatched when userId validation fails'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient trims valid resource IDs and encodes reserved characters safely', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    requestedUrls.push(url.toString());
+    return new Response(
+      JSON.stringify({
+        request: {
+          id: 'fr_123',
+          appId: 'app_1',
+          title: 'T',
+          description: 'D',
+          status: 'planned',
+          approved: true,
+          voteCount: 0,
+          commentCount: 0,
+          hasVoted: false,
+          isOwnRequest: false,
+          createdAt: '2026-10-01T00:00:00.000Z',
+          updatedAt: '2026-10-01T00:00:00.000Z',
+        },
+        profile: {
+          id: 'u_123',
+          displayName: 'Dev',
+          joinedAt: '2026-01-01T00:00:00.000Z',
+          apps: [],
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_id_test',
+    });
+
+    // Padded ID is trimmed
+    await client.fetchFeatureRequest('  fr_123  ');
+    assert.equal(requestedUrls[0], 'https://api.cupthread.com/api/v1/feature-requests/fr_123');
+
+    // Reserved characters (e.g. slashes and spaces) are encoded
+    await client.fetchUserProfile('  u_user/with space  ');
+    assert.equal(
+      requestedUrls[1],
+      'https://api.cupthread.com/api/v1/users/u_user%2Fwith%20space/profile?appKey=app_id_test'
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('initUploadSession validates slot uploadId when uploadUrl is omitted', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_id_test',
+    });
+
+    for (const invalidUploadId of ['', '   ', '.', '..', undefined, null]) {
+      globalThis.fetch = (async () => {
+        return new Response(
+          JSON.stringify({
+            session: {
+              sessionId: 'ups_1',
+              sessionToken: 'tok_1',
+              expiresAt: '2026-10-23T13:00:00.000Z',
+              maxFileSizeBytes: 10485760,
+              maxFiles: 8,
+            },
+            files: [
+              {
+                clientFileId: 'f1',
+                uploadId: invalidUploadId,
+                maxSizeBytes: 10485760,
+              },
+            ],
+          }),
+          { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
+      }) as any;
+
+      await assert.rejects(
+        () =>
+          client.uploadAttachment({
+            file: { uri: 'file:///tmp/a.png' },
+            filename: 'a.png',
+            mimeType: 'image/png',
+            size: 100,
+          }),
+        (err: any) => {
+          assert.ok(err instanceof UnreadableUploadResponseException);
+          return true;
+        }
+      );
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

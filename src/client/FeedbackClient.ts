@@ -572,10 +572,14 @@ export class FeedbackClient {
     if (!config.allowInsecureBaseUrl && !/^https:\/\//i.test(baseUrl)) {
       throw new InsecureBaseUrlException();
     }
+    const appKey = typeof config.appKey === 'string' ? config.appKey.trim() : '';
+    if (!appKey || appKey === '.' || appKey === '..') {
+      throw new TypeError('Expected a non-empty string for appKey');
+    }
 
     this.config = {
       baseUrl,
-      appKey: config.appKey,
+      appKey,
       signingSecret: config.signingSecret,
       userAttributesSigner: config.userAttributesSigner,
       allowInsecureBaseUrl: config.allowInsecureBaseUrl ?? false,
@@ -592,9 +596,17 @@ export class FeedbackClient {
    * characters (`/`, `?`, `#`, `%`, whitespace, …) cannot alter the request
    * target. The server decodes path segments before matching, so values
    * without reserved characters produce byte-identical URLs.
+   *
+   * Rejects empty, whitespace-only, non-string inputs, and dot segments (`.` / `..`)
+   * with a {@link TypeError} to prevent routing to collection endpoints (e.g. `/api/v1/feature-requests/`)
+   * or forming malformed double-slash URLs (e.g. `//vote`).
    */
-  private static encodeSegment(segment: string): string {
-    return encodeURIComponent(segment);
+  private static encodeSegment(segment: string, paramName = 'segment'): string {
+    const trimmed = typeof segment === 'string' ? segment.trim() : '';
+    if (!trimmed || trimmed === '.' || trimmed === '..') {
+      throw new TypeError(`Expected a non-empty string for ${paramName}`);
+    }
+    return encodeURIComponent(trimmed);
   }
 
   /**
@@ -892,12 +904,22 @@ export class FeedbackClient {
       expiresAt: session.expiresAt,
       maxFileSizeBytes: session.maxFileSizeBytes,
       maxFiles: session.maxFiles,
-      files: slots.map((slot) => ({
-        clientFileId: slot.clientFileId,
-        uploadId: slot.uploadId,
-        uploadUrl: slot.uploadUrl || `/api/v1/uploads/${slot.uploadId}`,
-        maxSizeBytes: slot.maxSizeBytes,
-      })),
+      files: slots.map((slot) => {
+        let uploadUrl = slot.uploadUrl;
+        if (!uploadUrl) {
+          const uploadId = typeof slot.uploadId === 'string' ? slot.uploadId.trim() : '';
+          if (!uploadId || uploadId === '.' || uploadId === '..') {
+            throw new UnreadableUploadResponseException();
+          }
+          uploadUrl = `/api/v1/uploads/${encodeURIComponent(uploadId)}`;
+        }
+        return {
+          clientFileId: slot.clientFileId,
+          uploadId: slot.uploadId,
+          uploadUrl,
+          maxSizeBytes: slot.maxSizeBytes,
+        };
+      }),
     };
   }
 
@@ -1193,7 +1215,7 @@ export class FeedbackClient {
 
     const json = await this.request<UploadedFileResponse>({
       method: 'POST',
-      path: `/api/v1/uploads/${FeedbackClient.encodeSegment(slot.uploadId)}`,
+      path: `/api/v1/uploads/${FeedbackClient.encodeSegment(slot.uploadId, 'uploadId')}`,
       body: this.uploadBody(declaration),
       headers: { Authorization: `Bearer ${sessionToken}` },
       uploadRequest: true,
@@ -1259,7 +1281,7 @@ export class FeedbackClient {
   public async fetchAppConfig(options?: RequestOptions | AbortSignal): Promise<PublicAppConfig> {
     return this.request<PublicAppConfig>({
       method: 'GET',
-      path: `/api/v1/public/config/${FeedbackClient.encodeSegment(this.config.appKey)}`,
+      path: `/api/v1/public/config/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -1279,7 +1301,7 @@ export class FeedbackClient {
   public async fetchColumns(options?: RequestOptions | AbortSignal): Promise<BoardColumn[]> {
     const res = await this.request<{ columns: BoardColumn[] }>({
       method: 'GET',
-      path: `/api/v1/public/columns/${FeedbackClient.encodeSegment(this.config.appKey)}`,
+      path: `/api/v1/public/columns/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -1300,7 +1322,7 @@ export class FeedbackClient {
   public async fetchVersions(options?: RequestOptions | AbortSignal): Promise<AppVersion[]> {
     const res = await this.request<{ versions: AppVersion[] }>({
       method: 'GET',
-      path: `/api/v1/public/versions/${FeedbackClient.encodeSegment(this.config.appKey)}`,
+      path: `/api/v1/public/versions/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
@@ -1480,7 +1502,7 @@ export class FeedbackClient {
 
     const res = await this.request<{ request?: FeatureRequestItem }>({
       method: 'GET',
-      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}`,
       userToken,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
@@ -1572,7 +1594,7 @@ export class FeedbackClient {
 
     return this.request<VoteResult>({
       method: 'POST',
-      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/vote`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
         appKey: this.config.appKey,
         userToken,
@@ -1610,7 +1632,7 @@ export class FeedbackClient {
   ): Promise<VoteResult> {
     return this.request<VoteResult>({
       method: 'DELETE',
-      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/vote`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
         appKey: this.config.appKey,
         userToken,
@@ -1693,7 +1715,8 @@ export class FeedbackClient {
     const res = await this.request<Partial<ListFeatureRequestCommentsResult>>({
       method: 'GET',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(
-        featureRequestId
+        featureRequestId,
+        'featureRequestId'
       )}/comments?${params.toString()}`,
       signal: options?.signal,
       timeoutMs: options?.timeoutMs,
@@ -1807,7 +1830,7 @@ export class FeedbackClient {
     // body is still tolerated for proxies that already unwrapped it.
     const res = await this.request<{ comment?: FeatureRequestComment }>({
       method: 'POST',
-      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId)}/comments`,
+      path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/comments`,
       body: {
         body: draft.body.trim(),
         parentId: draft.parentId || undefined,
@@ -1895,7 +1918,8 @@ export class FeedbackClient {
     const res = await this.request<Partial<ListPublicChangelogResult>>({
       method: 'GET',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(
-        this.config.appKey
+        this.config.appKey,
+        'appKey'
       )}/changelog?${params.toString()}`,
       signal: options?.signal,
       timeoutMs: options?.timeoutMs,
@@ -2023,7 +2047,7 @@ export class FeedbackClient {
   ): Promise<ChangelogSubscriptionResult> {
     return this.request<ChangelogSubscriptionResult>({
       method: 'POST',
-      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/subscribe`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/changelog/subscribe`,
       body: { email: email.trim() },
       userToken,
       accepted: [200, 201],
@@ -2070,7 +2094,7 @@ export class FeedbackClient {
 
     return this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
-      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/changelog/unsubscribe`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/changelog/unsubscribe`,
       body: { token: trimmed },
       accept: 'application/json',
       accepted: [200],
@@ -2276,7 +2300,7 @@ export class FeedbackClient {
 
     return this.request<UserAttributesUpdateResult>({
       method: 'PUT',
-      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey)}/user`,
+      path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/user`,
       body,
       userToken: options.userToken,
       accepted: [200],
@@ -2331,7 +2355,7 @@ export class FeedbackClient {
 
     return this.request<PublicUserProfileResult>({
       method: 'GET',
-      path: `/api/v1/users/${FeedbackClient.encodeSegment(userId)}/profile${
+      path: `/api/v1/users/${FeedbackClient.encodeSegment(userId, 'userId')}/profile${
         query ? `?${query}` : ''
       }`,
       signal: extractSignal(options),
