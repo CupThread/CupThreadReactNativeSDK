@@ -400,3 +400,113 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestComposeSheet forwards initialDraft.turnstileToken to submitFeatureRequest (#223)',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const frSubmits: any[] = [];
+    const restoreFetch = stubSubmitFetch([], frSubmits);
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_fr_turnstile',
+    });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_turnstile',
+          children: React.createElement(FeatureRequestComposeSheet, {
+            visible: true,
+            initialDraft: {
+              title: 'Offline sync support',
+              description: 'Please enable caching and offline synchronization.',
+              turnstileToken: 'cf_turnstile_test_token_xyz',
+            },
+          }),
+        })
+      );
+    });
+    await flush();
+
+    try {
+      const submitButtons = renderer.root.findAll(
+        (node) =>
+          (node.type as any) === 'TouchableOpacity' && typeof node.props?.onPress === 'function'
+      );
+      const submitBtn = submitButtons[submitButtons.length - 1];
+      await act(async () => {
+        await submitBtn.props.onPress();
+      });
+      await flush();
+
+      assert.equal(frSubmits.length, 1);
+      assert.equal(frSubmits[0].title, 'Offline sync support');
+      assert.equal(frSubmits[0].description, 'Please enable caching and offline synchronization.');
+      assert.equal(frSubmits[0].turnstileToken, 'cf_turnstile_test_token_xyz');
+    } finally {
+      restoreFetch();
+      renderer.unmount();
+    }
+  }
+);
+
+test(
+  'FeatureRequestComposeSheet omits turnstileToken when initialDraft has no turnstileToken (#223)',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const frSubmits: any[] = [];
+    const restoreFetch = stubSubmitFetch([], frSubmits);
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_fr_no_turnstile',
+    });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_standard',
+          children: React.createElement(FeatureRequestComposeSheet, {
+            visible: true,
+            initialDraft: {
+              title: 'Calendar export feature',
+              description: 'Export scheduled tasks directly to iCal / Google Calendar.',
+            },
+          }),
+        })
+      );
+    });
+    await flush();
+
+    try {
+      const submitButtons = renderer.root.findAll(
+        (node) =>
+          (node.type as any) === 'TouchableOpacity' && typeof node.props?.onPress === 'function'
+      );
+      const submitBtn = submitButtons[submitButtons.length - 1];
+      await act(async () => {
+        await submitBtn.props.onPress();
+      });
+      await flush();
+
+      assert.equal(frSubmits.length, 1);
+      assert.equal(frSubmits[0].title, 'Calendar export feature');
+      assert.equal(
+        frSubmits[0].description,
+        'Export scheduled tasks directly to iCal / Google Calendar.'
+      );
+      assert.equal('turnstileToken' in frSubmits[0], false);
+    } finally {
+      restoreFetch();
+      renderer.unmount();
+    }
+  }
+);
