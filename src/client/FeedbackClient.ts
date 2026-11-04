@@ -1524,6 +1524,7 @@ export class FeedbackClient {
    * @param draft - Feature request proposal details (title, description, requesterName).
    * @param userToken - Current user identifier token.
    * @returns Submission confirmation and moderation pending status.
+   * @throws {@link TypeError} If `userToken`, `draft.title`, or `draft.description` is empty, whitespace-only, or not a string.
    * @throws {@link QuotaExceededException} If the workspace has reached its monthly submission quota (402).
    * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
@@ -1542,16 +1543,28 @@ export class FeedbackClient {
     userToken: string,
     options?: RequestOptions | AbortSignal
   ): Promise<FeatureRequestSubmissionResult> {
+    const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
+    if (!trimmedToken) {
+      throw new TypeError('Expected a non-empty string for userToken');
+    }
+    const title = typeof draft?.title === 'string' ? draft.title.trim() : '';
+    if (!title) {
+      throw new TypeError('Expected a non-empty string for draft.title');
+    }
+    const description = typeof draft?.description === 'string' ? draft.description.trim() : '';
+    if (!description) {
+      throw new TypeError('Expected a non-empty string for draft.description');
+    }
     const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
     return this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
       path: '/api/v1/feature-requests',
       body: {
         appKey: this.config.appKey,
-        title: draft.title.trim(),
-        description: draft.description.trim(),
+        title,
+        description,
         requesterName: draft.requesterName?.trim() || undefined,
-        requesterToken: userToken,
+        requesterToken: trimmedToken,
         ...(turnstileToken ? { turnstileToken } : {}),
       },
       accepted: [200, 201],
