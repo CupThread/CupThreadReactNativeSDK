@@ -139,6 +139,7 @@ test(
       'a..b@example.com',
       '.user@example.com',
       'user.@example.com',
+      '"alice\nbob"@example.com',
     ]) {
       const harness = await createHarness();
       try {

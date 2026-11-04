@@ -32,9 +32,11 @@ export function isValidEmail(value: string): boolean {
   // words (no consecutive dots, and no leading or trailing dot such as
   // `.user@example.com` or `user.@example.com`), while quoted local parts
   // such as `"a..b"@example.com`, `".user"@example.com`, or
-  // `"user."@example.com` are valid.
+  // `"user."@example.com` are valid. Control characters (ASCII 0x00–0x1F and
+  // 0x7F) are rejected in both unescaped and escaped forms within quoted
+  // local parts (RFC 5321 §4.1.2).
   return (
-    /^(?:(?:"(?:[^"\\]|\\.)*")|(?:[^.\s@"]+(?:\.[^.\s@"]+)*))@[^.\s@]+(?:\.[^.\s@]+)+$/.test(
+    /^(?:(?:"(?:[^"\\\x00-\x1f\x7f]|\\[^\x00-\x1f\x7f])*")|(?:[^.\s@"]+(?:\.[^.\s@"]+)*))@[^.\s@]+(?:\.[^.\s@]+)+$/.test(
       value
     ) && /[a-zA-Z0-9]$/.test(value)
   );
