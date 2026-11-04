@@ -651,3 +651,105 @@ test('the signature timestamp defaults to the current epoch seconds', async () =
     recorder.restore();
   }
 });
+
+test('updateUserAttributes rejects empty, whitespace, null, or non-string userToken with TypeError', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    let signerCalls = 0;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+      signingSecret: 'super-secret',
+      userAttributesSigner: () => {
+        signerCalls += 1;
+        return { signature: 'a'.repeat(64), timestamp: TIMESTAMP };
+      },
+    });
+
+    const invalidTokens: any[] = ['', '   ', '\t\n', null, undefined, 123, {}, []];
+
+    for (const invalidToken of invalidTokens) {
+      await assert.rejects(
+        () => client.updateUserAttributes({ userToken: invalidToken, isPaying: true }),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for options\.userToken/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(recorder.requests.length, 0, 'No network requests should be issued');
+    assert.equal(signerCalls, 0, 'Signing must not run for invalid userToken values');
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('updateUserAttributes rejects null, undefined, or non-object options with TypeError', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+    });
+
+    const invalidOptions: any[] = [null, undefined, 'string', 123, false];
+
+    for (const invalid of invalidOptions) {
+      await assert.rejects(
+        () => client.updateUserAttributes(invalid as any),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected an options object for updateUserAttributes/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(recorder.requests.length, 0, 'No network requests should be issued');
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('updateUserAttributes trims userToken and plan/currency before computing HMAC signature and headers', async () => {
+  const recorder = installRecordingFetch();
+  try {
+    const secret = 'super-secret';
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+      signingSecret: secret,
+    });
+
+    await client.updateUserAttributes({
+      userToken: '   usr_padded_tok_123   ',
+      isPaying: true,
+      plan: '   Pro Annual   ',
+      mrr: 29.99,
+      currency: '   USD   ',
+      timestamp: TIMESTAMP,
+    });
+
+    assert.equal(recorder.requests.length, 1);
+    const req = recorder.requests[0];
+    assert.equal(req.headers['X-User-Token'], 'usr_padded_tok_123');
+    assert.equal(req.body.plan, 'Pro Annual');
+    assert.equal(req.body.currency, 'USD');
+
+    const expectedCanonical = buildUserAttributesCanonicalString({
+      appKey: APP_KEY,
+      userToken: 'usr_padded_tok_123',
+      isPaying: true,
+      plan: 'Pro Annual',
+      mrr: 29.99,
+      currency: 'USD',
+      timestamp: TIMESTAMP,
+    });
+    const expectedSignature = hmacSha256Hex(secret, expectedCanonical);
+    assert.equal(req.body.signature, expectedSignature);
+  } finally {
+    recorder.restore();
+  }
+});
