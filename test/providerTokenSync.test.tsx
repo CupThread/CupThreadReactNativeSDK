@@ -235,7 +235,7 @@ test(
   renderTestOptions,
   async () => {
     let resolveRead!: (val: string | null) => void;
-    let readPromise = new Promise<string | null>((res) => {
+    const readPromise = new Promise<string | null>((res) => {
       resolveRead = res;
     });
     UserTokenStore.configure({
