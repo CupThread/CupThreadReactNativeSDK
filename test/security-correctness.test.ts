@@ -356,6 +356,88 @@ test('useToggleVote ignores own requests and empty userToken', () => {
   assert.equal(ownItem.hasVoted, false);
 });
 
+test('useToggleVote ignores whitespace-only, empty, and non-string userToken (#236)', () => {
+  let callCount = 0;
+  const mockClient = {
+    castVote: async () => {
+      callCount++;
+      return { voted: true, voteCount: 6 };
+    },
+    removeVote: async () => {
+      callCount++;
+      return { voted: false, voteCount: 4 };
+    },
+    toggleVote: async () => {
+      callCount++;
+      return { voted: true, voteCount: 6 };
+    },
+  } as any;
+
+  let applyCount = 0;
+  let testItem = makeItem({ id: 'fr_not_own', isOwnRequest: false, hasVoted: false, voteCount: 5 });
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem
+  ) => {
+    applyCount++;
+    testItem = transform(testItem);
+  };
+
+  const invalidTokens = ['', '   ', ' \t \n ', null as any, undefined as any, 12345 as any];
+  for (const token of invalidTokens) {
+    applyCount = 0;
+    callCount = 0;
+    const harness = renderTestHook(() => useToggleVote(mockClient, token, applyChange));
+    harness.result.toggleVote(testItem);
+    assert.equal(callCount, 0, `Expected 0 network calls for token: ${JSON.stringify(token)}`);
+    assert.equal(
+      applyCount,
+      0,
+      `Expected 0 optimistic apply calls for token: ${JSON.stringify(token)}`
+    );
+    assert.equal(testItem.hasVoted, false);
+    assert.equal(testItem.voteCount, 5);
+    assert.equal(harness.result.isVoting('fr_not_own'), false);
+    assert.equal(harness.result.voteError, null);
+    assert.equal(harness.result.getVoteError('fr_not_own'), null);
+  }
+});
+
+test('useToggleVote trims padded userToken for network requests and settlement meta (#236)', async () => {
+  const calls: Array<{ action: 'cast' | 'remove'; id: string; token: string }> = [];
+  const metas: any[] = [];
+  const mockClient = {
+    castVote: async (id: string, token: string) => {
+      calls.push({ action: 'cast', id, token });
+      return { voted: true, voteCount: 6 };
+    },
+  } as any;
+
+  let testItem = makeItem({ id: 'fr_padded', isOwnRequest: false, hasVoted: false, voteCount: 5 });
+  const applyChange = (
+    _id: string,
+    transform: (item: FeatureRequestItem) => FeatureRequestItem,
+    meta?: any
+  ) => {
+    metas.push(meta);
+    testItem = transform(testItem);
+  };
+
+  const harness = renderTestHook(() =>
+    useToggleVote(mockClient, '   usr_padded_tok   ', applyChange)
+  );
+  harness.result.toggleVote(testItem);
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].token, 'usr_padded_tok');
+  assert.equal(testItem.hasVoted, true);
+  assert.equal(testItem.voteCount, 6);
+  const settlementMeta = metas.find((m) => m?.isFinal);
+  assert.ok(settlementMeta);
+  assert.equal(settlementMeta.userToken, 'usr_padded_tok');
+});
+
 test('useToggleVote routes hasVoted=false to castVote and hasVoted=true to removeVote', async () => {
   const calls: Array<{ action: 'cast' | 'remove'; id: string; token: string }> = [];
   const mockClient = {
