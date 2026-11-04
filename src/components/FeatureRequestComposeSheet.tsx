@@ -294,7 +294,15 @@ export function FeatureRequestComposeSheet({
 
       if (onSubmitSuccess) {
         try {
-          onSubmitSuccess(result, { ownsForm });
+          const ret = onSubmitSuccess(result, { ownsForm });
+          if (ret && typeof (ret as any).then === 'function') {
+            Promise.resolve(ret).catch((asyncErr) => {
+              warnInDev(
+                '[CupThread] FeatureRequestComposeSheet: onSubmitSuccess async rejection:',
+                asyncErr
+              );
+            });
+          }
         } catch (callbackErr) {
           warnInDev(
             '[CupThread] FeatureRequestComposeSheet: onSubmitSuccess callback threw:',
@@ -306,7 +314,15 @@ export function FeatureRequestComposeSheet({
         // submit belongs to; otherwise it would dismiss a form the user just
         // re-engaged.
         try {
-          onClose();
+          const ret = onClose();
+          if (ret && typeof (ret as any).then === 'function') {
+            Promise.resolve(ret).catch((asyncErr) => {
+              warnInDev(
+                '[CupThread] FeatureRequestComposeSheet: onClose async rejection:',
+                asyncErr
+              );
+            });
+          }
         } catch (closeErr) {
           warnInDev('[CupThread] FeatureRequestComposeSheet: onClose callback threw:', closeErr);
         }

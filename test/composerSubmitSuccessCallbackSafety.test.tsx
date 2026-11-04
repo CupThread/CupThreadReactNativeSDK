@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { FeedbackClient } from '../src/client/FeedbackClient';
-import type { FeedbackDraft, FeatureRequestDraft, SubmitSuccessContext } from '../src/types';
 
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 

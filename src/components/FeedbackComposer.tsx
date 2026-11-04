@@ -488,7 +488,12 @@ export function FeedbackComposer({
 
       if (onSubmitSuccess) {
         try {
-          onSubmitSuccess(result, { ownsForm });
+          const ret = onSubmitSuccess(result, { ownsForm });
+          if (ret && typeof (ret as any).then === 'function') {
+            Promise.resolve(ret).catch((asyncErr) => {
+              warnInDev('[CupThread] FeedbackComposer: onSubmitSuccess async rejection:', asyncErr);
+            });
+          }
         } catch (callbackErr) {
           warnInDev('[CupThread] FeedbackComposer: onSubmitSuccess callback threw:', callbackErr);
         }
@@ -499,7 +504,12 @@ export function FeedbackComposer({
         // re-engaged.
         if (ownsForm && onClose) {
           try {
-            onClose();
+            const ret = onClose();
+            if (ret && typeof (ret as any).then === 'function') {
+              Promise.resolve(ret).catch((asyncErr) => {
+                warnInDev('[CupThread] FeedbackComposer: onClose async rejection:', asyncErr);
+              });
+            }
           } catch (closeErr) {
             warnInDev('[CupThread] FeedbackComposer: onClose callback threw:', closeErr);
           }
