@@ -1441,21 +1441,23 @@ export class FeedbackClient {
       params.append('offset', String(options.offset ?? 0));
     }
 
+    const trimmedUserToken = typeof options.userToken === 'string' ? options.userToken.trim() : '';
+
     if (transport === 'query' || transport === 'both') {
-      if (options.userToken) {
-        params.append('userToken', options.userToken);
+      if (trimmedUserToken) {
+        params.append('userToken', trimmedUserToken);
       }
     }
 
     if (options.versionId) params.append('versionId', options.versionId);
     if (options.query) params.append('q', options.query);
 
-    const sendHeader = (transport === 'header' || transport === 'both') && !!options.userToken;
+    const sendHeader = (transport === 'header' || transport === 'both') && !!trimmedUserToken;
 
     return this.request<ListFeatureRequestsResult>({
       method: 'GET',
       path: `/api/v1/feature-requests?${params.toString()}`,
-      userToken: sendHeader ? options.userToken : undefined,
+      userToken: sendHeader ? trimmedUserToken : undefined,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
     });
@@ -2470,8 +2472,9 @@ export class FeedbackClient {
     if (options.body && !isFormData) {
       headers['Content-Type'] = 'application/json';
     }
-    if (options.userToken) {
-      headers['X-User-Token'] = options.userToken;
+    const trimmedUserToken = typeof options.userToken === 'string' ? options.userToken.trim() : '';
+    if (trimmedUserToken) {
+      headers['X-User-Token'] = trimmedUserToken;
     }
     // Some public endpoints content-negotiate: the changelog unsubscribe route
     // renders an HTML landing page for browsers unless JSON is requested.
