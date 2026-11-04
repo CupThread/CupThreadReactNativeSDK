@@ -953,6 +953,120 @@ test('FeedbackClient.postComment with a sessionToken sends Bearer auth and no X-
   }
 });
 
+test('FeedbackClient.postComment rejects invalid draft or draft.body without issuing network requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(
+      JSON.stringify({
+        comment: { id: 'c_test', body: 'body', createdAt: '2026-10-25T00:00:00.000Z' },
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    for (const invalidDraft of [null, undefined, 'string', 123, true]) {
+      await assert.rejects(
+        () => client.postComment('fr_123', invalidDraft as any, 'usr_tok'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a draft object for postComment/);
+          return true;
+        }
+      );
+    }
+
+    const invalidBodies: any[] = ['', '   ', '\t\n', null, undefined, 123, {}];
+    for (const invalidBody of invalidBodies) {
+      await assert.rejects(
+        () => client.postComment('fr_123', { body: invalidBody } as any, 'usr_tok'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for draft\.body/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(networkCalls, 0, 'No network requests should be issued for invalid draft fields');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.postComment normalizes whitespace in parentId, replyToAuthorName, and userToken', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: Array<{ headers: Record<string, string>; body?: any }> = [];
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    const headerBag = new Headers(init?.headers);
+    const headers: Record<string, string> = {};
+    headerBag.forEach((value: string, key: string) => {
+      headers[key.toLowerCase()] = value;
+    });
+    captured.push({ headers, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return new Response(
+      JSON.stringify({
+        comment: { id: 'c_norm', body: 'hi', createdAt: '2026-10-25T00:00:00.000Z' },
+      }),
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_comment_test',
+    });
+
+    // 1. Whitespace parentId and replyToAuthorName normalize to undefined
+    await client.postComment(
+      'fr_123',
+      {
+        body: '  Trimmed comment  ',
+        parentId: '   ',
+        replyToAuthorName: '   \t  ',
+      },
+      '   usr_padded_token   '
+    );
+
+    assert.equal(captured.length, 1);
+    assert.deepEqual(captured[0].body, {
+      body: 'Trimmed comment',
+    });
+    assert.equal(captured[0].headers['x-user-token'], 'usr_padded_token');
+
+    // 2. Whitespace-only userToken omits X-User-Token header
+    await client.postComment(
+      'fr_123',
+      {
+        body: 'Another comment',
+        parentId: '   parent_123   ',
+        replyToAuthorName: '  Bob  ',
+      },
+      '   \n\t  '
+    );
+
+    assert.equal(captured.length, 2);
+    assert.deepEqual(captured[1].body, {
+      body: 'Another comment',
+      parentId: 'parent_123',
+      replyToAuthorName: 'Bob',
+    });
+    assert.equal(captured[1].headers['x-user-token'], undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('FeedbackClient.postComment maps a 401 authentication_required rejection to AuthenticationRequiredException', async () => {
   const originalFetch = globalThis.fetch;
   let requestCount = 0;
