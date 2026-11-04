@@ -1068,3 +1068,84 @@ test('fetchFeatureRequests: absent or empty userToken does not serialize literal
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchFeatureRequests & request normalize whitespace userToken (#214)', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = '';
+  let capturedHeaders: Record<string, string> = {};
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = url.toString();
+    const headersBag = new Headers(init?.headers);
+    capturedHeaders = {};
+    headersBag.forEach((value, key) => {
+      capturedHeaders[key.toLowerCase()] = value;
+    });
+    return new Response(JSON.stringify({ requests: [], total: 0 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_norm_tok',
+    });
+
+    // 1. Whitespace-only userToken with default header transport omits X-User-Token
+    await client.fetchFeatureRequests({ userToken: '   \t\n  ' });
+    let parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['x-user-token'], undefined);
+
+    // 2. Whitespace-only userToken with query transport omits userToken from query
+    await client.fetchFeatureRequests({ userToken: '   ', tokenTransport: 'query' });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['x-user-token'], undefined);
+
+    // 3. Whitespace-only userToken with both transport omits both
+    await client.fetchFeatureRequests({ userToken: '   \r\n  ', tokenTransport: 'both' });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['x-user-token'], undefined);
+
+    // 4. Padded userToken with header transport trims X-User-Token
+    await client.fetchFeatureRequests({
+      userToken: '   usr_padded_header_123   ',
+      tokenTransport: 'header',
+    });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.has('userToken'), false);
+    assert.equal(capturedHeaders['x-user-token'], 'usr_padded_header_123');
+
+    // 5. Padded userToken with query transport trims query param
+    await client.fetchFeatureRequests({
+      userToken: '   usr_padded_query_456   ',
+      tokenTransport: 'query',
+    });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('userToken'), 'usr_padded_query_456');
+    assert.equal(capturedHeaders['x-user-token'], undefined);
+
+    // 6. Padded userToken with both transport trims both
+    await client.fetchFeatureRequests({
+      userToken: '   usr_padded_both_789   ',
+      tokenTransport: 'both',
+    });
+    parsed = new URL(capturedUrl);
+    assert.equal(parsed.searchParams.get('userToken'), 'usr_padded_both_789');
+    assert.equal(capturedHeaders['x-user-token'], 'usr_padded_both_789');
+
+    // 7. Generic request dispatcher suppresses whitespace-only tokens across endpoints
+    await client.subscribeToChangelog('alex@example.com', '   \t\t   ');
+    assert.equal(capturedHeaders['x-user-token'], undefined);
+
+    // 8. Generic request dispatcher trims padded tokens across endpoints
+    await client.subscribeToChangelog('alex@example.com', '   usr_changelog_tok   ');
+    assert.equal(capturedHeaders['x-user-token'], 'usr_changelog_tok');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
