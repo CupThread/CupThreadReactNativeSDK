@@ -855,15 +855,17 @@ test('FeedbackClient.submit rejects invalid draft title or description without i
       );
     }
 
-    // null or undefined draft
-    await assert.rejects(
-      () => client.submit(null as any),
-      (err: any) => {
-        assert.ok(err instanceof TypeError);
-        assert.match(err.message, /Expected a non-empty string for draft\.title/);
-        return true;
-      }
-    );
+    // null, undefined, or non-object draft
+    for (const invalidDraft of [null, undefined, 'draft', 123, true]) {
+      await assert.rejects(
+        () => client.submit(invalidDraft as any),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a draft object for submit/);
+          return true;
+        }
+      );
+    }
 
     assert.equal(networkCalls, 0, 'No network requests should be issued for invalid draft fields');
   } finally {
