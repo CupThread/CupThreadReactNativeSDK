@@ -144,7 +144,7 @@ test('subscribeToChangelog silently omits the header for an empty token', async 
   );
 });
 
-test('resolveEffectiveUserToken prefers a truthy context token', async () => {
+test('resolveEffectiveUserToken prefers a truthy context token and trims padding', async () => {
   UserTokenStore.configure(makeSeededAdapter('store_tok'));
   const resolved = await resolveEffectiveUserToken('ctx_tok');
   assert.equal(
@@ -152,9 +152,12 @@ test('resolveEffectiveUserToken prefers a truthy context token', async () => {
     'ctx_tok',
     'an explicit context token must be used verbatim, not re-read from the store'
   );
+
+  const trimmed = await resolveEffectiveUserToken('  ctx_tok_padded  ');
+  assert.equal(trimmed, 'ctx_tok_padded', 'surrounding whitespace must be trimmed');
 });
 
-test('resolveEffectiveUserToken falls back to the store for an empty context token', async () => {
+test('resolveEffectiveUserToken falls back to the store for empty or whitespace-only context token', async () => {
   UserTokenStore.configure(makeDeferredAdapter('tok_bootstrap', 60));
   const startedAt = Date.now();
   const resolved = await resolveEffectiveUserToken('');
@@ -163,6 +166,15 @@ test('resolveEffectiveUserToken falls back to the store for an empty context tok
     Date.now() - startedAt >= 50,
     'the fallback must await the (possibly async) store read, not return early'
   );
+
+  for (const whitespace of ['   ', '\t\n\r', ' \t ']) {
+    const wsResolved = await resolveEffectiveUserToken(whitespace);
+    assert.equal(
+      wsResolved,
+      'tok_bootstrap',
+      'whitespace-only context token must fall back to the store'
+    );
+  }
 });
 
 test('resolveEffectiveUserToken treats null and undefined like empty', async () => {

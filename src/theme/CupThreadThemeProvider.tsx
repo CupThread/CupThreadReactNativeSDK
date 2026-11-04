@@ -370,12 +370,14 @@ export function CupThreadProvider({
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === 'dark';
 
+  const normalizedUserToken = typeof explicitUserToken === 'string' ? explicitUserToken.trim() : '';
+
   // Never seed from the synchronous `.token` getter here: with an async
   // storage adapter it would mint a throwaway UUID before the persisted
   // token finishes loading, and requests fired in that window would be
   // attributed to a throwaway identity.
-  const [resolvedUserToken, setResolvedUserToken] = useState<string>(explicitUserToken || '');
-  const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(explicitUserToken));
+  const [resolvedUserToken, setResolvedUserToken] = useState<string>(normalizedUserToken);
+  const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(normalizedUserToken));
   const [configState, setConfigState] = useState<ConfigFetchState>({
     appConfig: null,
     isLoadingConfig: true,
@@ -384,8 +386,8 @@ export function CupThreadProvider({
   const activeRequestIdRef = useRef(0);
 
   useEffect(() => {
-    if (explicitUserToken) {
-      setResolvedUserToken(explicitUserToken);
+    if (normalizedUserToken) {
+      setResolvedUserToken(normalizedUserToken);
       setIsTokenReady(true);
       return;
     }
@@ -413,7 +415,7 @@ export function CupThreadProvider({
       cancelled = true;
       unsubscribe();
     };
-  }, [explicitUserToken]);
+  }, [normalizedUserToken]);
 
   const loadConfig = useCallback(
     async (signal?: AbortSignal, options?: { maxRetries?: number; retryDelayMs?: number }) => {

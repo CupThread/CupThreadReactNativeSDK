@@ -21,8 +21,9 @@ import { UserTokenStore } from '../client/UserTokenStore';
  * ```
  */
 export async function resolveEffectiveUserToken(contextToken?: string | null): Promise<string> {
-  if (contextToken) {
-    return contextToken;
+  const trimmed = typeof contextToken === 'string' ? contextToken.trim() : '';
+  if (trimmed) {
+    return trimmed;
   }
   return UserTokenStore.shared.getToken();
 }

@@ -180,6 +180,84 @@ test('explicit userToken prop wins over store identity switches', renderTestOpti
   renderer!.unmount();
 });
 
+test(
+  'whitespace-only userToken prop falls back to UserTokenStore and defers readiness',
+  renderTestOptions,
+  async () => {
+    let resolveRead!: (val: string | null) => void;
+    const readPromise = new Promise<string | null>((res) => {
+      resolveRead = res;
+    });
+    const store = UserTokenStore.configure({
+      getItem: () => readPromise,
+      setItem: async () => {},
+    });
+    const observations: Observation[] = [];
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={makeClient()} userToken={'   \t\n  '}>
+          <TokenProbe observations={observations} />
+        </CupThreadProvider>
+      );
+    });
+
+    // On initial mount before storage resolves, isTokenReady must be false and token must be empty
+    assert.equal(observations[0].ready, false);
+    assert.equal(observations[0].token, '');
+
+    await act(async () => {
+      resolveRead('persisted-fallback-token');
+    });
+    await flush();
+
+    // After async store resolves, token ready should flip to true and adopt store token
+    const settled = observations[observations.length - 1];
+    assert.equal(settled.ready, true);
+    assert.equal(settled.token, 'persisted-fallback-token');
+
+    // Follows subsequent store switches because the prop was only whitespace
+    await act(async () => {
+      await store.setToken('user-after-ws-fallback');
+    });
+    await flush();
+
+    const afterSwitch = observations[observations.length - 1];
+    assert.equal(afterSwitch.token, 'user-after-ws-fallback');
+    assert.equal(afterSwitch.ready, true);
+    renderer!.unmount();
+  }
+);
+
+test(
+  'whitespace-padded userToken prop is trimmed cleanly and marks token ready immediately',
+  renderTestOptions,
+  async () => {
+    UserTokenStore.configure(makeAsyncAdapter());
+    const observations: Observation[] = [];
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={makeClient()} userToken="   user-padded-token   ">
+          <TokenProbe observations={observations} />
+        </CupThreadProvider>
+      );
+    });
+
+    assert.equal(observations[0].ready, true);
+    assert.equal(observations[0].token, 'user-padded-token');
+
+    await flush();
+
+    const settled = observations[observations.length - 1];
+    assert.equal(settled.ready, true);
+    assert.equal(settled.token, 'user-padded-token');
+    renderer!.unmount();
+  }
+);
+
 test('unmounting the provider unsubscribes from the store', renderTestOptions, async () => {
   const store = UserTokenStore.configure(makeAsyncAdapter());
   const observations: Observation[] = [];
