@@ -752,15 +752,17 @@ test('FeedbackClient.submitFeatureRequest rejects invalid draft title or descrip
       );
     }
 
-    // null or undefined draft
-    await assert.rejects(
-      () => client.submitFeatureRequest(null as any, 'usr_valid_token'),
-      (err: any) => {
-        assert.ok(err instanceof TypeError);
-        assert.match(err.message, /Expected a non-empty string for draft\.title/);
-        return true;
-      }
-    );
+    // null, undefined, or non-object draft
+    for (const invalidDraft of [null, undefined, 'draft', 123, true]) {
+      await assert.rejects(
+        () => client.submitFeatureRequest(invalidDraft as any, 'usr_valid_token'),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a draft object for submitFeatureRequest/);
+          return true;
+        }
+      );
+    }
 
     assert.equal(networkCalls, 0, 'No network requests should be issued for invalid draft fields');
   } finally {
@@ -800,6 +802,131 @@ test('FeedbackClient.submitFeatureRequest trims whitespace from userToken and dr
     assert.equal(capturedBody.description, 'Add CSV export button to metrics view');
     assert.equal(capturedBody.requesterName, 'Taylor');
     assert.equal(capturedBody.requesterToken, 'usr_padded_token_123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submitFeatureRequest defensively handles non-string or whitespace-only draft.requesterName', async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedBodies: any[] = [];
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBodies.push(init?.body ? JSON.parse(String(init.body)) : undefined);
+    return new Response(
+      JSON.stringify({ featureRequestId: 'fr_test_non_string', pending: false }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_requester_name_test',
+    });
+
+    const nonStringOrWhitespaceValues: any[] = [1042, true, false, {}, [], '   ', ''];
+    for (const val of nonStringOrWhitespaceValues) {
+      await client.submitFeatureRequest(
+        {
+          title: 'Export to JSON',
+          description: 'Allow exporting user records to JSON format',
+          requesterName: val,
+        },
+        'usr_tok'
+      );
+    }
+
+    assert.equal(capturedBodies.length, nonStringOrWhitespaceValues.length);
+    for (const body of capturedBodies) {
+      assert.equal(body.title, 'Export to JSON');
+      assert.equal(body.description, 'Allow exporting user records to JSON format');
+      assert.equal(body.requesterName, undefined);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient resolveTurnstileToken defensively handles non-string explicit tokens and non-string provider results', async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedBodies: any[] = [];
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBodies.push(init?.body ? JSON.parse(String(init.body)) : undefined);
+    return new Response(
+      JSON.stringify({ featureRequestId: 'fr_turnstile_test', id: 'fb_1', pending: false }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }) as any;
+
+  try {
+    // 1. Non-string explicit tokens on submitFeatureRequest and submit without provider
+    const clientWithoutProvider = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_turnstile_non_string',
+    });
+
+    await clientWithoutProvider.submitFeatureRequest(
+      {
+        title: 'Feature Title',
+        description: 'Feature Description',
+        turnstileToken: 12345 as any,
+      },
+      'usr_tok'
+    );
+    assert.equal(capturedBodies[0].turnstileToken, undefined);
+
+    await clientWithoutProvider.submit({
+      title: 'Feedback Title',
+      description: 'Feedback Description',
+      turnstileToken: { token: 'invalid' } as any,
+    });
+    assert.equal(capturedBodies[1].turnstileToken, undefined);
+
+    // 2. Provider returning non-string values
+    const clientWithInvalidProvider = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_turnstile_invalid_prov',
+      turnstileTokenProvider: async () => ({ token: 'abc' }) as any,
+    });
+
+    await clientWithInvalidProvider.submitFeatureRequest(
+      {
+        title: 'Feature Title 2',
+        description: 'Feature Description 2',
+      },
+      'usr_tok'
+    );
+    assert.equal(capturedBodies[2].turnstileToken, undefined);
+
+    await clientWithInvalidProvider.submit({
+      title: 'Feedback Title 2',
+      description: 'Feedback Description 2',
+    });
+    assert.equal(capturedBodies[3].turnstileToken, undefined);
+
+    // 3. Provider returning padded valid token
+    const clientWithPaddedProvider = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_turnstile_padded_prov',
+      turnstileTokenProvider: async () => '   tok_from_provider   ',
+    });
+
+    await clientWithPaddedProvider.submitFeatureRequest(
+      {
+        title: 'Feature Title 3',
+        description: 'Feature Description 3',
+      },
+      'usr_tok'
+    );
+    assert.equal(capturedBodies[4].turnstileToken, 'tok_from_provider');
   } finally {
     globalThis.fetch = originalFetch;
   }
