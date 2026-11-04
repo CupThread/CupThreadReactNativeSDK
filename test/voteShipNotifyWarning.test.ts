@@ -291,3 +291,160 @@ test('useToggleVote sends the opt-in only when casting, never when removing a vo
   assert.equal(stateItem.voteCount, 9);
   harness.unmount();
 });
+
+test('useToggleVote: a throwing onVoteWarning does not roll back the vote or trigger onVoteError', async () => {
+  const warning = {
+    code: 'email_not_verified' as const,
+    error: 'Ship notifications on this board are bound to your signed-in email address',
+  };
+  const { client } = makeStubClient({ voted: true, voteCount: 11, warning });
+
+  let stateItem = makeItem({ voteCount: 10, hasVoted: false });
+  const dispatches: Array<{ name: string; meta?: any }> = [];
+  const applyChange = (
+    _id: string,
+    transform: (it: FeatureRequestItem) => FeatureRequestItem,
+    meta?: any
+  ) => {
+    dispatches.push({ name: transform.name, meta });
+    stateItem = transform(stateItem);
+  };
+
+  const errors: unknown[] = [];
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() =>
+      useToggleVote(client, 'usr_token', applyChange, {
+        onVoteWarning: () => {
+          throw new Error('Host warning callback blew up');
+        },
+        onVoteError: (err) => errors.push(err),
+        shipNotifyEmail: 'someone@example.com',
+      })
+    );
+
+    harness.result.toggleVote(stateItem);
+    assert.equal(stateItem.hasVoted, true);
+    assert.equal(stateItem.voteCount, 11);
+    assert.equal(harness.result.isVoting('fr_1'), true);
+
+    await flush();
+    harness.rerender();
+
+    // The server truth was applied and isFinal was dispatched
+    assert.equal(stateItem.hasVoted, true);
+    assert.equal(stateItem.voteCount, 11);
+
+    // Rollback was never dispatched
+    assert.ok(
+      !dispatches.some((d) => d.meta?.isRollback),
+      'rollback must never be dispatched after a successful vote'
+    );
+    assert.ok(
+      dispatches.some((d) => d.meta?.isFinal),
+      'isFinal settlement must be dispatched'
+    );
+
+    // onVoteError was NOT called
+    assert.equal(errors.length, 0, 'onVoteError must not be invoked');
+
+    // voteError is null
+    assert.equal(harness.result.voteError, null);
+    assert.equal(harness.result.getVoteError('fr_1'), null);
+
+    // isVoting is cleared
+    assert.equal(harness.result.isVoting('fr_1'), false);
+
+    // No unhandled promise rejection leaked
+    assert.equal(unhandledRejections.length, 0, 'no unhandled rejections');
+
+    harness.unmount();
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('useToggleVote: a throwing applyChange during success settlement does not trigger rollback or unhandled rejection', async () => {
+  const { client } = makeStubClient({ voted: true, voteCount: 11 });
+
+  const applyChange = (
+    _id: string,
+    _transform: (it: FeatureRequestItem) => FeatureRequestItem,
+    meta?: any
+  ) => {
+    if (meta?.isFinal) {
+      throw new Error('applyChange success threw');
+    }
+  };
+
+  const errors: unknown[] = [];
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() =>
+      useToggleVote(client, 'usr_token', applyChange, {
+        onVoteError: (err) => errors.push(err),
+      })
+    );
+
+    const item = makeItem({ id: 'fr_apply_throw', voteCount: 10, hasVoted: false });
+    harness.result.toggleVote(item);
+
+    await flush();
+    harness.rerender();
+
+    // onVoteError was NOT called
+    assert.equal(
+      errors.length,
+      0,
+      'onVoteError must not be called when success applyChange throws'
+    );
+    assert.equal(harness.result.voteError, null);
+    assert.equal(harness.result.isVoting('fr_apply_throw'), false);
+    assert.equal(unhandledRejections.length, 0, 'no unhandled rejections');
+    harness.unmount();
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('useToggleVote: malformed null server response or handler error does not leak unhandled rejection and clears isVoting', async () => {
+  const { client } = makeStubClient(null as any);
+
+  let stateItem = makeItem({ id: 'fr_null_res', voteCount: 10, hasVoted: false });
+  const applyChange = (_id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    stateItem = transform(stateItem);
+  };
+
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() => useToggleVote(client, 'usr_token', applyChange));
+
+    harness.result.toggleVote(stateItem);
+    assert.equal(harness.result.isVoting('fr_null_res'), true);
+
+    await flush();
+    harness.rerender();
+
+    assert.equal(harness.result.isVoting('fr_null_res'), false);
+    assert.equal(unhandledRejections.length, 0, 'no unhandled rejections');
+
+    harness.unmount();
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});

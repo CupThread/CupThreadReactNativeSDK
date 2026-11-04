@@ -2,6 +2,28 @@ import { useCallback, useRef, useState } from 'react';
 import { FeedbackClient } from '../client/FeedbackClient';
 import type { FeatureRequestItem, VoteResult, VoteWarning } from '../types';
 
+declare const __DEV__: boolean | undefined;
+
+/**
+ * Emits a diagnostic warning to `console.warn` only in development environments.
+ *
+ * @param message - Diagnostic message describing the caught failure.
+ * @param error - Optional caught error or exception details.
+ */
+function warnInDev(message: string, error?: unknown): void {
+  const isDev =
+    typeof (globalThis as any).__DEV__ !== 'undefined'
+      ? Boolean((globalThis as any).__DEV__)
+      : typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  if (isDev) {
+    if (error !== undefined) {
+      console.warn(message, error);
+    } else {
+      console.warn(message);
+    }
+  }
+}
+
 function dispatchVoteRequest(
   client: FeedbackClient,
   featureRequestId: string,
@@ -288,54 +310,93 @@ export function useToggleVote(
         hasVoted: item.hasVoted,
         voteCount: item.voteCount,
       };
-      applyChangeRef.current(item.id, withOptimisticVote);
+      try {
+        applyChangeRef.current(item.id, withOptimisticVote);
+      } catch (optimisticErr) {
+        warnInDev(
+          '[CupThread] useToggleVote: applyChange threw during optimistic update:',
+          optimisticErr
+        );
+      }
 
       dispatchVoteRequest(client, item.id, userToken, preVoteSnapshot.hasVoted, shipNotifyEmail)
-        .then((res) => {
-          // The server-confirmed result settles the optimistic-vote
-          // lifecycle: release the pending mutation along with the update
-          // (see VoteChangeMeta.isFinal) so later server snapshots win for
-          // the row again and settled snapshots cannot accumulate (#184).
-          // The tap-time identity rides along so a settlement landing after
-          // an identity switch is dropped instead of rewritten onto the new
-          // identity's rows.
-          applyChangeRef.current(item.id, (current) => withServerVote(current, res), {
-            isFinal: true,
-            userToken,
-          });
-          setErrorsByItemId((prev) => {
-            if (!prev[item.id]) return prev;
-            const next = { ...prev };
-            delete next[item.id];
-            return next;
-          });
-          setVoteError(null);
-          // A warning means the vote was saved but an optional opt-in was
-          // refused, so it must not be routed through the error path.
-          if (res.warning) {
-            onVoteWarningRef.current?.(res.warning, item);
+        .then(
+          (res) => {
+            // The server-confirmed result settles the optimistic-vote
+            // lifecycle: release the pending mutation along with the update
+            // (see VoteChangeMeta.isFinal) so later server snapshots win for
+            // the row again and settled snapshots cannot accumulate (#184).
+            // The tap-time identity rides along so a settlement landing after
+            // an identity switch is dropped instead of rewritten onto the new
+            // identity's rows.
+            try {
+              applyChangeRef.current(item.id, (current) => withServerVote(current, res), {
+                isFinal: true,
+                userToken,
+              });
+            } catch (applyErr) {
+              warnInDev(
+                '[CupThread] useToggleVote: applyChange threw during success settlement:',
+                applyErr
+              );
+            }
+
+            setErrorsByItemId((prev) => {
+              if (!prev[item.id]) return prev;
+              const next = { ...prev };
+              delete next[item.id];
+              return next;
+            });
+            setVoteError(null);
+
+            // A warning means the vote was saved but an optional opt-in was
+            // refused, so it must not be routed through the error path.
+            if (res?.warning) {
+              try {
+                onVoteWarningRef.current?.(res.warning, item);
+              } catch (warningErr) {
+                warnInDev('[CupThread] useToggleVote: onVoteWarning callback threw:', warningErr);
+              }
+            }
+          },
+          (err: unknown) => {
+            // The rollback also ends the optimistic-vote lifecycle: hosts that
+            // keep a pending mutation for the item (so an in-flight vote
+            // survives concurrent refreshes) must release it here, or the
+            // rolled-back snapshot would pin the row over every later server
+            // snapshot (#139). The tap-time identity rides along so a rollback
+            // landing after an identity switch cannot restore guest-era vote
+            // fields onto the new identity's row.
+            try {
+              applyChangeRef.current(
+                item.id,
+                (current) => withVoteRollback(current, preVoteSnapshot),
+                {
+                  isRollback: true,
+                  userToken,
+                }
+              );
+            } catch (applyErr) {
+              warnInDev('[CupThread] useToggleVote: applyChange threw during rollback:', applyErr);
+            }
+
+            const errorObj = err instanceof Error ? err : new Error(String(err));
+            setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));
+            setVoteError(errorObj);
+
+            try {
+              onVoteErrorRef.current?.(err, item);
+            } catch (errorCallbackErr) {
+              warnInDev('[CupThread] useToggleVote: onVoteError callback threw:', errorCallbackErr);
+            }
           }
-        })
-        .catch((err: unknown) => {
-          // The rollback also ends the optimistic-vote lifecycle: hosts that
-          // keep a pending mutation for the item (so an in-flight vote
-          // survives concurrent refreshes) must release it here, or the
-          // rolled-back snapshot would pin the row over every later server
-          // snapshot (#139). The tap-time identity rides along so a rollback
-          // landing after an identity switch cannot restore guest-era vote
-          // fields onto the new identity's row.
-          applyChangeRef.current(item.id, (current) => withVoteRollback(current, preVoteSnapshot), {
-            isRollback: true,
-            userToken,
-          });
-          const errorObj = err instanceof Error ? err : new Error(String(err));
-          setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));
-          setVoteError(errorObj);
-          onVoteErrorRef.current?.(err, item);
-        })
+        )
         .finally(() => {
           pendingIdsRef.current.delete(item.id);
           setPendingIds(Array.from(pendingIdsRef.current));
+        })
+        .catch((unexpectedErr: unknown) => {
+          warnInDev('[CupThread] useToggleVote: unexpected error in vote handler:', unexpectedErr);
         });
     },
     [client, userToken, shipNotifyEmail]

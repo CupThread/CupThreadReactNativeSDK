@@ -575,3 +575,107 @@ test('acceptance 6: toggling a vote on an imported request keeps the imported vo
   assert.equal(stateItem.voteCount, 125);
   assert.equal(stateItem.importedVotes, 120);
 });
+
+test('acceptance: a throwing onVoteError after a failed vote keeps rollback, records voteError, releases isVoting, and produces no unhandled rejection', async () => {
+  const mockClient = {
+    toggleVote: async () => {
+      throw new Error('Network error');
+    },
+  } as any;
+
+  let stateItem = makeItem({ id: 'item_throw_err', voteCount: 5, hasVoted: false });
+  let rollbackCount = 0;
+  const applyChange = (
+    _id: string,
+    transform: (it: FeatureRequestItem) => FeatureRequestItem,
+    meta?: any
+  ) => {
+    if (meta?.isRollback) {
+      rollbackCount++;
+    }
+    stateItem = transform(stateItem);
+  };
+
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() =>
+      useToggleVote(mockClient, 'usr_token', applyChange, {
+        onVoteError: () => {
+          throw new Error('Host onVoteError crashed');
+        },
+      })
+    );
+
+    harness.result.toggleVote(stateItem);
+    assert.equal(harness.result.isVoting('item_throw_err'), true);
+
+    await new Promise((r) => setTimeout(r, 15));
+
+    // Rollback applied exactly once
+    assert.equal(rollbackCount, 1, 'rollback must be applied exactly once');
+    assert.equal(stateItem.hasVoted, false);
+    assert.equal(stateItem.voteCount, 5);
+
+    // voteError is still recorded correctly for the item
+    assert.ok(harness.result.voteError instanceof Error);
+    assert.equal(harness.result.voteError?.message, 'Network error');
+    assert.equal(harness.result.getVoteError('item_throw_err')?.message, 'Network error');
+
+    // isVoting released
+    assert.equal(harness.result.isVoting('item_throw_err'), false);
+
+    // unhandled rejection stays silent
+    assert.equal(unhandledRejections.length, 0, 'process unhandledRejection must stay silent');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('acceptance: a throwing applyChange during rollback does not trigger unhandled rejection and releases isVoting', async () => {
+  const mockClient = {
+    toggleVote: async () => {
+      throw new Error('Network failure');
+    },
+  } as any;
+
+  let optimisticApplied = false;
+  const applyChange = (
+    _id: string,
+    _transform: (it: FeatureRequestItem) => FeatureRequestItem,
+    meta?: any
+  ) => {
+    if (meta?.isRollback) {
+      throw new Error('applyChange rollback threw');
+    }
+    optimisticApplied = true;
+  };
+
+  const unhandledRejections: unknown[] = [];
+  const onUnhandled = (err: unknown) => {
+    unhandledRejections.push(err);
+  };
+  process.on('unhandledRejection', onUnhandled);
+
+  try {
+    const harness = renderTestHook(() => useToggleVote(mockClient, 'usr_token', applyChange));
+
+    const item = makeItem({ id: 'fr_rollback_throw', voteCount: 5, hasVoted: false });
+    harness.result.toggleVote(item);
+    assert.equal(optimisticApplied, true);
+    assert.equal(harness.result.isVoting('fr_rollback_throw'), true);
+
+    await new Promise((r) => setTimeout(r, 15));
+
+    assert.equal(harness.result.isVoting('fr_rollback_throw'), false);
+    assert.ok(harness.result.voteError instanceof Error);
+    assert.equal(harness.result.voteError?.message, 'Network failure');
+    assert.equal(unhandledRejections.length, 0, 'no unhandled rejections');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
