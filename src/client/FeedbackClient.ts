@@ -2204,6 +2204,8 @@ export class FeedbackClient {
    *
    * @param options - User attributes and optional signing overrides.
    * @returns Update confirmation.
+   * @throws {@link TypeError} If `options` is not an object or `options.userToken` is empty,
+   * whitespace-only, or not a string.
    * @throws {@link InvalidUserAttributesException} If `mrr` is not finite or
    * the signature timestamp is not a nonnegative integer.
    * @throws {@link InvalidUserAttributesSignatureException} If the configured
@@ -2233,10 +2235,18 @@ export class FeedbackClient {
   public async updateUserAttributes(
     options: UpdateUserAttributesOptions
   ): Promise<UserAttributesUpdateResult> {
+    if (!options || typeof options !== 'object') {
+      throw new TypeError('Expected an options object for updateUserAttributes');
+    }
+    const trimmedUserToken = typeof options.userToken === 'string' ? options.userToken.trim() : '';
+    if (!trimmedUserToken) {
+      throw new TypeError('Expected a non-empty string for options.userToken');
+    }
     const isPaying = options.isPaying;
-    const plan = options.plan == null ? options.plan : options.plan.trim();
+    const plan = typeof options.plan === 'string' ? options.plan.trim() : options.plan;
     const mrr = options.mrr;
-    const currency = options.currency == null ? options.currency : options.currency.trim();
+    const currency =
+      typeof options.currency === 'string' ? options.currency.trim() : options.currency;
 
     const body: {
       isPaying?: boolean | null;
@@ -2260,7 +2270,7 @@ export class FeedbackClient {
       const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000);
       const canonicalArguments: UserAttributesCanonicalArguments = {
         appKey: this.config.appKey,
-        userToken: options.userToken,
+        userToken: trimmedUserToken,
         isPaying,
         plan,
         mrr,
@@ -2323,7 +2333,7 @@ export class FeedbackClient {
       method: 'PUT',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/user`,
       body,
-      userToken: options.userToken,
+      userToken: trimmedUserToken,
       accepted: [200],
       signal: options.signal,
       timeoutMs: options.timeoutMs,
