@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { FeedbackClient } from '../src/client/FeedbackClient';
+import { FeedbackClient, DEFAULT_FEATURE_REQUESTS_PAGE_SIZE } from '../src/client/FeedbackClient';
 import { useFeatureRequests } from '../src/hooks/useFeatureRequests';
 import type { FeatureRequestItem } from '../src/types';
 import {
@@ -268,6 +268,145 @@ async function captureFeatureRequestsRequest(
     globalThis.fetch = originalFetch;
   }
 }
+
+test('FeedbackClient.fetchFeatureRequests clamps limit to 1–100, handles floats/non-finite, and defaults to 50 (#232)', async () => {
+  assert.equal(DEFAULT_FEATURE_REQUESTS_PAGE_SIZE, 50);
+
+  // Default limit
+  let { parsed } = await captureFeatureRequestsRequest({});
+  assert.equal(parsed.searchParams.get('limit'), '50');
+
+  // Below lower bound (clamped to 1)
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: 0 }));
+  assert.equal(parsed.searchParams.get('limit'), '1');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: -10 }));
+  assert.equal(parsed.searchParams.get('limit'), '1');
+
+  // Above upper bound (clamped to 100)
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: 500 }));
+  assert.equal(parsed.searchParams.get('limit'), '100');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: 101 }));
+  assert.equal(parsed.searchParams.get('limit'), '100');
+
+  // Floats are floored
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: 25.9 }));
+  assert.equal(parsed.searchParams.get('limit'), '25');
+
+  // Non-finite and invalid numbers fall back to default
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: NaN as any }));
+  assert.equal(parsed.searchParams.get('limit'), '50');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: Infinity as any }));
+  assert.equal(parsed.searchParams.get('limit'), '50');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ limit: 'invalid' as any }));
+  assert.equal(parsed.searchParams.get('limit'), '50');
+});
+
+test('FeedbackClient.fetchFeatureRequests clamps offset to >= 0, handles floats/non-finite, and defaults to 0 (#232)', async () => {
+  // Default offset
+  let { parsed } = await captureFeatureRequestsRequest({});
+  assert.equal(parsed.searchParams.get('offset'), '0');
+
+  // Negative offset clamped to 0
+  ({ parsed } = await captureFeatureRequestsRequest({ offset: -10 }));
+  assert.equal(parsed.searchParams.get('offset'), '0');
+
+  // Float offset floored
+  ({ parsed } = await captureFeatureRequestsRequest({ offset: 15.8 }));
+  assert.equal(parsed.searchParams.get('offset'), '15');
+
+  // Non-finite and invalid offset fall back to 0
+  ({ parsed } = await captureFeatureRequestsRequest({ offset: NaN as any }));
+  assert.equal(parsed.searchParams.get('offset'), '0');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ offset: -Infinity as any }));
+  assert.equal(parsed.searchParams.get('offset'), '0');
+
+  ({ parsed } = await captureFeatureRequestsRequest({ offset: 'invalid' as any }));
+  assert.equal(parsed.searchParams.get('offset'), '0');
+
+  // When cursor is supplied, offset is omitted regardless of options.offset value
+  ({ parsed } = await captureFeatureRequestsRequest({ cursor: 'cur_abc', offset: -5 }));
+  assert.equal(parsed.searchParams.get('cursor'), 'cur_abc');
+  assert.equal(parsed.searchParams.get('offset'), null);
+});
+
+test('FeedbackClient.fetchFeatureRequests normalizes whitespace-only and padded versionId and query (#232)', async () => {
+  // Whitespace-only versionId and query are omitted
+  let { parsed } = await captureFeatureRequestsRequest({
+    versionId: '   \t\n  ',
+    query: '   ',
+  });
+  assert.equal(parsed.searchParams.get('versionId'), null);
+  assert.equal(parsed.searchParams.get('q'), null);
+
+  // Empty string versionId and query are omitted
+  ({ parsed } = await captureFeatureRequestsRequest({
+    versionId: '',
+    query: '',
+  }));
+  assert.equal(parsed.searchParams.get('versionId'), null);
+  assert.equal(parsed.searchParams.get('q'), null);
+
+  // Non-string values are omitted
+  ({ parsed } = await captureFeatureRequestsRequest({
+    versionId: 123 as any,
+    query: ['test'] as any,
+  }));
+  assert.equal(parsed.searchParams.get('versionId'), null);
+  assert.equal(parsed.searchParams.get('q'), null);
+
+  // Padded strings are trimmed
+  ({ parsed } = await captureFeatureRequestsRequest({
+    versionId: '  v2.1.0  ',
+    query: '  dark mode  ',
+  }));
+  assert.equal(parsed.searchParams.get('versionId'), 'v2.1.0');
+  assert.equal(parsed.searchParams.get('q'), 'dark mode');
+});
+
+test('useFeatureRequests clamps pageSize to 1–100, aligning offset advancement and short-page checks (#232)', async () => {
+  const capturedCalls: any[] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      capturedCalls.push(opts);
+      return {
+        requests: Array.from({ length: 100 }, (_, i) => ({
+          id: `fr_${opts.offset ?? 0}_${i}`,
+          title: `Item ${i}`,
+          description: `Desc ${i}`,
+          voteCount: 0,
+          hasVoted: false,
+          status: 'open',
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+        total: 200,
+      };
+    },
+  };
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient as any,
+      userToken: 'test_token',
+      pageSize: 150, // above 100 limit
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(capturedCalls.length, 1);
+  assert.equal(capturedCalls[0].limit, 100);
+  assert.equal(capturedCalls[0].offset, 0);
+
+  // loadMore should advance by the clamped pageSize (100), not the raw 150
+  await harness.result.loadMore();
+  assert.equal(capturedCalls.length, 2);
+  assert.equal(capturedCalls[1].limit, 100);
+  assert.equal(capturedCalls[1].offset, 100);
+});
 
 test('fetchFeatureRequests omits an absent or empty userToken from query and header', async () => {
   const cases: Array<{ label: string; userToken: string | undefined }> = [
