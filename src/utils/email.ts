@@ -36,6 +36,7 @@ export function isValidEmail(value: string): boolean {
   // 0x7F) are rejected in both unescaped and escaped forms within quoted
   // local parts (RFC 5321 §4.1.2).
   return (
+    // eslint-disable-next-line no-control-regex -- rejecting ASCII control characters in quoted email local parts per RFC 5321
     /^(?:(?:"(?:[^"\\\x00-\x1f\x7f]|\\[^\x00-\x1f\x7f])*")|(?:[^.\s@"]+(?:\.[^.\s@"]+)*))@[^.\s@]+(?:\.[^.\s@]+)+$/.test(
       value
     ) && /[a-zA-Z0-9]$/.test(value)
