@@ -655,10 +655,15 @@ test('the signature timestamp defaults to the current epoch seconds', async () =
 test('updateUserAttributes rejects empty, whitespace, null, or non-string userToken with TypeError', async () => {
   const recorder = installRecordingFetch();
   try {
+    let signerCalls = 0;
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: APP_KEY,
       signingSecret: 'super-secret',
+      userAttributesSigner: () => {
+        signerCalls += 1;
+        return { signature: 'a'.repeat(64), timestamp: TIMESTAMP };
+      },
     });
 
     const invalidTokens: any[] = ['', '   ', '\t\n', null, undefined, 123, {}, []];
@@ -675,6 +680,7 @@ test('updateUserAttributes rejects empty, whitespace, null, or non-string userTo
     }
 
     assert.equal(recorder.requests.length, 0, 'No network requests should be issued');
+    assert.equal(signerCalls, 0, 'Signing must not run for invalid userToken values');
   } finally {
     recorder.restore();
   }
