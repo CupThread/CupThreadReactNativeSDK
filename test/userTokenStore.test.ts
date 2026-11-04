@@ -348,6 +348,24 @@ test('UserTokenStore: setToken rejects empty, whitespace-only, or non-string tok
   }
 });
 
+test('UserTokenStore: rejected setToken does not block persisted-token adoption', async () => {
+  const read = deferred<string | null>();
+  const adapter = {
+    getItem: () => read.promise,
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+
+  await assert.rejects(() => store.setToken(' \t\n'), TypeError);
+
+  read.resolve('persisted-after-rejection');
+  await flushMicrotasks();
+
+  assert.equal(store.token, 'persisted-after-rejection');
+  assert.equal(await store.getToken(), 'persisted-after-rejection');
+});
+
 test('UserTokenStore: setToken trims whitespace-padded token and notifies only on true identity change', async () => {
   const mem: Record<string, string> = {};
   const adapter = {
