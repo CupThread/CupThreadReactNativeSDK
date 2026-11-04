@@ -679,3 +679,50 @@ test('acceptance: a throwing applyChange during rollback does not trigger unhand
     process.off('unhandledRejection', onUnhandled);
   }
 });
+
+test('acceptance (#236): whitespace-only userToken safely no-ops without optimistic mutation, client call, or rollback error', async () => {
+  let networkCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(JSON.stringify({ voted: true, voteCount: 6 }), { status: 200 });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_whitespace_token',
+    });
+
+    let applyCalled = false;
+    let stateItem = makeItem({ id: 'item_whitespace', voteCount: 5, hasVoted: false });
+    const applyChange = (
+      _id: string,
+      transform: (it: FeatureRequestItem) => FeatureRequestItem
+    ) => {
+      applyCalled = true;
+      stateItem = transform(stateItem);
+    };
+
+    const observedErrors: { error: unknown; item: FeatureRequestItem }[] = [];
+    const harness = renderTestHook(() =>
+      useToggleVote(client, '   \t  \n  ', applyChange, {
+        onVoteError: (error, item) => observedErrors.push({ error, item }),
+      })
+    );
+
+    harness.result.toggleVote(stateItem);
+    await new Promise((r) => setTimeout(r, 20));
+
+    assert.equal(applyCalled, false, 'applyChange should not be called');
+    assert.equal(networkCalls, 0, 'no network calls should be dispatched');
+    assert.equal(stateItem.hasVoted, false, 'hasVoted must remain unchanged');
+    assert.equal(stateItem.voteCount, 5, 'voteCount must remain unchanged');
+    assert.equal(harness.result.isVoting('item_whitespace'), false);
+    assert.equal(harness.result.voteError, null, 'voteError must remain null');
+    assert.equal(harness.result.getVoteError('item_whitespace'), null);
+    assert.equal(observedErrors.length, 0, 'onVoteError must not be invoked');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

@@ -31,6 +31,7 @@ function dispatchVoteRequest(
   wasVoted: boolean,
   shipNotifyEmail?: string
 ): Promise<VoteResult> {
+  const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
   const proto = FeedbackClient?.prototype;
   const hasCustomToggleVote =
     typeof client.toggleVote === 'function' && client.toggleVote !== proto?.toggleVote;
@@ -43,18 +44,18 @@ function dispatchVoteRequest(
       typeof client.removeVote === 'function' &&
       (!hasCustomToggleVote || client.removeVote !== proto?.removeVote)
     ) {
-      return client.removeVote(featureRequestId, userToken);
+      return client.removeVote(featureRequestId, trimmedToken);
     }
-    return client.toggleVote(featureRequestId, userToken);
+    return client.toggleVote(featureRequestId, trimmedToken);
   }
 
   if (
     typeof client.castVote === 'function' &&
     (!hasCustomToggleVote || client.castVote !== proto?.castVote)
   ) {
-    return client.castVote(featureRequestId, userToken, castOptions);
+    return client.castVote(featureRequestId, trimmedToken, castOptions);
   }
-  return client.toggleVote(featureRequestId, userToken, castOptions);
+  return client.toggleVote(featureRequestId, trimmedToken, castOptions);
 }
 
 /**
@@ -229,7 +230,7 @@ export interface UseToggleVoteResult {
  *   `options.onVoteWarning`; the vote itself still applies.
  *
  * @param client - {@link FeedbackClient} used to dispatch the toggle request.
- * @param userToken - Current user token; toggles are ignored while empty.
+ * @param userToken - Current user token; toggles are ignored while empty or whitespace-only.
  * @param applyChange - Applier that persists a transform into the component's state.
  * @param options - Optional configuration options such as error callbacks.
  *
@@ -291,7 +292,8 @@ export function useToggleVote(
 
   const toggleVote = useCallback(
     (item: FeatureRequestItem) => {
-      if (!item || item.isOwnRequest || !userToken) return;
+      const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
+      if (!item || item.isOwnRequest || !trimmedToken) return;
       if (pendingIdsRef.current.has(item.id)) return;
 
       // Clear previous error on the same item at tap time
@@ -319,7 +321,7 @@ export function useToggleVote(
         );
       }
 
-      dispatchVoteRequest(client, item.id, userToken, preVoteSnapshot.hasVoted, shipNotifyEmail)
+      dispatchVoteRequest(client, item.id, trimmedToken, preVoteSnapshot.hasVoted, shipNotifyEmail)
         .then(
           (res) => {
             // The server-confirmed result settles the optimistic-vote
@@ -332,7 +334,7 @@ export function useToggleVote(
             try {
               applyChangeRef.current(item.id, (current) => withServerVote(current, res), {
                 isFinal: true,
-                userToken,
+                userToken: trimmedToken,
               });
             } catch (applyErr) {
               warnInDev(
@@ -373,7 +375,7 @@ export function useToggleVote(
                 (current) => withVoteRollback(current, preVoteSnapshot),
                 {
                   isRollback: true,
-                  userToken,
+                  userToken: trimmedToken,
                 }
               );
             } catch (applyErr) {
