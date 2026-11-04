@@ -660,6 +660,150 @@ test('FeedbackClient.castVote and removeVote trim whitespace from userToken in r
   }
 });
 
+test('FeedbackClient.submitFeatureRequest rejects empty or whitespace userToken without issuing network requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(JSON.stringify({ featureRequestId: 'fr_test', pending: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_validation',
+    });
+
+    const invalidTokens: any[] = ['', '   ', '\t\n', null, undefined, 123, {}];
+
+    for (const invalidToken of invalidTokens) {
+      await assert.rejects(
+        () =>
+          client.submitFeatureRequest(
+            { title: 'Feature Title', description: 'Feature Description' },
+            invalidToken
+          ),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for userToken/);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(networkCalls, 0, 'No network requests should be issued for invalid userTokens');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submitFeatureRequest rejects invalid draft title or description without issuing network requests', async () => {
+  const originalFetch = globalThis.fetch;
+  let networkCalls = 0;
+
+  globalThis.fetch = (async () => {
+    networkCalls++;
+    return new Response(JSON.stringify({ featureRequestId: 'fr_test', pending: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_draft_validation',
+    });
+
+    const invalidValues: any[] = ['', '   ', '\t\n', null, undefined, 123, {}];
+
+    for (const invalidTitle of invalidValues) {
+      await assert.rejects(
+        () =>
+          client.submitFeatureRequest(
+            { title: invalidTitle, description: 'Valid Description' } as any,
+            'usr_valid_token'
+          ),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for draft\.title/);
+          return true;
+        }
+      );
+    }
+
+    for (const invalidDesc of invalidValues) {
+      await assert.rejects(
+        () =>
+          client.submitFeatureRequest(
+            { title: 'Valid Title', description: invalidDesc } as any,
+            'usr_valid_token'
+          ),
+        (err: any) => {
+          assert.ok(err instanceof TypeError);
+          assert.match(err.message, /Expected a non-empty string for draft\.description/);
+          return true;
+        }
+      );
+    }
+
+    // null or undefined draft
+    await assert.rejects(
+      () => client.submitFeatureRequest(null as any, 'usr_valid_token'),
+      (err: any) => {
+        assert.ok(err instanceof TypeError);
+        assert.match(err.message, /Expected a non-empty string for draft\.title/);
+        return true;
+      }
+    );
+
+    assert.equal(networkCalls, 0, 'No network requests should be issued for invalid draft fields');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submitFeatureRequest trims whitespace from userToken and draft fields in request body', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+    return new Response(JSON.stringify({ featureRequestId: 'fr_test_padded', pending: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_trim_test',
+    });
+
+    await client.submitFeatureRequest(
+      {
+        title: '   Export CSV and JSON   ',
+        description: '   Add CSV export button to metrics view   ',
+        requesterName: '   Taylor   ',
+      },
+      '   usr_padded_token_123   '
+    );
+
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.title, 'Export CSV and JSON');
+    assert.equal(capturedBody.description, 'Add CSV export button to metrics view');
+    assert.equal(capturedBody.requesterName, 'Taylor');
+    assert.equal(capturedBody.requesterToken, 'usr_padded_token_123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async () => {
   const originalFetch = globalThis.fetch;
   const methods: string[] = [];
