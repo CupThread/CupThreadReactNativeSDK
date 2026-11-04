@@ -368,6 +368,46 @@ test('FeedbackClient.fetchFeatureRequests normalizes whitespace-only and padded 
   assert.equal(parsed.searchParams.get('q'), 'dark mode');
 });
 
+test('useFeatureRequests clamps pageSize to 1–100, aligning offset advancement and short-page checks (#232)', async () => {
+  const capturedCalls: any[] = [];
+  const mockClient = {
+    fetchFeatureRequests: async (opts: any) => {
+      capturedCalls.push(opts);
+      return {
+        requests: Array.from({ length: 100 }, (_, i) => ({
+          id: `fr_${opts.offset ?? 0}_${i}`,
+          title: `Item ${i}`,
+          description: `Desc ${i}`,
+          voteCount: 0,
+          hasVoted: false,
+          status: 'open',
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+        total: 200,
+      };
+    },
+  };
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient as any,
+      userToken: 'test_token',
+      pageSize: 150, // above 100 limit
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(capturedCalls.length, 1);
+  assert.equal(capturedCalls[0].limit, 100);
+  assert.equal(capturedCalls[0].offset, 0);
+
+  // loadMore should advance by the clamped pageSize (100), not the raw 150
+  await harness.result.loadMore();
+  assert.equal(capturedCalls.length, 2);
+  assert.equal(capturedCalls[1].limit, 100);
+  assert.equal(capturedCalls[1].offset, 100);
+});
+
 test('fetchFeatureRequests omits an absent or empty userToken from query and header', async () => {
   const cases: Array<{ label: string; userToken: string | undefined }> = [
     { label: 'key present with undefined', userToken: undefined },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FeedbackClient } from '../client/FeedbackClient';
+import { DEFAULT_FEATURE_REQUESTS_PAGE_SIZE, type FeedbackClient } from '../client/FeedbackClient';
 import { RateLimitedException } from '../client/FeedbackException';
 import type { FeatureRequestItem } from '../types';
 import { SearchRateLimiter } from '../utils/searchRateLimiter';
@@ -113,7 +113,7 @@ export interface UseFeatureRequestsOptions {
   query?: string;
 
   /**
-   * Number of items to fetch per page.
+   * Number of items to fetch per page (default: 50, clamped to 1–100).
    *
    * @defaultValue 50
    */
@@ -284,11 +284,16 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     isTokenReady = true,
     versionId,
     query,
-    pageSize = 50,
     debounceMs = 0,
     searchRateLimiterOptions,
     enabled = true,
   } = options;
+
+  const rawPageSize =
+    typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)
+      ? options.pageSize
+      : DEFAULT_FEATURE_REQUESTS_PAGE_SIZE;
+  const pageSize = Math.min(Math.max(Math.floor(rawPageSize), 1), 100);
 
   const [items, setItems] = useState<FeatureRequestItem[]>([]);
   const [total, setTotal] = useState<number>(0);
