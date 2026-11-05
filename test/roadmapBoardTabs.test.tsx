@@ -39,7 +39,9 @@ const SafeAreaViewStub = ({ children }: any) => {
   return children ?? null;
 };
 
+const flatListProps: any[] = [];
 const FlatListStub = (props: any) => {
+  flatListProps.push(props);
   const { data, renderItem, keyExtractor } = props;
   return (
     <>
@@ -52,6 +54,8 @@ const FlatListStub = (props: any) => {
   );
 };
 
+const TouchableOpacityStub = (props: any) => props.children ?? null;
+
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
     namedExports: {
@@ -61,7 +65,7 @@ if (supportsModuleMocks) {
       View: ({ children }: any) => children ?? null,
       Text: TextStub,
       TextInput: () => null,
-      TouchableOpacity: ({ children }: any) => children ?? null,
+      TouchableOpacity: TouchableOpacityStub,
       ActivityIndicator: () => null,
       FlatList: FlatListStub,
       ScrollView: ({ children }: any) => children ?? null,
@@ -226,6 +230,122 @@ test(
       );
     } finally {
       restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
+
+function getColumnTabs(renderer: TestRenderer.ReactTestRenderer): TestRenderer.ReactTestInstance[] {
+  return renderer.root.findAll(
+    (node: any) =>
+      node.type === TouchableOpacityStub &&
+      node.props?.accessibilityRole === 'button' &&
+      node.props?.accessibilityState &&
+      typeof node.props.accessibilityState.selected === 'boolean'
+  );
+}
+
+function getTabLabel(tabNode: TestRenderer.ReactTestInstance): string {
+  const textNodes = tabNode.findAllByType(TextStub as any);
+  return textNodes.map((n: any) => String(n.props?.children ?? '')).join('');
+}
+
+test(
+  'RoadmapBoardScreen: resets selectedColumnId to first visible column when orphan requests disappear after Other was selected (#239)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    flatListProps.length = 0;
+    let currentRequests: FeatureRequestItem[] = [
+      makeRequest('fr_planned', 'col_a'),
+      makeRequest('fr_orphan', 'unknown_col'),
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/columns/')) {
+        return new Response(
+          JSON.stringify({
+            columns: [makeColumn('col_a', 'Planned'), makeColumn('col_b', 'Shipped')],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        return new Response(
+          JSON.stringify({ requests: currentRequests, total: currentRequests.length }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderBoard();
+
+      // Initial state: Planned, Shipped, Other tabs exist.
+      const initialTabs = getColumnTabs(renderer);
+      assert.equal(initialTabs.length, 3, 'Planned, Shipped, and Other tabs must be present');
+      const otherTab = initialTabs.find((t) => getTabLabel(t).startsWith('Other'));
+      assert.ok(otherTab, 'Other tab must be present when orphan requests exist');
+      assert.equal(otherTab.props.accessibilityState.selected, false);
+
+      const plannedTab = initialTabs.find((t) => getTabLabel(t).startsWith('Planned'));
+      assert.ok(plannedTab);
+      assert.equal(plannedTab.props.accessibilityState.selected, true);
+
+      // User selects the "Other" tab.
+      await act(async () => {
+        otherTab.props.onPress();
+      });
+      await flush();
+
+      // Verify "Other" tab is now selected.
+      const selectedTabs = getColumnTabs(renderer);
+      const activeOtherTab = selectedTabs.find((t) => getTabLabel(t).startsWith('Other'));
+      assert.ok(activeOtherTab);
+      assert.equal(activeOtherTab.props.accessibilityState.selected, true);
+
+      // Orphan requests disappear (e.g. reassigned to Planned col_a).
+      currentRequests = [makeRequest('fr_planned', 'col_a'), makeRequest('fr_orphan', 'col_a')];
+
+      // Trigger refresh via board's RefreshControl.
+      const boardList = flatListProps.find((p) => p.refreshControl != null);
+      assert.ok(boardList?.refreshControl, 'rendered board FlatList must provide a refreshControl');
+      await act(async () => {
+        await boardList.refreshControl.props.onRefresh();
+      });
+      await flush();
+
+      // After refresh: Other tab is gone, selected tab resets to first visible column ("Planned").
+      const settledTabs = getColumnTabs(renderer);
+      assert.equal(
+        settledTabs.some((t) => getTabLabel(t).startsWith('Other')),
+        false,
+        'Other tab must not be present when orphan requests are 0'
+      );
+      const settledPlannedTab = settledTabs.find((t) => getTabLabel(t).startsWith('Planned'));
+      assert.ok(settledPlannedTab, 'Planned tab must exist');
+      assert.equal(
+        settledPlannedTab.props.accessibilityState.selected,
+        true,
+        'Planned tab must be automatically selected when Other disappears'
+      );
+
+      // Verify that requests belonging to Planned are displayed rather than an empty list.
+      const finalTexts = finalPassTexts();
+      assert.ok(
+        finalTexts.includes('Request fr_planned'),
+        'board must display Planned items instead of a blank screen'
+      );
+      assert.ok(
+        finalTexts.includes('Request fr_orphan'),
+        'reassigned orphan item must display under Planned'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
       renderer?.unmount();
     }
   }
