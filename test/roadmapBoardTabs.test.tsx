@@ -80,7 +80,8 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+const { CupThreadProvider, useCupThreadAppConfig } =
+  await import('../src/theme/CupThreadThemeProvider');
 const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
 const { VoteButton } = await import('../src/components/VoteButton');
 const { UserTokenStore } = await import('../src/client/UserTokenStore');
@@ -452,6 +453,273 @@ test(
     } finally {
       globalThis.fetch = originalFetch;
       UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen fetches columns on mount even when isTokenReady is false (#210)',
+  renderTestOptions,
+  async () => {
+    let columnsFetchCount = 0;
+    let requestsFetchCount = 0;
+    const columns: BoardColumn[] = [makeColumn('col_1', 'In Progress')];
+    const requests: FeatureRequestItem[] = [makeRequest('fr_board_async', 'col_1')];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        columnsFetchCount += 1;
+        return new Response(JSON.stringify({ columns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        requestsFetchCount += 1;
+        return new Response(JSON.stringify({ requests, total: requests.length }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let resolvePendingRead!: (val: string | null) => void;
+    const pendingPromise = new Promise<string | null>((res) => {
+      resolvePendingRead = res;
+    });
+    UserTokenStore.configure({
+      getItem: () => pendingPromise,
+      setItem: async () => {},
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="   ">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      // Columns must be fetched immediately on mount without waiting for token readiness
+      assert.equal(
+        columnsFetchCount,
+        1,
+        'columns should be fetched on mount while token is unready'
+      );
+      // Requests require token readiness, so requestsFetchCount should be 0
+      assert.equal(requestsFetchCount, 0, 'requests should not be fetched while token is unready');
+
+      // The column tabs should render from fetched columns
+      const columnTabs = getColumnTabs(renderer!);
+      assert.ok(columnTabs.length > 0, 'column tabs should render from fetched columns');
+
+      // Now resolve token readiness
+      await act(async () => {
+        resolvePendingRead('tok_board_ready');
+      });
+      await flush();
+
+      assert.equal(requestsFetchCount, 1, 'requests should fetch once token resolves');
+    } finally {
+      globalThis.fetch = originalFetch;
+      UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen handleRefresh reloads columns even when token is unready (#210)',
+  renderTestOptions,
+  async () => {
+    let columnsFetchCount = 0;
+    let requestsFetchCount = 0;
+    const columns: BoardColumn[] = [makeColumn('col_1', 'In Progress')];
+    const requests: FeatureRequestItem[] = [makeRequest('fr_board_refresh', 'col_1')];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        columnsFetchCount += 1;
+        return new Response(JSON.stringify({ columns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        requestsFetchCount += 1;
+        return new Response(JSON.stringify({ requests, total: requests.length }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      // Mount with ready token so columns and requests load
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_board_initial">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      assert.equal(columnsFetchCount, 1, 'initial columns load');
+      assert.equal(requestsFetchCount, 1, 'initial requests load');
+
+      // Transition token to pending storage read
+      let resolvePendingRead!: (val: string | null) => void;
+      const pendingPromise = new Promise<string | null>((res) => {
+        resolvePendingRead = res;
+      });
+      UserTokenStore.configure({
+        getItem: () => pendingPromise,
+        setItem: async () => {},
+      });
+
+      await act(async () => {
+        renderer!.update(
+          <CupThreadProvider client={client} userToken="   ">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      // Find the items FlatList which contains the RefreshControl
+      const itemsFlatList = renderer!.root.findAll(
+        (node: any) => node.type === FlatListStub && node.props?.refreshControl != null
+      )[0];
+      assert.ok(itemsFlatList, 'items FlatList must exist with refreshControl');
+      const refreshControl = itemsFlatList.props.refreshControl;
+
+      // Trigger pull-to-refresh while token is unready
+      await act(async () => {
+        await refreshControl.props.onRefresh();
+      });
+      await flush();
+
+      // Columns reload should have executed, requests refresh should have been omitted
+      assert.equal(
+        columnsFetchCount,
+        2,
+        'columns should reload on refresh even when token is unready'
+      );
+      assert.equal(
+        requestsFetchCount,
+        1,
+        'requests refresh should be omitted when token is unready'
+      );
+
+      // Resolve pending storage read
+      await act(async () => {
+        resolvePendingRead('tok_board_resumed');
+      });
+      await flush();
+    } finally {
+      globalThis.fetch = originalFetch;
+      UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen does not fetch columns when roadmap is disabled in appConfig (#210)',
+  renderTestOptions,
+  async () => {
+    let columnsFetchCount = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: false } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        columnsFetchCount += 1;
+        return new Response(JSON.stringify({ columns: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    function ScreenWithConfigGate() {
+      const { isLoadingConfig } = useCupThreadAppConfig();
+      if (isLoadingConfig) return null;
+      return <RoadmapBoardScreen />;
+    }
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <ScreenWithConfigGate />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      assert.equal(
+        columnsFetchCount,
+        0,
+        'client.fetchColumns must not be called when roadmap is disabled in appConfig'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
       renderer?.unmount();
     }
   }
