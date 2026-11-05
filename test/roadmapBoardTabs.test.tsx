@@ -830,6 +830,10 @@ test(
         textsDuring.some((t) => t.includes('Planned')),
         'board tabs must remain mounted during pull-to-refresh'
       );
+      assert.ok(
+        textsDuring.some((t) => t.includes('No items in this stage')),
+        'empty-board content must remain visible during pull-to-refresh'
+      );
 
       // Resolve the in-flight refreshes
       await act(async () => {
