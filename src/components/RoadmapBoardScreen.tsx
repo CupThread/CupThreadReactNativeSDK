@@ -135,7 +135,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     isLoading: isColumnsLoading,
     error: columnsError,
     reload: reloadColumns,
-  } = useAsyncData(fetchColumns, { enabled: isTokenReady && (isEnabled || isLoadingConfig) });
+  } = useAsyncData(fetchColumns, { enabled: isEnabled || isLoadingConfig });
 
   const { columns: visibleColumns, orphanRequests } = useMemo(
     () => groupRoadmapRequests(columnsData ?? [], requests),
@@ -156,8 +156,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   }, [visibleColumns, orphanRequests.length]);
 
   const handleRefresh = useCallback(async () => {
-    if (!isTokenReady) return;
-    await Promise.all([reloadColumns(), refreshRequests()]);
+    await Promise.all([reloadColumns(), ...(isTokenReady ? [refreshRequests()] : [])]);
   }, [reloadColumns, refreshRequests, isTokenReady]);
 
   const handleRetry = useCallback(() => {
