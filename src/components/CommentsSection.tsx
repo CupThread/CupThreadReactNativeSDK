@@ -460,6 +460,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
             ]}
             activeOpacity={0.8}
             accessibilityRole="button"
+            accessibilityLabel={
+              isSubmitting ? strings.comments.postingButton : strings.comments.postButton
+            }
             accessibilityState={{
               disabled: isSubmitting || !isTokenReady || commentText.trim().length === 0,
             }}
