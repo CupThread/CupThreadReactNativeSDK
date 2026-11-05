@@ -273,7 +273,14 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       // page merges around it via `mergePage` when it lands.
       setCommentsData((prev) =>
         prev
-          ? { ...prev, comments: [...prev.comments, newComment] }
+          ? {
+              ...prev,
+              comments: [...prev.comments, newComment],
+              total: Math.max(
+                (prev.total ?? 0) + 1,
+                prev.comments.filter((c) => !c.isHidden).length + 1
+              ),
+            }
           : { comments: [newComment], total: 1, hasMore: false, nextCursor: null }
       );
       setCommentText('');
