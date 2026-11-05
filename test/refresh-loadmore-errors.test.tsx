@@ -63,6 +63,7 @@ if (supportsModuleMocks) {
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
 const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
 const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
+const { WhatsNewScreen } = await import('../src/components/WhatsNewScreen');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -84,6 +85,19 @@ function makeItem(id: string, title: string): FeatureRequestItem {
     columnName: 'Planned',
     columnColor: '#3b82f6',
     approved: true,
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
+  };
+}
+
+function makeChangelogEntry(id: string, title: string) {
+  return {
+    id,
+    appId: 'app_test',
+    title,
+    body: `Body for ${title}`,
+    versionLabel: '1.0.0',
+    publishedAt: '2026-08-01T00:00:00Z',
     createdAt: '2026-08-01T00:00:00Z',
     updatedAt: '2026-08-01T00:00:00Z',
   };
@@ -133,6 +147,11 @@ function installFetch(routes: {
       const query = target.split('?')[1] ?? '';
       const offset = Number(new URLSearchParams(query).get('offset') ?? '0');
       return respond(offset > 0 ? routes.loadMore : routes.page0);
+    }
+    if (target.includes('/changelog') && (init?.method ?? 'GET') === 'GET') {
+      const query = target.split('?')[1] ?? '';
+      const cursor = new URLSearchParams(query).get('cursor');
+      return respond(cursor ? routes.loadMore : routes.page0);
     }
     return new Response('not found', { status: 404 });
   }) as any;
@@ -211,7 +230,7 @@ interface ScreenHarness {
 }
 
 async function renderScreen(
-  screen: 'requests' | 'roadmap',
+  screen: 'requests' | 'roadmap' | 'whatsnew',
   routes: ReturnType<typeof makeRoutes>
 ): Promise<ScreenHarness> {
   const client = new FeedbackClient({
@@ -222,7 +241,9 @@ async function renderScreen(
   const element =
     screen === 'requests'
       ? React.createElement(FeatureRequestsScreen)
-      : React.createElement(RoadmapBoardScreen);
+      : screen === 'roadmap'
+        ? React.createElement(RoadmapBoardScreen)
+        : React.createElement(WhatsNewScreen);
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(
@@ -241,8 +262,14 @@ function makeRoutes() {
     page0: ok({
       requests: [makeItem('fr_a', 'Request A'), makeItem('fr_b', 'Request B')],
       total: 2,
+      entries: [
+        makeChangelogEntry('ch_a', 'Changelog A'),
+        makeChangelogEntry('ch_b', 'Changelog B'),
+      ],
+      hasMore: false,
+      nextCursor: null,
     }),
-    loadMore: ok({ requests: [], total: 2 }),
+    loadMore: ok({ requests: [], total: 2, entries: [], hasMore: false, nextCursor: null }),
     columns: ok([]),
   };
 }
@@ -455,6 +482,81 @@ test(
         false,
         'stale truncated-list affordance must be gone'
       );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen shows an inline retry banner when refresh fails with changelog entries loaded (#257)',
+  renderTestOptions,
+  async () => {
+    touchableOpacityProps.length = 0;
+    flatListProps.length = 0;
+    const routes = makeRoutes();
+    const harness = await renderScreen('whatsnew', routes);
+    try {
+      await waitForText(harness.renderer, (t) => t === 'Changelog A');
+      assert.equal(
+        collectTexts(harness.renderer.root).includes(strings.common.error),
+        false,
+        'no error banner while every load succeeds'
+      );
+
+      routes.page0 = fail();
+      await pullToRefresh();
+
+      let texts = collectTexts(harness.renderer.root);
+      assert.ok(
+        texts.includes(strings.common.error),
+        'refresh failure must surface the error text'
+      );
+      assert.ok(texts.includes(strings.common.retry), 'refresh failure must offer a retry');
+      assert.ok(texts.includes('Changelog A'), 'loaded entries must stay visible under the banner');
+
+      routes.page0 = ok({
+        entries: [makeChangelogEntry('ch_c', 'Changelog C')],
+        hasMore: false,
+        nextCursor: null,
+      });
+      await pressButton(harness.renderer, strings.common.retry);
+
+      texts = collectTexts(harness.renderer.root);
+      assert.equal(texts.includes(strings.common.error), false, 'banner must clear after retry');
+      assert.ok(texts.includes('Changelog C'), 'successful retry must show the fresh entries');
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen keeps the full-screen ErrorState for a failed initial load on an empty list (#257)',
+  renderTestOptions,
+  async () => {
+    touchableOpacityProps.length = 0;
+    flatListProps.length = 0;
+    const routes = makeRoutes();
+    routes.page0 = fail();
+    const harness = await renderScreen('whatsnew', routes);
+    try {
+      await waitForText(harness.renderer, (t) => t === strings.common.retry);
+      assert.deepEqual(flatListProps, [], 'empty list + failure must not render the list');
+      let texts = collectTexts(harness.renderer.root);
+      assert.ok(texts.includes(strings.common.error), 'ErrorState must show the failure message');
+
+      routes.page0 = ok({
+        entries: [makeChangelogEntry('ch_a', 'Changelog A')],
+        hasMore: false,
+        nextCursor: null,
+      });
+      await pressButton(harness.renderer, strings.common.retry);
+
+      texts = collectTexts(harness.renderer.root);
+      assert.ok(texts.includes('Changelog A'), 'retry from the empty-list ErrorState must load');
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();

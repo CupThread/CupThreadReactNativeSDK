@@ -249,6 +249,35 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
         <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>{title}</Text>
       </View>
 
+      {/* Non-blocking banner surfaced when pull-to-refresh fails on a populated
+          list. Matches FeatureRequestsScreen and RoadmapBoardScreen with an
+          inline retry, since the full-screen ErrorState only covers an empty
+          list. */}
+      {!isLoading && entries.length > 0 && loadError && !isRefreshing && (
+        <View
+          style={[
+            styles.refreshErrorBanner,
+            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+          ]}
+        >
+          <Text style={[styles.refreshErrorBannerText, { color: colors.danger }]}>
+            {strings.common.error}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              refresh();
+            }}
+            style={styles.refreshErrorRetry}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+          >
+            <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+              {strings.common.retry}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {isLoading ? (
         <View style={styles.centerLoading}>
           <ActivityIndicator color={colors.primary} size="large" />
@@ -364,6 +393,25 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  refreshErrorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refreshErrorBannerText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  refreshErrorRetry: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   listContent: {
     padding: 16,
