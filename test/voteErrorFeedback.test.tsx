@@ -548,7 +548,7 @@ test(
   'acceptance: FeatureRequestDetail does not leak vote error banner across swapped items (#261)',
   renderTestOptions,
   async () => {
-    let shouldFail = true;
+    const shouldFail = true;
     const client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_test_screen_vote_fail_swap',
