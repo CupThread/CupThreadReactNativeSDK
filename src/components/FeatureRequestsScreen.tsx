@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
@@ -399,7 +400,16 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           }}
         />
       ) : items.length === 0 ? (
-        <View style={styles.centerEmpty}>
+        <ScrollView
+          contentContainerStyle={styles.centerEmpty}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
             {strings.featureRequests.emptyTitle}
           </Text>
@@ -415,7 +425,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
               {strings.featureRequests.proposeButton}
             </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={items}
@@ -654,6 +664,7 @@ const styles = StyleSheet.create({
   },
   centerEmpty: {
     flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
