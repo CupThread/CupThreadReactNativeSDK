@@ -335,6 +335,49 @@ test(
 );
 
 test(
+  'UserProfileScreen shows the network error copy with a working retry on fetch rejection',
+  screenTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    let profileRequests = 0;
+    pressables.length = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      if (url.toString().includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify({ appKey: 'app_key_abc', sdk: { features: {} } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      profileRequests += 1;
+      throw new TypeError('Network request failed');
+    }) as any;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      assert.ok(
+        collectTexts(renderer.root).includes(enStrings.common.networkError),
+        'a network failure must display the networkError copy'
+      );
+      const retry = pressables.find((p) => p.accessibilityLabel === enStrings.common.retry);
+      assert.ok(retry, 'network failures must offer a retry affordance');
+      assert.equal(retry.accessibilityRole, 'button');
+
+      const requestsBeforeRetry = profileRequests;
+      await act(async () => {
+        retry.onPress();
+      });
+      await settle();
+      assert.ok(profileRequests > requestsBeforeRetry, 'retry must re-invoke fetchUserProfile');
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
   'UserProfileScreen shows the rate-limited state with a working retry on 429',
   screenTestOptions,
   async () => {
