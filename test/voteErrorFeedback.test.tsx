@@ -544,6 +544,100 @@ test(
   }
 );
 
+test(
+  'acceptance: FeatureRequestDetail does not leak vote error banner across swapped items (#261)',
+  renderTestOptions,
+  async () => {
+    const shouldFail = true;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_screen_vote_fail_swap',
+    });
+
+    const itemA = makeItem({ id: 'fr_screen_swap_A', voteCount: 3, hasVoted: false });
+    const itemB = makeItem({ id: 'fr_screen_swap_B', voteCount: 5, hasVoted: false });
+
+    client.listComments = async () =>
+      ({ comments: [], total: 0, hasMore: false, nextCursor: null }) as any;
+    client.fetchAppConfig = async () => ({}) as any;
+    client.toggleVote = async () => {
+      if (shouldFail) {
+        throw new Error('500 Server Error');
+      }
+      return { voted: true, voteCount: 4 };
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: 'usr_screen_test',
+            children: React.createElement(FeatureRequestDetail, {
+              visible: true,
+              item: itemA,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+
+      // Find VoteButton on item A
+      const buttonsA = renderer.root.findAllByType(TouchableOpacityStub as any);
+      const voteBtnA = buttonsA.find(
+        (b) => b.props?.accessibilityLabel === 'Upvote' || b.props?.accessibilityLabel === 'Upvoted'
+      );
+      assert.ok(voteBtnA, 'VoteButton must exist on item A');
+
+      // Tap vote on item A -> fails
+      await act(async () => {
+        voteBtnA.props.onPress();
+      });
+      await flush();
+
+      // Check that error banner is rendered on item A
+      const textsA = renderer.root.findAllByType(TextStub as any);
+      const errorNoticeA = textsA.find((t) => {
+        const content = t.props?.children;
+        return typeof content === 'string' && content.includes('Failed to update vote');
+      });
+      assert.ok(errorNoticeA, 'Failure notice banner must be rendered for item A after rejection');
+
+      // Swap item to item B while keeping the detail modal mounted
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: 'usr_screen_test',
+            children: React.createElement(FeatureRequestDetail, {
+              visible: true,
+              item: itemB,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+
+      // Item B must NOT display the error banner
+      const textsB = renderer.root.findAllByType(TextStub as any);
+      const errorNoticeB = textsB.find((t) => {
+        const content = t.props?.children;
+        return typeof content === 'string' && content.includes('Failed to update vote');
+      });
+      assert.equal(
+        errorNoticeB,
+        undefined,
+        'Failure notice banner must NOT leak onto swapped item B'
+      );
+    } finally {
+      renderer.unmount();
+    }
+  }
+);
+
 test('acceptance 6: toggling a vote on an imported request keeps the imported vote portion', async () => {
   const mockClient = {
     // The server answers with the displayed total: 120 imported + 5 in-app.
