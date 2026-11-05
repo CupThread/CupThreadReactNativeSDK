@@ -753,6 +753,9 @@ export function FeedbackComposer({
           },
         ]}
         accessibilityRole="button"
+        accessibilityLabel={
+          isSubmitting ? strings.common.submitting : strings.feedbackComposer.submitButton
+        }
         accessibilityState={{
           disabled: isSubmitting || isUploadingAttachment || !isTokenReady,
         }}

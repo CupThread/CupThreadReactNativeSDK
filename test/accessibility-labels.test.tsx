@@ -446,6 +446,7 @@ test(
 
       const submit = findPressable('Submit Feedback');
       assert.equal(submit.props.accessibilityRole, 'button');
+      assert.equal(submit.props.accessibilityLabel, 'Submit Feedback');
       assert.deepEqual(submit.props.accessibilityState, { disabled: false });
     } finally {
       restoreFetch();
@@ -479,9 +480,128 @@ test(
       const submit = pressables.find((p) => p.text.includes('Submit'));
       assert.ok(submit, 'submit button should render');
       assert.equal(submit.props.accessibilityRole, 'button');
+      assert.equal(submit.props.accessibilityLabel, 'Submit Proposal');
     } finally {
       restoreFetch();
       renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeedbackComposer & FeatureRequestComposeSheet: submit button updates accessibilityLabel to Submitting... while in flight',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let resolveFeedback!: (res: Response) => void;
+    let resolveFeatureRequest!: (res: Response) => void;
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { changelog: true } },
+        });
+      }
+      if (target.includes('/api/v1/feedback')) {
+        return new Promise<Response>((resolve) => {
+          resolveFeedback = resolve;
+        });
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        return new Promise<Response>((resolve) => {
+          resolveFeatureRequest = resolve;
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let composerRenderer!: TestRenderer.ReactTestRenderer;
+    let sheetRenderer!: TestRenderer.ReactTestRenderer;
+    try {
+      // 1. FeedbackComposer in-flight submission
+      composerRenderer = await renderWithProvider(
+        React.createElement(FeedbackComposer, {
+          isModal: false,
+          initialDraft: {
+            title: 'Crash on launch',
+            description: 'The app crashes when launching on iPad',
+          },
+        })
+      );
+
+      const composerSubmit = findPressable('Submit Feedback');
+      assert.equal(composerSubmit.props.accessibilityLabel, 'Submit Feedback');
+
+      await act(async () => {
+        composerSubmit.props.onPress();
+      });
+      await flush(2);
+
+      // Submit is now in-flight, so child is ActivityIndicator (no text)
+      // and accessibilityLabel must be 'Submitting...'
+      const submittingButtons = pressables.filter(
+        (p) => p.props.accessibilityLabel === 'Submitting...'
+      );
+      assert.ok(
+        submittingButtons.length > 0,
+        'FeedbackComposer submit button must have accessibilityLabel="Submitting..." during submission'
+      );
+      const latestComposerSubmitting = submittingButtons[submittingButtons.length - 1];
+      assert.equal(latestComposerSubmitting.props.accessibilityRole, 'button');
+      assert.equal(latestComposerSubmitting.text, '');
+      assertIconOnlyPressablesAreLabeled('FeedbackComposer[submitting]');
+
+      // Settle feedback submission
+      await act(async () => {
+        resolveFeedback(jsonResponse({ success: true }));
+      });
+      await flush(4);
+
+      // 2. FeatureRequestComposeSheet in-flight submission
+      pressables.length = 0;
+      sheetRenderer = await renderWithProvider(
+        React.createElement(FeatureRequestComposeSheet, {
+          isModal: false,
+          initialDraft: { title: 'Widget support', description: 'Add home screen widgets' },
+        })
+      );
+
+      const sheetSubmit = pressables.find((p) => p.text.includes('Submit'));
+      assert.ok(sheetSubmit, 'FeatureRequestComposeSheet submit button should render');
+      assert.equal(sheetSubmit.props.accessibilityLabel, 'Submit Proposal');
+
+      await act(async () => {
+        sheetSubmit.props.onPress();
+      });
+      await flush(2);
+
+      const sheetSubmittingButtons = pressables.filter(
+        (p) => p.props.accessibilityLabel === 'Submitting...'
+      );
+      assert.ok(
+        sheetSubmittingButtons.length > 0,
+        'FeatureRequestComposeSheet submit button must have accessibilityLabel="Submitting..." during submission'
+      );
+      const latestSheetSubmitting = sheetSubmittingButtons[sheetSubmittingButtons.length - 1];
+      assert.equal(latestSheetSubmitting.props.accessibilityRole, 'button');
+      assert.equal(latestSheetSubmitting.text, '');
+      assertIconOnlyPressablesAreLabeled('FeatureRequestComposeSheet[submitting]');
+
+      // Settle feature request submission
+      await act(async () => {
+        resolveFeatureRequest(jsonResponse({ id: 'fr_new', title: 'Widget support' }));
+      });
+      await flush(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      composerRenderer?.unmount();
+      sheetRenderer?.unmount();
     }
   }
 );
