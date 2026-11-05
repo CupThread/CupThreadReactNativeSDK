@@ -593,6 +593,63 @@ test(
 );
 
 test(
+  'CommentsSection omits the load-more affordance when a page echoes an unchanged cursor (#254)',
+  renderTestOptions,
+  async () => {
+    const pages = new Map<string | null, { status: number; body?: unknown }>([
+      [
+        null,
+        {
+          status: 200,
+          body: {
+            comments: [makeComment('c1')],
+            total: 2,
+            hasMore: true,
+            nextCursor: 'cur-2',
+          },
+        },
+      ],
+      [
+        'cur-2',
+        {
+          status: 200,
+          body: {
+            comments: [makeComment('c2')],
+            total: 2,
+            hasMore: true,
+            nextCursor: 'cur-2',
+          },
+        },
+      ],
+    ]);
+    const harness = await renderSection(pages);
+
+    try {
+      await waitForText(harness.renderer, (t) => t === 'Comment c1');
+      await waitForText(harness.renderer, (t) => t === strings.comments.loadMore);
+
+      const button = findPressable(harness.renderer.root, strings.comments.loadMore);
+      assert.ok(button, 'load-more affordance must be pressable initially');
+      await act(async () => {
+        button.props.onPress();
+      });
+      await settle();
+
+      await waitForText(harness.renderer, (t) => t === 'Comment c2');
+      assert.equal(
+        collectTexts(harness.renderer.root).includes(strings.comments.loadMore),
+        false,
+        'a stalled cursor must remove the load-more affordance'
+      );
+      assert.equal(harness.requests.length, 2);
+      harness.unmount();
+    } finally {
+      harness.restore();
+    }
+  }
+);
+
+test(
   'CommentsSection keeps loaded comments and offers a retry after a failed load-more',
   renderTestOptions,
   async () => {

@@ -1044,6 +1044,52 @@ test('useChangelogEntries clears hasMore when a later page sends no cursor', asy
   }
 });
 
+test('useChangelogEntries clears hasMore and stops pagination when a page echoes back an unchanged cursor (#254)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+    [
+      'cur-2',
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e2', '2026-08-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    await harness.result.loadMore();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['e1', 'e2']
+    );
+    assert.equal(harness.result.hasMore, false, 'a stalled cursor must force hasMore off');
+    await harness.result.loadMore();
+    assert.equal(fetchMock.requests.length, 2, 'loadMore must no-op when cursor does not advance');
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 test('useChangelogEntries surfaces first-page failures and recovers via reload', async () => {
   const pages = new Map<string | null, { status: number; body?: unknown }>([
     [null, { status: 500, body: 'server error' }],
@@ -1346,6 +1392,63 @@ test(
       await settle();
 
       await waitForText(renderer, (t) => t === 'Release e2');
+      renderer.unmount();
+    } finally {
+      restore();
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen removes the load-more footer when a page echoes an unchanged cursor (#254)',
+  renderTestOptions,
+  async () => {
+    const routes = {
+      page0: {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+      loadMore: {
+        status: 200,
+        body: {
+          entries: [makeEntry('e2', '2026-08-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    };
+    const restore = installScreenFetch(routes);
+
+    try {
+      const renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client: new FeedbackClient({
+            baseUrl: 'https://api.cupthread.com',
+            appKey: 'app_screen_test',
+          }),
+          children: React.createElement(WhatsNewScreen),
+        })
+      );
+      await waitForText(renderer, (t) => t === 'Release e1');
+      await waitForText(renderer, (t) => t === strings.changelog.loadMore);
+
+      const button = findPressable(renderer.root, strings.changelog.loadMore);
+      assert.ok(button, 'load-more affordance must be pressable initially');
+      await act(async () => {
+        button.props.onPress();
+      });
+      await settle();
+
+      await waitForText(renderer, (t) => t === 'Release e2');
+      assert.equal(
+        collectTexts(renderer.root).includes(strings.changelog.loadMore),
+        false,
+        'footer must disappear when nextCursor does not advance'
+      );
       renderer.unmount();
     } finally {
       restore();
