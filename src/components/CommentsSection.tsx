@@ -200,13 +200,19 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         if (!prev) return prev;
         const seen = new Set(prev.comments.map((c) => c.id));
         const fresh = page.comments.filter((c) => !seen.has(c.id));
+        // A cursor that does not advance can never finish the walk: stop
+        // pagination on it instead of re-fetching the same page on every loadMore.
+        const stalledCursor = page.nextCursor !== null && page.nextCursor === cursor;
+        const nextCursor = stalledCursor ? null : page.nextCursor;
         return {
           comments: fresh.length > 0 ? [...prev.comments, ...fresh] : prev.comments,
           total: Math.max(prev.total, page.total),
           // An empty page can never be followed by another one, even if a
-          // buggy server left `hasMore` set; neither can a page without a cursor.
-          hasMore: page.hasMore && page.comments.length > 0,
-          nextCursor: page.nextCursor,
+          // buggy server left `hasMore` set; neither can a page without a cursor
+          // or one whose cursor did not advance.
+          hasMore:
+            !stalledCursor && page.hasMore && page.comments.length > 0 && nextCursor !== null,
+          nextCursor,
         };
       });
       setLoadMoreError(null);

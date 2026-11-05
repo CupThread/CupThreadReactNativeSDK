@@ -228,9 +228,16 @@ export function useChangelogEntries(
       // Keyset cursors only move forward. If a refresh rewound the cursor
       // while this page was in flight, the response is stale — discard it.
       if (nextCursorRef.current !== cursor) return;
-      nextCursorRef.current = page.nextCursor;
+
+      // A cursor that does not advance can never finish the walk: the
+      // contract defines `nextCursor` as the following page's cursor, so an
+      // unchanged value contradicts a truthy `hasMore`. Stop pagination on
+      // it instead of re-fetching the same page on every loadMore.
+      const stalledCursor = page.nextCursor !== null && page.nextCursor === cursor;
+      const nextCursor = stalledCursor ? null : page.nextCursor;
+      nextCursorRef.current = nextCursor;
       setEntries((prev) => appendUniquePage(prev, page.entries));
-      setHasMore(pageHasMore(page));
+      setHasMore(!stalledCursor && pageHasMore({ ...page, nextCursor }));
       setLoadMoreError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
