@@ -167,9 +167,15 @@ export function FeatureRequestDetail({
   const {
     toggleVote: handleToggleVote,
     isVoting,
-    voteError,
     getVoteError,
+    clearVoteError,
   } = useToggleVote(client, userToken, applyVoteChange);
+
+  useEffect(() => {
+    clearVoteError();
+  }, [initialItem.id, clearVoteError]);
+
+  const currentVoteError = getVoteError(item.id);
 
   return (
     <Modal
@@ -210,7 +216,7 @@ export function FeatureRequestDetail({
             />
           </View>
 
-          {voteError && (
+          {Boolean(currentVoteError) && (
             <View
               style={[
                 styles.voteErrorBanner,
