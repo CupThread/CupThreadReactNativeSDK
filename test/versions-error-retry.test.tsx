@@ -438,7 +438,7 @@ test(
       assert.equal(requestsFetchCount, 0, 'requests fetch must wait until userToken is ready');
 
       // Verify that version 1.0.0 is actually loaded and rendered in the picker
-      const matchingNodes = renderer.root.findAllByProps({ children: '1.0.0' });
+      const matchingNodes = renderer!.root.findAllByProps({ children: '1.0.0' });
       assert.ok(
         matchingNodes.length > 0,
         'version 1.0.0 should be rendered in the versions filter'
