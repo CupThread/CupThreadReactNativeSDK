@@ -668,9 +668,10 @@ export class UserTokenStore {
    * ```
    */
   public async hasSeenChangelog(versionOrId: string, appKey?: string | null): Promise<boolean> {
-    if (!versionOrId) return false;
+    const trimmed = typeof versionOrId === 'string' ? versionOrId.trim() : '';
+    if (!trimmed) return false;
     const seenSet = await this.getSeenChangelogs(appKey);
-    return seenSet.has(versionOrId);
+    return seenSet.has(trimmed);
   }
 
   /**
@@ -690,14 +691,15 @@ export class UserTokenStore {
    * ```
    */
   public async markChangelogSeen(versionOrId: string, appKey?: string | null): Promise<void> {
-    if (!versionOrId) return;
+    const trimmed = typeof versionOrId === 'string' ? versionOrId.trim() : '';
+    if (!trimmed) return;
     if (!this.isPersistent) {
       this.warnUnpersistedChangelogSeen();
     }
     const seenSet = await this.getSeenChangelogs(appKey);
-    if (seenSet.has(versionOrId)) return;
+    if (seenSet.has(trimmed)) return;
 
-    seenSet.add(versionOrId);
+    seenSet.add(trimmed);
     this.trimSeenChangelogs(seenSet);
     await this.persistSeenChangelogs(this.resolveSeenStorageKey(appKey), seenSet);
   }
@@ -897,7 +899,10 @@ function parseSeenChangelogs(raw: string | null): Set<string> {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       parsed.forEach((item) => {
-        if (typeof item === 'string' && item) set.add(item);
+        if (typeof item === 'string') {
+          const trimmed = item.trim();
+          if (trimmed) set.add(trimmed);
+        }
       });
     }
   } catch {
