@@ -948,3 +948,77 @@ test(
     }
   }
 );
+
+test(
+  'RoadmapBoardScreen empty column renders accessible load-more button when hasMore is true (#280)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    const mockColumns = [
+      makeColumn('col_progress', 'In Progress'),
+      makeColumn('col_other', 'Other'),
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        return new Response(JSON.stringify({ columns: mockColumns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        return new Response(
+          JSON.stringify({
+            requests: [makeRequest('fr_1', 'col_other')],
+            total: 10,
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      // Find the empty column load-more TouchableOpacity:
+      const loadMoreTouchable = renderer!.root.findAll(
+        (node: any) =>
+          node.props?.accessibilityRole === 'button' &&
+          node.props?.accessibilityLabel === 'Load more'
+      )[0];
+      assert.ok(loadMoreTouchable, 'empty column must render accessible load-more button');
+      assert.deepEqual(loadMoreTouchable.props.accessibilityState, { disabled: false });
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
