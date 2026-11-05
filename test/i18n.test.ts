@@ -119,9 +119,25 @@ test('formatDate supports localized strings', () => {
 
 test('formatFileSize formats byte units properly', () => {
   assert.equal(formatFileSize(0), '0 B');
+  assert.equal(formatFileSize(-0), '0 B');
   assert.equal(formatFileSize(500), '500 B');
   assert.equal(formatFileSize(1024), '1.0 KB');
   assert.equal(formatFileSize(1024 * 1024 * 2.5), '2.5 MB');
+  assert.equal(formatFileSize(1024 * 1024 * 1024 * 3.5), '3.5 GB');
+  assert.equal(formatFileSize(0.5), '1 B');
+});
+
+test('formatFileSize returns empty string for missing, non-finite, negative, or invalid inputs (#252)', () => {
+  assert.equal(formatFileSize(undefined), '');
+  assert.equal(formatFileSize(null as unknown as number), '');
+  assert.equal(formatFileSize(NaN), '');
+  assert.equal(formatFileSize(-1), '');
+  assert.equal(formatFileSize(-50), '');
+  assert.equal(formatFileSize(-1024), '');
+  assert.equal(formatFileSize(Number.POSITIVE_INFINITY), '');
+  assert.equal(formatFileSize(Number.NEGATIVE_INFINITY), '');
+  assert.equal(formatFileSize('1024' as unknown as number), '');
+  assert.equal(formatFileSize({} as unknown as number), '');
 });
 
 test('i18n handles singular and plural quantities properly across locales', () => {
