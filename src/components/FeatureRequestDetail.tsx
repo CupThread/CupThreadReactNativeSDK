@@ -12,6 +12,7 @@ import {
   useCupThreadTheme,
   useCupThreadClient,
   useCupThreadUserToken,
+  useCupThreadTokenReadiness,
   useCupThreadStrings,
   useCupThreadLocale,
 } from '../theme/CupThreadThemeProvider';
@@ -99,6 +100,7 @@ export function FeatureRequestDetail({
   const { colors } = useCupThreadTheme();
   const client = useCupThreadClient();
   const userToken = useCupThreadUserToken();
+  const isTokenReady = useCupThreadTokenReadiness();
   const strings = useCupThreadStrings();
   const locale = useCupThreadLocale();
 
@@ -203,7 +205,7 @@ export function FeatureRequestDetail({
               voteCount={item.voteCount}
               hasVoted={item.hasVoted}
               onPress={() => handleToggleVote(item)}
-              disabled={item.isOwnRequest || isVoting(item.id)}
+              disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
               error={getVoteError(item.id)}
             />
           </View>

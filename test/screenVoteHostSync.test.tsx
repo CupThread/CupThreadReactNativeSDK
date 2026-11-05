@@ -546,3 +546,97 @@ test(
     }
   }
 );
+
+test(
+  'VoteButton in FeatureRequestsScreen is disabled before token readiness and enables once ready (#202)',
+  renderTestOptions,
+  async () => {
+    const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+    const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
+    const { VoteButton } = await import('../src/components/VoteButton');
+    const { UserTokenStore } = await import('../src/client/UserTokenStore');
+
+    const routes = {
+      page0: ok({
+        requests: [
+          makeItem({ id: 'fr_screen_readiness', title: 'Screen readiness request', voteCount: 3 }),
+        ],
+        total: 1,
+      }),
+    };
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_vote_sync',
+    });
+
+    const restoreFetch = installFetch(routes);
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'tok_initial_ready',
+          children: React.createElement(FeatureRequestsScreen),
+        })
+      );
+    });
+
+    try {
+      await waitForText(renderer, (text) => text === 'Screen readiness request');
+
+      const voteButtonReady = renderer.root.findAllByType(VoteButton as any)[0];
+      assert.ok(voteButtonReady, 'VoteButton must be rendered on the request row');
+      assert.equal(
+        voteButtonReady.props.disabled,
+        false,
+        'VoteButton must be enabled when token is ready'
+      );
+
+      // Transition token to pending store read (token unready)
+      let resolvePendingRead!: (val: string | null) => void;
+      const pendingPromise = new Promise<string | null>((res) => {
+        resolvePendingRead = res;
+      });
+      UserTokenStore.configure({
+        getItem: () => pendingPromise,
+        setItem: async () => {},
+      });
+
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            userToken: '   ',
+            children: React.createElement(FeatureRequestsScreen),
+          })
+        );
+      });
+      await settle();
+
+      const voteButtonUnready = renderer.root.findAllByType(VoteButton as any)[0];
+      assert.equal(
+        voteButtonUnready.props.disabled,
+        true,
+        'VoteButton must be disabled when token is unready'
+      );
+
+      // Resolve pending storage read
+      await act(async () => {
+        resolvePendingRead('tok_resumed');
+      });
+      await settle();
+
+      const voteButtonResumed = renderer.root.findAllByType(VoteButton as any)[0];
+      assert.equal(
+        voteButtonResumed.props.disabled,
+        false,
+        'VoteButton must be re-enabled after token readiness resolves'
+      );
+    } finally {
+      restoreFetch();
+      UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
+    }
+  }
+);
