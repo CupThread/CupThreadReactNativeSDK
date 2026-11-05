@@ -240,14 +240,16 @@ export function FeatureRequestDetail({
             </Text>
           </View>
 
-          <View
-            style={[
-              styles.descCard,
-              { backgroundColor: colors.card, borderColor: colors.cardBorder },
-            ]}
-          >
-            <MarkdownText content={item.description} />
-          </View>
+          {Boolean(item.description && item.description.trim()) && (
+            <View
+              style={[
+                styles.descCard,
+                { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              ]}
+            >
+              <MarkdownText content={item.description} />
+            </View>
+          )}
 
           {/* key={item.id} remounts the thread on a documented item swap, so
               the composer and the list are guaranteed fresh even if
