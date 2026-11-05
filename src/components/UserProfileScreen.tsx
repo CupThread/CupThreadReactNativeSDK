@@ -137,15 +137,26 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               { backgroundColor: colors.card, borderColor: colors.cardBorder },
             ]}
           >
-            <Avatar url={data.profile.avatarUrl} name={data.profile.displayName} size={64} />
+            <Avatar
+              url={data.profile.avatarUrl}
+              name={
+                typeof data.profile.displayName === 'string'
+                  ? data.profile.displayName.trim() || undefined
+                  : undefined
+              }
+              size={64}
+            />
             <Text style={[styles.displayName, { color: colors.textPrimary }]}>
-              {data.profile.displayName || strings.userProfile.anonymous}
+              {(typeof data.profile.displayName === 'string' && data.profile.displayName.trim()) ||
+                strings.userProfile.anonymous}
             </Text>
-            {data.profile.bio ? (
-              <Text style={[styles.bio, { color: colors.textSecondary }]}>{data.profile.bio}</Text>
+            {typeof data.profile.bio === 'string' && data.profile.bio.trim() ? (
+              <Text style={[styles.bio, { color: colors.textSecondary }]}>
+                {data.profile.bio.trim()}
+              </Text>
             ) : null}
-            {data.profile.websiteUrl ? (
-              <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl} />
+            {typeof data.profile.websiteUrl === 'string' && data.profile.websiteUrl.trim() ? (
+              <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl.trim()} />
             ) : null}
           </View>
 
@@ -231,7 +242,8 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
  */
 function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
   const { colors } = useCupThreadTheme();
-  const isPressable = isSafeLinkUrl(websiteUrl);
+  const trimmedUrl = websiteUrl.trim();
+  const isPressable = isSafeLinkUrl(trimmedUrl);
 
   if (!isPressable) {
     return (
@@ -239,7 +251,7 @@ function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
         selectable
         style={[styles.website, styles.websiteInert, { color: colors.textSecondary }]}
       >
-        {websiteUrl}
+        {trimmedUrl}
       </Text>
     );
   }
@@ -247,14 +259,14 @@ function ProfileWebsiteLink({ websiteUrl }: { websiteUrl: string }) {
   return (
     <TouchableOpacity
       onPress={() => {
-        openSafeLinkUrl(websiteUrl, (safeUrl) => {
+        openSafeLinkUrl(trimmedUrl, (safeUrl) => {
           Linking.openURL(safeUrl).catch(() => {});
         });
       }}
       accessibilityRole="link"
     >
       <Text style={[styles.website, { color: colors.primary }]}>
-        {sanitizeSafeLinkUrl(websiteUrl)}
+        {sanitizeSafeLinkUrl(trimmedUrl)}
       </Text>
     </TouchableOpacity>
   );
