@@ -538,3 +538,105 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen falls back to anonymous and omits bio and website when attributes are whitespace-only (#268)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_ws',
+        displayName: '   \t  \n  ',
+        avatarUrl: null,
+        bio: '   \n\t   ',
+        websiteUrl: '    ',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [],
+      recentComments: [],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.anonymous),
+        'whitespace-only displayName must fall back to localized anonymous copy'
+      );
+      assert.ok(
+        texts.includes('?'),
+        'Avatar must render the default ? placeholder when displayName is whitespace-only'
+      );
+      assert.equal(
+        texts.some((t) => t.trim() === '' && t.length > 0),
+        false,
+        'must not render any empty or whitespace-only Text elements for bio or website'
+      );
+      const linkPressable = pressables.find((p) => p.accessibilityRole === 'link');
+      assert.equal(
+        linkPressable,
+        undefined,
+        'no website link touchable should be mounted for whitespace-only websiteUrl'
+      );
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen trims surrounding whitespace from displayName, bio, and websiteUrl (#268)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_padded',
+        displayName: '   Katherine Johnson   ',
+        avatarUrl: null,
+        bio: '   Calculated orbital mechanics.   ',
+        websiteUrl: '   https://nasa.gov/katherine   ',
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [],
+      recentComments: [],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes('Katherine Johnson'),
+        'displayName must be trimmed of surrounding whitespace'
+      );
+      assert.ok(
+        texts.includes('Calculated orbital mechanics.'),
+        'bio must be trimmed of surrounding whitespace'
+      );
+      assert.ok(texts.includes('K'), 'Avatar must render initial from the trimmed name');
+      assert.equal(
+        texts.includes('   Katherine Johnson   '),
+        false,
+        'untrimmed displayName must not be rendered'
+      );
+      assert.equal(
+        texts.includes('   Calculated orbital mechanics.   '),
+        false,
+        'untrimmed bio must not be rendered'
+      );
+
+      const linkPressable = pressables.find((p) => p.accessibilityRole === 'link');
+      assert.ok(linkPressable, 'website link touchable must be mounted for valid websiteUrl');
+      assert.ok(texts.includes('https://nasa.gov/katherine'), 'website link text must be trimmed');
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
