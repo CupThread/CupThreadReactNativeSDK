@@ -318,6 +318,75 @@ test(
 );
 
 test(
+  'FeatureRequestsScreen provides a RefreshControl on its empty state ScrollView and supports pull-to-refresh',
+  renderTestOptions,
+  async () => {
+    touchableOpacityProps.length = 0;
+    flatListProps.length = 0;
+    const routes = makeRoutes();
+    routes.page0 = ok({ requests: [], total: 0 });
+    const harness = await renderScreen('requests', routes);
+    try {
+      await waitForText(harness.renderer, (t) => t === strings.featureRequests.emptyTitle);
+      const texts = collectTexts(harness.renderer.root);
+      assert.ok(
+        texts.includes(strings.featureRequests.emptyTitle),
+        'empty state title must be displayed when items are empty'
+      );
+      assert.ok(
+        texts.includes(strings.featureRequests.emptySubtitle),
+        'empty state subtitle must be displayed when items are empty'
+      );
+
+      // Verify that RefreshControl is rendered on the empty state ScrollView container
+      const refreshContainer = harness.renderer.root.findAll(
+        (node: any) => node.props?.refreshControl != null
+      )[0];
+      assert.ok(
+        refreshContainer,
+        'empty state must render a scrollable container with refreshControl'
+      );
+      const style = refreshContainer.props.contentContainerStyle;
+      assert.equal(style?.flexGrow, 1, 'empty state contentContainerStyle must set flexGrow: 1');
+      assert.equal(
+        style?.flex,
+        undefined,
+        'empty state contentContainerStyle must not constrain height with flex: 1'
+      );
+      const refreshControl = refreshContainer.props.refreshControl;
+      assert.ok(refreshControl, 'refreshControl prop must be present on empty state container');
+      assert.equal(typeof refreshControl.props.onRefresh, 'function');
+
+      // Now update the route to return requests on pull-to-refresh
+      routes.page0 = ok({
+        requests: [makeItem('fr_refreshed', 'Refreshed Item')],
+        total: 1,
+      });
+
+      await act(async () => {
+        await refreshControl.props.onRefresh();
+      });
+      await settle();
+
+      await waitForText(harness.renderer, (t) => t === 'Refreshed Item');
+      const refreshedTexts = collectTexts(harness.renderer.root);
+      assert.ok(
+        refreshedTexts.includes('Refreshed Item'),
+        'pull-to-refresh from empty state must reload and render new requests'
+      );
+      assert.equal(
+        refreshedTexts.includes(strings.featureRequests.emptyTitle),
+        false,
+        'empty state title must be removed after successful refresh'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
   'FeatureRequestsScreen renders a footer retry affordance when loadMore fails',
   renderTestOptions,
   async () => {
