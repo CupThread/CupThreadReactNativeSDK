@@ -47,6 +47,7 @@ if (supportsModuleMocks) {
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
 const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
 const { VoteButton } = await import('../src/components/VoteButton');
+const { MarkdownText } = await import('../src/components/MarkdownText');
 const { FeedbackClient } = await import('../src/client/FeedbackClient');
 const { UserTokenStore } = await import('../src/client/UserTokenStore');
 
@@ -633,6 +634,83 @@ test(
       globalThis.fetch = originalFetch;
       UserTokenStore.resetSharedForTests();
       renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeatureRequestDetail: empty or whitespace-only description does not render descCard (#251)',
+  renderTestOptions,
+  async () => {
+    const isDescCard = (node: any) =>
+      Array.isArray(node.props?.style) &&
+      node.props.style.some(
+        (s: any) => s?.padding === 14 && s?.borderRadius === 10 && s?.marginBottom === 12
+      );
+
+    // 1. Whitespace-only description
+    const whitespaceItem = makeItem({ id: 'fr_ws', description: '   \n  \t  ' });
+    const harness = await renderDetail(whitespaceItem, true);
+
+    try {
+      const descCardsWs = harness.renderer.root.findAll(isDescCard);
+      assert.equal(
+        descCardsWs.length,
+        0,
+        'must not render descCard when description is whitespace-only'
+      );
+      assert.equal(
+        harness.renderer.root.findAllByType(MarkdownText).length,
+        0,
+        'must not render MarkdownText when description is whitespace-only'
+      );
+
+      // 2. Empty string description
+      await harness.update(makeItem({ id: 'fr_empty', description: '' }), true);
+      const descCardsEmpty = harness.renderer.root.findAll(isDescCard);
+      assert.equal(
+        descCardsEmpty.length,
+        0,
+        'must not render descCard when description is empty string'
+      );
+      assert.equal(
+        harness.renderer.root.findAllByType(MarkdownText).length,
+        0,
+        'must not render MarkdownText when description is empty string'
+      );
+
+      // 3. Undefined description
+      await harness.update(makeItem({ id: 'fr_undef', description: undefined as any }), true);
+      const descCardsUndef = harness.renderer.root.findAll(isDescCard);
+      assert.equal(
+        descCardsUndef.length,
+        0,
+        'must not render descCard when description is undefined'
+      );
+      assert.equal(
+        harness.renderer.root.findAllByType(MarkdownText).length,
+        0,
+        'must not render MarkdownText when description is undefined'
+      );
+
+      // 4. Non-empty description renders descCard and MarkdownText
+      await harness.update(
+        makeItem({ id: 'fr_valid', description: 'This is a valid feature description' }),
+        true
+      );
+      const descCardsValid = harness.renderer.root.findAll(isDescCard);
+      assert.equal(
+        descCardsValid.length,
+        1,
+        'must render descCard when description contains non-whitespace text'
+      );
+      const markdownNodes = harness.renderer.root.findAllByType(MarkdownText);
+      assert.equal(markdownNodes.length, 1);
+      assert.equal(markdownNodes[0].props.content, 'This is a valid feature description');
+      assert.ok(collectText(harness.renderer.root).includes('This is a valid feature description'));
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
     }
   }
 );
