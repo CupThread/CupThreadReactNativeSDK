@@ -40,7 +40,7 @@ if (supportsModuleMocks) {
 
 const { Badge } = await import('../src/components/Badge');
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { lightTheme, darkTheme } = await import('../src/theme/SdkTheme');
+const { lightTheme } = await import('../src/theme/SdkTheme');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
