@@ -85,13 +85,21 @@ export function formatDate(
  * Formats byte counts into human-readable strings (e.g. 512 B, 1.2 MB).
  *
  * @param bytes - Size in bytes.
- * @returns Readable file size string.
+ * @returns Readable file size string, or empty string if bytes is invalid, negative, or non-finite.
  */
 export function formatFileSize(bytes?: number): string {
-  if (bytes === undefined || bytes === null || isNaN(bytes)) return '';
+  if (
+    bytes === undefined ||
+    bytes === null ||
+    typeof bytes !== 'number' ||
+    !Number.isFinite(bytes) ||
+    bytes < 0
+  ) {
+    return '';
+  }
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1));
   const size = bytes / Math.pow(1024, i);
   return `${size >= 10 || i === 0 ? Math.round(size) : size.toFixed(1)} ${units[i]}`;
 }
