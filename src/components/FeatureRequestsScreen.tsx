@@ -401,7 +401,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
         />
       ) : items.length === 0 ? (
         <ScrollView
-          contentContainerStyle={styles.centerEmpty}
+          contentContainerStyle={styles.centerEmptyScroll}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -664,6 +664,11 @@ const styles = StyleSheet.create({
   },
   centerEmpty: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  centerEmptyScroll: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',

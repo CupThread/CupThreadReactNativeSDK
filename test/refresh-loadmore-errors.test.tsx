@@ -346,6 +346,13 @@ test(
         refreshContainer,
         'empty state must render a scrollable container with refreshControl'
       );
+      const style = refreshContainer.props.contentContainerStyle;
+      assert.equal(style?.flexGrow, 1, 'empty state contentContainerStyle must set flexGrow: 1');
+      assert.equal(
+        style?.flex,
+        undefined,
+        'empty state contentContainerStyle must not constrain height with flex: 1'
+      );
       const refreshControl = refreshContainer.props.refreshControl;
       assert.ok(refreshControl, 'refreshControl prop must be present on empty state container');
       assert.equal(typeof refreshControl.props.onRefresh, 'function');
