@@ -373,6 +373,10 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                 activeOpacity={0.8}
                 disabled={isLoadingMore}
                 accessibilityRole="button"
+                accessibilityLabel={
+                  isLoadingMore ? strings.common.loadingMore : strings.roadmap.loadMore
+                }
+                accessibilityState={{ disabled: isLoadingMore }}
               >
                 {isLoadingMore ? (
                   <ActivityIndicator size="small" color={colors.primaryText} />

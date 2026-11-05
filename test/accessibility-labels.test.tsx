@@ -801,6 +801,148 @@ test(
 );
 
 test(
+  'RoadmapBoardScreen: empty-column load-more button updates accessibilityLabel to Loading more... while in flight',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let resolveLoadMore!: (res: Response) => void;
+
+    let requestsCallCount = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { roadmap: true } },
+        });
+      }
+      if (target.includes('/api/v1/public/columns/')) {
+        return jsonResponse({
+          columns: [
+            {
+              id: 'col_progress',
+              appId: APP_KEY,
+              name: 'In Progress',
+              slug: 'in-progress',
+              position: 0,
+              isVisible: true,
+            },
+            {
+              id: 'col_other',
+              appId: APP_KEY,
+              name: 'Other',
+              slug: 'other',
+              position: 1,
+              isVisible: true,
+            },
+          ],
+        });
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        requestsCallCount += 1;
+        if (requestsCallCount === 1) {
+          // Initial load: 1 item belonging to col_other, total is 10, so hasMore is true
+          return jsonResponse({
+            requests: [
+              {
+                id: 'fr_1',
+                appId: APP_KEY,
+                columnId: 'col_other',
+                title: 'Item in other column',
+                body: 'Details',
+                status: 'published',
+                upvotesCount: 0,
+                commentsCount: 0,
+                hasVoted: false,
+                createdAt: '2026-08-01T00:00:00.000Z',
+              },
+            ],
+            total: 10,
+          });
+        }
+        // Second call from loadMore(): keep pending until released
+        return new Promise<Response>((resolve) => {
+          resolveLoadMore = resolve;
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(RoadmapBoardScreen, { onBack: () => {} })
+      );
+      await flush(4);
+
+      // In idle state, In Progress column is selected and has 0 items, hasMore is true.
+      // The empty-column load-more button must have accessibilityRole, accessibilityLabel, and disabled: false.
+      const idleLoadMoreButtons = pressables.filter((p) => p.text === 'Load more');
+      assert.ok(
+        idleLoadMoreButtons.length > 0,
+        'RoadmapBoardScreen empty column should render "Load more" button'
+      );
+      const idleButton = idleLoadMoreButtons[idleLoadMoreButtons.length - 1];
+      assert.equal(idleButton.props.accessibilityRole, 'button');
+      assert.equal(idleButton.props.accessibilityLabel, 'Load more');
+      assert.deepEqual(idleButton.props.accessibilityState, { disabled: false });
+
+      // Trigger loadMore by pressing the button:
+      await act(async () => {
+        idleButton.props.onPress();
+      });
+      await flush(2);
+
+      // In-flight state: child text is replaced by ActivityIndicator (p.text === ''),
+      // accessibilityLabel must be 'Loading more...', accessibilityState.disabled must be true
+      const loadingButtons = pressables.filter(
+        (p) => p.props.accessibilityLabel === 'Loading more...'
+      );
+      assert.ok(
+        loadingButtons.length > 0,
+        'RoadmapBoardScreen empty-column button must have accessibilityLabel="Loading more..." during loading'
+      );
+      const latestLoadingButton = loadingButtons[loadingButtons.length - 1];
+      assert.equal(latestLoadingButton.props.accessibilityRole, 'button');
+      assert.equal(latestLoadingButton.text, '');
+      assert.deepEqual(latestLoadingButton.props.accessibilityState, { disabled: true });
+      assertIconOnlyPressablesAreLabeled('RoadmapBoardScreen[empty-column-loading]');
+
+      // Settle loadMore:
+      await act(async () => {
+        resolveLoadMore(
+          jsonResponse({
+            requests: [
+              {
+                id: 'fr_2',
+                appId: APP_KEY,
+                columnId: 'col_progress',
+                title: 'Item in progress',
+                body: 'Details',
+                status: 'published',
+                upvotesCount: 0,
+                commentsCount: 0,
+                hasVoted: false,
+                createdAt: '2026-08-01T00:00:00.000Z',
+              },
+            ],
+            total: 10,
+          })
+        );
+      });
+      await flush(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
   'ChangelogOverlay: close button is labeled, continue button has a role, modal is contained',
   renderTestOptions,
   async () => {
@@ -1005,6 +1147,18 @@ test('all locale dictionaries provide non-empty a11y label strings', async () =>
       typeof strings.comments.postingButton === 'string' &&
         strings.comments.postingButton.length > 0,
       `[${locale}] comments.postingButton must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.roadmap.loadMore === 'string' && strings.roadmap.loadMore.length > 0,
+      `[${locale}] roadmap.loadMore must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.roadmap.loadingMore === 'string' && strings.roadmap.loadingMore.length > 0,
+      `[${locale}] roadmap.loadingMore must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.common.loadingMore === 'string' && strings.common.loadingMore.length > 0,
+      `[${locale}] common.loadingMore must be a non-empty string`
     );
   }
 });
