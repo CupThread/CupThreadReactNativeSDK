@@ -139,18 +139,23 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
           >
             <Avatar
               url={data.profile.avatarUrl}
-              name={data.profile.displayName?.trim() || undefined}
+              name={
+                typeof data.profile.displayName === 'string'
+                  ? data.profile.displayName.trim() || undefined
+                  : undefined
+              }
               size={64}
             />
             <Text style={[styles.displayName, { color: colors.textPrimary }]}>
-              {data.profile.displayName?.trim() || strings.userProfile.anonymous}
+              {(typeof data.profile.displayName === 'string' && data.profile.displayName.trim()) ||
+                strings.userProfile.anonymous}
             </Text>
-            {data.profile.bio?.trim() ? (
+            {typeof data.profile.bio === 'string' && data.profile.bio.trim() ? (
               <Text style={[styles.bio, { color: colors.textSecondary }]}>
                 {data.profile.bio.trim()}
               </Text>
             ) : null}
-            {data.profile.websiteUrl?.trim() ? (
+            {typeof data.profile.websiteUrl === 'string' && data.profile.websiteUrl.trim() ? (
               <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl.trim()} />
             ) : null}
           </View>

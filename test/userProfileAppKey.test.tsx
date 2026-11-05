@@ -170,6 +170,7 @@ test('fetchUserProfile maps an unknown u_ id to a 404 UnexpectedStatusException'
 // ---------------------------------------------------------------------------
 
 const pressables: any[] = [];
+const openedUrls: string[] = [];
 
 const TextStub = (props: any) => {
   return props.children ?? null;
@@ -208,7 +209,12 @@ if (supportsModuleMocks) {
       FlatList: (props: any) => props.children ?? null,
       RefreshControl: () => null,
       Image: () => null,
-      Linking: { openURL: () => Promise.resolve() },
+      Linking: {
+        openURL: (url: string) => {
+          openedUrls.push(url);
+          return Promise.resolve();
+        },
+      },
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },
       Alert: { alert: () => {} },
     },
@@ -571,7 +577,7 @@ test(
         'Avatar must render the default ? placeholder when displayName is whitespace-only'
       );
       assert.equal(
-        texts.some((t) => t.trim() === '' && t.length > 0),
+        texts.some((t) => t.trim() === ''),
         false,
         'must not render any empty or whitespace-only Text elements for bio or website'
       );
@@ -631,9 +637,17 @@ test(
         'untrimmed bio must not be rendered'
       );
 
+      openedUrls.length = 0;
       const linkPressable = pressables.find((p) => p.accessibilityRole === 'link');
       assert.ok(linkPressable, 'website link touchable must be mounted for valid websiteUrl');
       assert.ok(texts.includes('https://nasa.gov/katherine'), 'website link text must be trimmed');
+      linkPressable.onPress();
+      await settle();
+      assert.deepEqual(
+        openedUrls,
+        ['https://nasa.gov/katherine'],
+        'Linking.openURL must receive the trimmed website URL'
+      );
       renderer.unmount();
     } finally {
       fetchMock.restore();
