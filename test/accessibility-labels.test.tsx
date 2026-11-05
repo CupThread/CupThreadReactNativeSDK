@@ -96,6 +96,7 @@ const { ChangelogOverlay } = await import('../src/components/ChangelogOverlay');
 const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
 const { ErrorState } = await import('../src/components/ErrorState');
 const { MarkdownText } = await import('../src/components/MarkdownText');
+const { CommentsSection } = await import('../src/components/CommentsSection');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -689,6 +690,117 @@ test(
 );
 
 test(
+  'CommentsSection: post button updates accessibilityLabel to Posting... while in flight',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+    textInputProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let resolvePostComment!: (res: Response) => void;
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const target = url.toString();
+      const method = init?.method?.toUpperCase() ?? 'GET';
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { changelog: true } },
+        });
+      }
+      if (target.includes('/comments') && method === 'POST') {
+        return new Promise<Response>((resolve) => {
+          resolvePostComment = resolve;
+        });
+      }
+      if (target.includes('/comments')) {
+        return jsonResponse({
+          comments: [
+            {
+              id: 'cmt_1',
+              featureRequestId: 'fr_1',
+              authorName: 'DevTeam',
+              body: 'We started working on this.',
+              createdAt: '2026-08-20T09:00:00.000Z',
+              isHidden: false,
+            },
+          ],
+          total: 1,
+          hasMore: false,
+          nextCursor: null,
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+        { commentSessionProvider: () => 'session_tok_live' }
+      );
+
+      // In idle state before typing:
+      const idlePostButton = findPressable('Post Comment');
+      assert.equal(idlePostButton.props.accessibilityRole, 'button');
+      assert.equal(idlePostButton.props.accessibilityLabel, 'Post Comment');
+      assert.deepEqual(idlePostButton.props.accessibilityState, { disabled: true });
+
+      // Type into comment input:
+      const input = textInputProps[textInputProps.length - 1];
+      assert.ok(input, 'CommentsSection should render a TextInput for the draft');
+      await act(async () => {
+        input.onChangeText('A new accessible comment');
+      });
+      await flush(2);
+
+      const activePostButtons = pressables.filter((p) => p.text === 'Post Comment');
+      assert.ok(activePostButtons.length > 0, 'Post Comment button should exist');
+      const activePostButton = activePostButtons[activePostButtons.length - 1];
+      assert.deepEqual(activePostButton.props.accessibilityState, { disabled: false });
+
+      // Trigger post submission:
+      await act(async () => {
+        activePostButton.props.onPress();
+      });
+      await flush(2);
+
+      // Submit is now in-flight: child is ActivityIndicator (text: ""),
+      // and accessibilityLabel must be 'Posting...'
+      const postingButtons = pressables.filter((p) => p.props.accessibilityLabel === 'Posting...');
+      assert.ok(
+        postingButtons.length > 0,
+        'CommentsSection post button must have accessibilityLabel="Posting..." during submission'
+      );
+      const latestPostingButton = postingButtons[postingButtons.length - 1];
+      assert.equal(latestPostingButton.props.accessibilityRole, 'button');
+      assert.equal(latestPostingButton.text, '');
+      assert.deepEqual(latestPostingButton.props.accessibilityState, { disabled: true });
+      assertIconOnlyPressablesAreLabeled('CommentsSection[posting]');
+
+      // Settle comment post:
+      await act(async () => {
+        resolvePostComment(
+          jsonResponse({
+            id: 'cmt_new',
+            featureRequestId: 'fr_1',
+            authorName: 'User',
+            body: 'A new accessible comment',
+            createdAt: '2026-08-20T09:05:00.000Z',
+          })
+        );
+      });
+      await flush(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
   'ChangelogOverlay: close button is labeled, continue button has a role, modal is contained',
   renderTestOptions,
   async () => {
@@ -884,6 +996,15 @@ test('all locale dictionaries provide non-empty a11y label strings', async () =>
     assert.ok(
       typeof strings.changelog.subscribing === 'string' && strings.changelog.subscribing.length > 0,
       `[${locale}] changelog.subscribing must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.comments.postButton === 'string' && strings.comments.postButton.length > 0,
+      `[${locale}] comments.postButton must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.comments.postingButton === 'string' &&
+        strings.comments.postingButton.length > 0,
+      `[${locale}] comments.postingButton must be a non-empty string`
     );
   }
 });

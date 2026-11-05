@@ -212,6 +212,8 @@ test(
 
       const send = findButtonByText(harness.renderer.root, 'Post Comment');
       assert.ok(send, 'send button must exist');
+      assert.equal(send.props.accessibilityRole, 'button');
+      assert.equal(send.props.accessibilityLabel, 'Post Comment');
       await act(async () => {
         send!.props.onPress();
       });
