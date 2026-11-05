@@ -32,9 +32,15 @@ export interface BadgeProps {
   variant?: 'default' | 'outline' | 'subtle';
 }
 
+const SOLID_DARK_TEXT = '#0f172a';
+const SOLID_LIGHT_TEXT = '#ffffff';
+
 /**
  * Normalizes 3-character, 4-character, 6-character, or 8-character hex color codes
  * into standard 6-character `#rrggbb` format. Returns `null` if the input is not a hex color.
+ *
+ * @param input - The raw color string to parse.
+ * @returns 6-digit lowercase hex string (e.g. `"#0099ff"`), or `null`.
  */
 function parseHexColor(input: string): string | null {
   const trimmed = input.trim();
@@ -65,20 +71,20 @@ function parseHexColor(input: string): string | null {
 }
 
 /**
- * Computes standard W3C relative luminance from a hex color string to pick
- * the best contrasting text color (`darkText` vs `lightText`).
+ * Computes standard W3C relative luminance from a hex color string to select
+ * an accessible contrasting text color (`SOLID_DARK_TEXT` for light fills vs `SOLID_LIGHT_TEXT` for dark fills).
+ *
+ * @param hexColor - 6-character `#rrggbb` hex string.
+ * @param lightFallback - Default light text color when hexColor is absent or dark.
+ * @returns An accessible contrasting text color string.
  */
-function getContrastingTextColor(
-  hexColor: string | null,
-  lightText: string,
-  darkText: string
-): string {
+function getContrastingTextColor(hexColor: string | null, lightFallback: string): string {
   if (!hexColor) {
-    return lightText;
+    return lightFallback;
   }
   const hex = parseHexColor(hexColor);
   if (!hex) {
-    return lightText;
+    return lightFallback;
   }
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -87,7 +93,7 @@ function getContrastingTextColor(
   const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
 
-  return luminance > 0.45 ? darkText : lightText;
+  return luminance > 0.45 ? SOLID_DARK_TEXT : SOLID_LIGHT_TEXT;
 }
 
 /**
@@ -132,7 +138,7 @@ export function Badge({ label, color, variant = 'subtle' }: BadgeProps) {
     borderWidth = 1;
   } else if (variant === 'default') {
     backgroundColor = effectiveColor || colors.primary;
-    textColor = getContrastingTextColor(hex6, colors.primaryText, colors.textPrimary);
+    textColor = hex6 ? getContrastingTextColor(hex6, colors.primaryText) : colors.primaryText;
     borderColor = effectiveColor || colors.primary;
     borderWidth = 0;
   } else {

@@ -40,7 +40,7 @@ if (supportsModuleMocks) {
 
 const { Badge } = await import('../src/components/Badge');
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { lightTheme } = await import('../src/theme/SdkTheme');
+const { lightTheme, darkTheme } = await import('../src/theme/SdkTheme');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -148,8 +148,43 @@ test(
     const textStyle = flattenStyle(text.props.style);
     assert.equal(
       textStyle.color,
-      lightTheme.textPrimary,
-      'default variant on light background must render dark textPrimary for contrast'
+      '#0f172a',
+      'default variant on light background must render dark contrasting text'
+    );
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'Badge: variant="default" with light background in dark theme renders dark contrasting text (#248)',
+  renderTestOptions,
+  () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client: makeClient(),
+          theme: 'dark',
+          children: React.createElement(Badge, {
+            label: 'Warning Dark',
+            color: '#ffff00',
+            variant: 'default',
+          }),
+        })
+      );
+    });
+
+    const view = renderer.root.findByType(ViewStub as any);
+    const viewStyle = flattenStyle(view.props.style);
+    assert.equal(viewStyle.backgroundColor, '#ffff00');
+
+    const text = renderer.root.findByType(TextStub as any);
+    const textStyle = flattenStyle(text.props.style);
+    assert.equal(
+      textStyle.color,
+      '#0f172a',
+      'light fill in dark mode must not use light textPrimary (#f8fafc), must remain dark #0f172a'
     );
 
     renderer.unmount();
