@@ -724,3 +724,227 @@ test(
     }
   }
 );
+
+test(
+  'RoadmapBoardScreen handleRefresh does not blank out an empty board on pull-to-refresh (#265)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    let columnsFetchCount = 0;
+    let requestsFetchCount = 0;
+    let resolveColumnsRefresh!: (value: any) => void;
+    let resolveRequestsRefresh!: (value: any) => void;
+
+    const mockColumns = [
+      makeColumn('col_planned', 'Planned'),
+      makeColumn('col_progress', 'In Progress'),
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        columnsFetchCount += 1;
+        if (columnsFetchCount > 1) {
+          // Delay refresh response so we can assert loading/mounting state in-flight
+          await new Promise((res) => {
+            resolveColumnsRefresh = res;
+          });
+        }
+        return new Response(JSON.stringify({ columns: mockColumns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        requestsFetchCount += 1;
+        if (requestsFetchCount > 1) {
+          await new Promise((res) => {
+            resolveRequestsRefresh = res;
+          });
+        }
+        return new Response(JSON.stringify({ requests: [], total: 0 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      assert.equal(columnsFetchCount, 1, 'initial columns fetch count should be 1');
+      assert.equal(requestsFetchCount, 1, 'initial requests fetch count should be 1');
+
+      // Board has loaded with 0 requests; empty state and column tabs must be visible
+      const textsBefore = finalPassTexts();
+      assert.ok(
+        textsBefore.some((t) => t.includes('Planned')),
+        'Planned column tab should be rendered'
+      );
+
+      // Find the RefreshControl
+      const refreshContainer = renderer!.root.findAll(
+        (node: any) => node.props?.refreshControl != null
+      )[0];
+      assert.ok(refreshContainer, 'a container with refreshControl must be mounted on empty board');
+      const refreshControl = refreshContainer.props.refreshControl;
+
+      // Trigger pull-to-refresh
+      let refreshPromise!: Promise<any>;
+      act(() => {
+        refreshPromise = refreshControl.props.onRefresh();
+      });
+      await flush();
+
+      // In-flight refresh: columnsFetchCount and requestsFetchCount should have incremented
+      assert.equal(columnsFetchCount, 2, 'columns refresh must be triggered in background');
+      assert.equal(requestsFetchCount, 2, 'requests refresh must be triggered in background');
+
+      // In-flight refresh: board UI remains mounted (Planned tab still present)
+      const textsDuring = finalPassTexts();
+      assert.ok(
+        textsDuring.some((t) => t.includes('Planned')),
+        'board tabs must remain mounted during pull-to-refresh'
+      );
+      assert.ok(
+        textsDuring.some((t) => t.includes('No items in this stage')),
+        'empty-board content must remain visible during pull-to-refresh'
+      );
+
+      // Resolve the in-flight refreshes
+      await act(async () => {
+        resolveColumnsRefresh(null);
+        resolveRequestsRefresh(null);
+        await refreshPromise;
+      });
+      await flush();
+
+      // After refresh settles
+      const textsAfter = finalPassTexts();
+      assert.ok(
+        textsAfter.some((t) => t.includes('Planned')),
+        'board tabs remain mounted after refresh settles'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen handleRefresh catches rejections via allSettled without unhandled rejection (#265)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    const mockColumns = [
+      makeColumn('col_planned', 'Planned'),
+      makeColumn('col_progress', 'In Progress'),
+    ];
+
+    let shouldFailColumns = false;
+    let shouldFailRequests = false;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        if (shouldFailColumns) {
+          throw new Error('Network error on columns');
+        }
+        return new Response(JSON.stringify({ columns: mockColumns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        if (shouldFailRequests) {
+          throw new Error('Network error on requests');
+        }
+        return new Response(JSON.stringify({ requests: [], total: 0 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const refreshContainer = renderer!.root.findAll(
+        (node: any) => node.props?.refreshControl != null
+      )[0];
+      assert.ok(refreshContainer, 'a container with refreshControl must be mounted');
+      const refreshControl = refreshContainer.props.refreshControl;
+
+      // Make both reject during refresh
+      shouldFailColumns = true;
+      shouldFailRequests = true;
+
+      await act(async () => {
+        // Must not throw unhandled rejection
+        await assert.doesNotReject(async () => {
+          await refreshControl.props.onRefresh();
+        });
+      });
+      await flush();
+
+      // Board must still remain mounted with tabs
+      const texts = finalPassTexts();
+      assert.ok(
+        texts.some((t) => t.includes('Planned')),
+        'tabs must remain mounted after rejection'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);

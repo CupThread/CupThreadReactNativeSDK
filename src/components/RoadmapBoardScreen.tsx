@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
@@ -110,7 +111,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
     total,
     hasMore,
     isLoading: isRequestsLoading,
-    isRefreshing,
+    isRefreshing: isRequestsRefreshing,
     isLoadingMore,
     error: requestsError,
     loadMoreError: requestsLoadMoreError,
@@ -133,9 +134,13 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   const {
     data: columnsData,
     isLoading: isColumnsLoading,
+    isRefreshing: isColumnsRefreshing,
     error: columnsError,
     reload: reloadColumns,
+    refresh: refreshColumns,
   } = useAsyncData(fetchColumns, { enabled: isEnabled || isLoadingConfig });
+
+  const isRefreshing = isRequestsRefreshing || isColumnsRefreshing;
 
   const { columns: visibleColumns, orphanRequests } = useMemo(
     () => groupRoadmapRequests(columnsData ?? [], requests),
@@ -156,8 +161,9 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   }, [visibleColumns, orphanRequests.length]);
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([reloadColumns(), ...(isTokenReady ? [refreshRequests()] : [])]);
-  }, [reloadColumns, refreshRequests, isTokenReady]);
+    const tasks: Promise<any>[] = [refreshColumns(), ...(isTokenReady ? [refreshRequests()] : [])];
+    await Promise.allSettled(tasks);
+  }, [refreshColumns, refreshRequests, isTokenReady]);
 
   const handleRetry = useCallback(() => {
     void reloadColumns();
@@ -343,7 +349,16 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
           onRetry={handleRetry}
         />
       ) : columnItems.length === 0 ? (
-        <View style={styles.centerEmpty}>
+        <ScrollView
+          contentContainerStyle={styles.centerEmpty}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
             {strings.roadmap.emptyColumn}
           </Text>
@@ -369,7 +384,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               </TouchableOpacity>
             </>
           )}
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={columnItems}
@@ -579,6 +594,7 @@ const styles = StyleSheet.create({
   },
   centerEmpty: {
     flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
