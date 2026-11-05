@@ -873,3 +873,270 @@ test(
     }
   }
 );
+
+test(
+  'posting a comment in a paginated thread increments total and updates heading count (#195)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    let postCount = 0;
+
+    globalThis.fetch = (async (
+      url: string | URL | Request,
+      init?: { method?: string; body?: any }
+    ) => {
+      const target = url.toString();
+      if (target.includes('/comments')) {
+        if (init?.method && init.method !== 'GET') {
+          postCount += 1;
+          const bodyJson = typeof init.body === 'string' ? JSON.parse(init.body) : {};
+          return new Response(
+            JSON.stringify(
+              makeComment(`c_posted_${postCount}`, {
+                body: bodyJson.body ?? `New comment ${postCount}`,
+              })
+            ),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c1'), makeComment('c2')],
+            total: 10,
+            hasMore: true,
+            nextCursor: 'cur-2',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client: makeClient(),
+            userToken: 'usr_tok_test',
+            commentSessionProvider: async () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+          })
+        );
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Comment c1');
+
+      // Thread has 2 loaded comments, server total is 10
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (10)'),
+        'heading must display initial server total of 10'
+      );
+
+      // Post first comment
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Posted first comment');
+      });
+      const send = findPressable(renderer.root, strings.comments.postButton);
+      assert.ok(send, 'post button must be available');
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Posted first comment');
+
+      // Heading must increment to 11
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (11)'),
+        'heading must increment from Comments (10) to Comments (11) after posting'
+      );
+
+      // Post second comment
+      await act(async () => {
+        input.props.onChangeText('Posted second comment');
+      });
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Posted second comment');
+
+      // Heading must increment to 12
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (12)'),
+        'heading must increment from Comments (11) to Comments (12) after second comment'
+      );
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  'posting a comment in a fully loaded thread increments total and keeps total >= loaded (#195)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async (
+      url: string | URL | Request,
+      init?: { method?: string; body?: any }
+    ) => {
+      const target = url.toString();
+      if (target.includes('/comments')) {
+        if (init?.method && init.method !== 'GET') {
+          const bodyJson = typeof init.body === 'string' ? JSON.parse(init.body) : {};
+          return new Response(
+            JSON.stringify(
+              makeComment('c_posted_single', {
+                body: bodyJson.body ?? 'Brand new comment',
+              })
+            ),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c1'), makeComment('c2')],
+            total: 2,
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client: makeClient(),
+            userToken: 'usr_tok_test',
+            commentSessionProvider: async () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+          })
+        );
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Comment c1');
+
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (2)'),
+        'heading must display initial count of 2'
+      );
+
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Brand new comment');
+      });
+      const send = findPressable(renderer.root, strings.comments.postButton);
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Brand new comment');
+
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (3)'),
+        'heading must update to Comments (3) when a comment is added to a fully loaded thread'
+      );
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  'posting a comment ignores hidden comments when calculating active count fallback (#195)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+
+    globalThis.fetch = (async (
+      url: string | URL | Request,
+      init?: { method?: string; body?: any }
+    ) => {
+      const target = url.toString();
+      if (target.includes('/comments')) {
+        if (init?.method && init.method !== 'GET') {
+          return new Response(
+            JSON.stringify(
+              makeComment('c_posted_vis', {
+                body: 'Visible reply',
+              })
+            ),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c1'), makeComment('c2_hidden', { isHidden: true })],
+            total: 1,
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client: makeClient(),
+            userToken: 'usr_tok_test',
+            commentSessionProvider: async () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+          })
+        );
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Comment c1');
+
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (1)'),
+        'heading must display 1 visible comment initially'
+      );
+
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Visible reply');
+      });
+      const send = findPressable(renderer.root, strings.comments.postButton);
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Visible reply');
+
+      assert.ok(
+        collectTexts(renderer.root).includes('Comments (2)'),
+        'heading must update to Comments (2), ignoring hidden comment in count'
+      );
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
