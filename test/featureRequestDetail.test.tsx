@@ -48,6 +48,7 @@ const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider'
 const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
 const { VoteButton } = await import('../src/components/VoteButton');
 const { FeedbackClient } = await import('../src/client/FeedbackClient');
+const { UserTokenStore } = await import('../src/client/UserTokenStore');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -555,6 +556,83 @@ test(
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'VoteButton in FeatureRequestDetail is disabled before token readiness and enables once ready (#202)',
+  renderTestOptions,
+  async () => {
+    let resolveStorageToken!: (token: string | null) => void;
+    const storagePromise = new Promise<string | null>((resolve) => {
+      resolveStorageToken = resolve;
+    });
+
+    UserTokenStore.configure({
+      getItem: () => storagePromise,
+      setItem: async () => {},
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+    const client = new RecordingClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_detail',
+    });
+
+    const item = makeItem({ id: 'fr_readiness', voteCount: 5, hasVoted: false });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          // userToken omitted so Provider defers to UserTokenStore.shared
+          children: React.createElement(FeatureRequestDetail, {
+            item,
+            visible: true,
+            onClose: () => {},
+          }),
+        })
+      );
+    });
+    await flush();
+
+    try {
+      // 1. Before storage resolves, isTokenReady is false, VoteButton must be disabled
+      const voteButtonBefore = renderer.root.findByType(VoteButton);
+      assert.equal(voteButtonBefore.props.disabled, true);
+
+      // Attempting to press while disabled should not trigger any client vote call
+      await act(async () => {
+        voteButtonBefore.props.onPress();
+      });
+      await flush();
+      assert.equal(client.voteCalls.length, 0);
+
+      // 2. Resolve storage token
+      await act(async () => {
+        resolveStorageToken('tok_async_resolved');
+      });
+      await flush();
+
+      // 3. After token readiness resolves, VoteButton must be enabled
+      const voteButtonAfter = renderer.root.findByType(VoteButton);
+      assert.equal(voteButtonAfter.props.disabled, false);
+
+      // Pressing now triggers client.toggleVote
+      await act(async () => {
+        voteButtonAfter.props.onPress();
+      });
+      await flush();
+      assert.equal(client.voteCalls.length, 1);
+      assert.equal(client.voteCalls[0], 'fr_readiness');
+    } finally {
+      globalThis.fetch = originalFetch;
+      UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
     }
   }
 );

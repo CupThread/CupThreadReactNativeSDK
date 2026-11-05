@@ -82,6 +82,8 @@ if (supportsModuleMocks) {
 
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
 const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
+const { VoteButton } = await import('../src/components/VoteButton');
+const { UserTokenStore } = await import('../src/client/UserTokenStore');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -346,6 +348,110 @@ test(
       );
     } finally {
       globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'VoteButton in RoadmapBoardScreen reflects token readiness state (#202)',
+  renderTestOptions,
+  async () => {
+    const columns: BoardColumn[] = [makeColumn('col_1', 'In Progress')];
+    const requests: FeatureRequestItem[] = [makeRequest('fr_board_readiness', 'col_1')];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        return new Response(JSON.stringify({ columns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        return new Response(JSON.stringify({ requests, total: requests.length }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={client} userToken="tok_board_initial">
+          <RoadmapBoardScreen />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    try {
+      const voteButtonReady = renderer!.root.findAllByType(VoteButton as any)[0];
+      assert.ok(voteButtonReady, 'VoteButton must exist on the board card');
+      assert.equal(
+        voteButtonReady.props.disabled,
+        false,
+        'VoteButton must be enabled when token is ready'
+      );
+
+      // Transition token to pending storage read
+      let resolvePendingRead!: (val: string | null) => void;
+      const pendingPromise = new Promise<string | null>((res) => {
+        resolvePendingRead = res;
+      });
+      UserTokenStore.configure({
+        getItem: () => pendingPromise,
+        setItem: async () => {},
+      });
+
+      await act(async () => {
+        renderer!.update(
+          <CupThreadProvider client={client} userToken="   ">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const voteButtonUnready = renderer!.root.findAllByType(VoteButton as any)[0];
+      assert.equal(
+        voteButtonUnready.props.disabled,
+        true,
+        'VoteButton must be disabled when token is unready'
+      );
+
+      // Resolve pending storage read
+      await act(async () => {
+        resolvePendingRead('tok_board_resumed');
+      });
+      await flush();
+
+      const voteButtonResumed = renderer!.root.findAllByType(VoteButton as any)[0];
+      assert.equal(
+        voteButtonResumed.props.disabled,
+        false,
+        'VoteButton must be re-enabled after token readiness resolves'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      UserTokenStore.resetSharedForTests();
       renderer?.unmount();
     }
   }

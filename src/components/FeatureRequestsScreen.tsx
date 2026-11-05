@@ -174,7 +174,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           voteCount={item.voteCount}
           hasVoted={item.hasVoted}
           onPress={() => handleToggleVote(item)}
-          disabled={item.isOwnRequest || isVoting(item.id)}
+          disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
           error={getVoteError(item.id)}
         />
       </View>

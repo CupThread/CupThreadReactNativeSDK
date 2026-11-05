@@ -448,7 +448,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   voteCount={item.voteCount}
                   hasVoted={item.hasVoted}
                   onPress={() => handleToggleVote(item)}
-                  disabled={item.isOwnRequest || isVoting(item.id)}
+                  disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
                   error={getVoteError(item.id)}
                 />
               </View>
