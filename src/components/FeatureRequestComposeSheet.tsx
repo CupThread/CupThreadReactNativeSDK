@@ -451,6 +451,9 @@ export function FeatureRequestComposeSheet({
           },
         ]}
         accessibilityRole="button"
+        accessibilityLabel={
+          isSubmitting ? strings.common.submitting : strings.featureRequestCompose.submitButton
+        }
         accessibilityState={{ disabled: isSubmitting || !isTokenReady }}
       >
         {isSubmitting ? (
