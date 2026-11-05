@@ -43,8 +43,14 @@ if (supportsModuleMocks) {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { Avatar } = await import('../src/components/Avatar');
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+// Guard the component imports with the mock-capability check: importing the
+// real modules pulls in react-native, which cannot load under plain Node, so
+// without the guard an unsupported Node would crash the file instead of
+// skipping the render-level tests.
+const { Avatar } = supportsModuleMocks ? await import('../src/components/Avatar') : ({} as any);
+const { CupThreadProvider } = supportsModuleMocks
+  ? await import('../src/theme/CupThreadThemeProvider')
+  : ({} as any);
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
