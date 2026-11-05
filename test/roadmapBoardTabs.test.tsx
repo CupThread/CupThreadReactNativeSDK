@@ -80,7 +80,8 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+const { CupThreadProvider, useCupThreadAppConfig } =
+  await import('../src/theme/CupThreadThemeProvider');
 const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
 const { VoteButton } = await import('../src/components/VoteButton');
 const { UserTokenStore } = await import('../src/client/UserTokenStore');
@@ -658,6 +659,67 @@ test(
     } finally {
       globalThis.fetch = originalFetch;
       UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen does not fetch columns when roadmap is disabled in appConfig (#210)',
+  renderTestOptions,
+  async () => {
+    let columnsFetchCount = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: false } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        columnsFetchCount += 1;
+        return new Response(JSON.stringify({ columns: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    function ScreenWithConfigGate() {
+      const { isLoadingConfig } = useCupThreadAppConfig();
+      if (isLoadingConfig) return null;
+      return <RoadmapBoardScreen />;
+    }
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <ScreenWithConfigGate />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      assert.equal(
+        columnsFetchCount,
+        0,
+        'client.fetchColumns must not be called when roadmap is disabled in appConfig'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
       renderer?.unmount();
     }
   }
