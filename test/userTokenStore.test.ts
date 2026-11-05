@@ -606,6 +606,28 @@ test('prepareChangelogOverlay with onlyIfUnseen suppresses seen release when bac
     const result3 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store });
     assert.ok(result3, 'Overlay should reappear when a new version is published');
     assert.equal(result3?.latestKey, '1.3.0');
+
+    // Padded version label (e.g. '  1.4.0  ') should normalize to trimmed key '1.4.0'
+    activeVersion = '  1.4.0  ';
+    const result4 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store });
+    assert.ok(result4);
+    assert.equal(result4?.latestKey, '1.4.0');
+    await store.markChangelogSeen('1.4.0');
+    assert.equal(
+      await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }),
+      null
+    );
+
+    // Whitespace-only version label (e.g. '   ') should fallback to entry.id
+    activeVersion = '   ';
+    const result5 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store });
+    assert.ok(result5);
+    assert.equal(result5?.latestKey, 'entry_   ');
+    await store.markChangelogSeen('entry_   ');
+    assert.equal(
+      await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }),
+      null
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1070,4 +1092,13 @@ test('UserTokenStore: parseSeenChangelogs trims JSON array entries and filters b
   assert.equal(await store.hasSeenChangelog('3.0.0'), true);
   assert.equal(await store.hasSeenChangelog('   '), false);
   assert.equal(await store.hasSeenChangelog(''), false);
+
+  // Calling markChangelogSeen persists the cleaned set without any blanks or invalid items
+  await store.markChangelogSeen('4.0.0');
+  assert.deepEqual(JSON.parse(mem['cupthread_seen_changelogs_v1:app_json_trim']), [
+    '1.0.0',
+    '2.0.0',
+    '3.0.0',
+    '4.0.0',
+  ]);
 });

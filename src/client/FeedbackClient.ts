@@ -2105,7 +2105,8 @@ export class FeedbackClient {
     if (entries.length === 0) return null;
 
     const latest = entries[0];
-    const latestKey = latest.versionLabel || latest.id;
+    const label = typeof latest.versionLabel === 'string' ? latest.versionLabel.trim() : '';
+    const latestKey = label || latest.id;
 
     if (options?.onlyIfUnseen) {
       const store = options.tokenStore || UserTokenStore.shared;
