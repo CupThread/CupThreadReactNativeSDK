@@ -119,6 +119,9 @@ function SubscribeCard({
               },
             ]}
             accessibilityRole="button"
+            accessibilityLabel={
+              isSubscribing ? strings.changelog.subscribing : strings.changelog.subscribeButton
+            }
             accessibilityState={{ disabled: isSubscribing || !isTokenReady }}
           >
             {isSubscribing ? (
