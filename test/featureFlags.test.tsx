@@ -244,7 +244,8 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+const { CupThreadProvider, useCupThreadAppConfig } =
+  await import('../src/theme/CupThreadThemeProvider');
 const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
 const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
 const { WhatsNewScreen } = await import('../src/components/WhatsNewScreen');
@@ -322,6 +323,12 @@ test(
       });
     }) as typeof fetch;
 
+    function ScreenWithConfigGate() {
+      const { isLoadingConfig } = useCupThreadAppConfig();
+      if (isLoadingConfig) return null;
+      return <FeatureRequestsScreen />;
+    }
+
     try {
       const client = new FeedbackClient({
         baseUrl: 'https://api.example.test',
@@ -332,7 +339,7 @@ test(
       await act(async () => {
         renderer = TestRenderer.create(
           <CupThreadProvider client={client} userToken="user-tok-123">
-            <FeatureRequestsScreen />
+            <ScreenWithConfigGate />
           </CupThreadProvider>
         );
       });
@@ -343,6 +350,74 @@ test(
       assert.ok(
         texts.includes(enStrings.featureRequests.sectionUnavailable),
         `Expected rendered texts to include "${enStrings.featureRequests.sectionUnavailable}", got: ${JSON.stringify(texts)}`
+      );
+
+      renderer?.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  'FeatureRequestsScreen does not fetch versions when featureRequests is false in remote config (#204)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    renderGeneration = 0;
+
+    let versionsFetchCount = 0;
+    const originalFetch = globalThis.fetch;
+    const mockConfig = makeMockAppConfig({ featureRequests: false });
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify(mockConfig), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (target.includes('/api/v1/public/versions/')) {
+        versionsFetchCount += 1;
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ requests: [], total: 0 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    function ScreenWithConfigGate() {
+      const { isLoadingConfig } = useCupThreadAppConfig();
+      if (isLoadingConfig) return null;
+      return <FeatureRequestsScreen />;
+    }
+
+    try {
+      const client = new FeedbackClient({
+        baseUrl: 'https://api.example.test',
+        appKey: 'key_test_123',
+      });
+
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="user-tok-123">
+            <ScreenWithConfigGate />
+          </CupThreadProvider>
+        );
+      });
+
+      await flush(10);
+
+      assert.equal(
+        versionsFetchCount,
+        0,
+        'client.fetchVersions must not be called when featureRequests is disabled in appConfig'
       );
 
       renderer?.unmount();

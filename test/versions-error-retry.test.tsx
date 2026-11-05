@@ -55,6 +55,7 @@ const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider'
 const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
 const { ErrorState } = await import('../src/components/ErrorState');
 const { enStrings } = await import('../src/i18n');
+const { UserTokenStore } = await import('../src/client/UserTokenStore');
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -360,6 +361,91 @@ test(
       assert.equal(requestsCalls, 2, 'Main list retry should retry failed requests');
     } finally {
       renderer.unmount();
+    }
+  }
+);
+
+test(
+  'FeatureRequestsScreen fetches versions on mount even when isTokenReady is false (#204)',
+  renderTestOptions,
+  async () => {
+    let versionsFetchCount = 0;
+    let requestsFetchCount = 0;
+    const versions: AppVersion[] = [makeMockVersion('v_1', '1.0.0')];
+    const requests: FeatureRequestItem[] = [makeMockItem('fr_1', 'Request 1')];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_versions',
+            sdk: { features: { featureRequests: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/versions/')) {
+        versionsFetchCount += 1;
+        return new Response(JSON.stringify(versions), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        requestsFetchCount += 1;
+        return new Response(JSON.stringify({ requests, total: requests.length }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_versions',
+    });
+
+    let resolvePendingRead!: (val: string | null) => void;
+    const pendingPromise = new Promise<string | null>((res) => {
+      resolvePendingRead = res;
+    });
+    UserTokenStore.configure({
+      getItem: () => pendingPromise,
+      setItem: async () => {},
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="   ">
+            <FeatureRequestsScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      // Versions must be fetched immediately on mount without waiting for token readiness
+      assert.equal(
+        versionsFetchCount,
+        1,
+        'versions should be fetched on mount while token is unready'
+      );
+      // Requests require token readiness, so requestsFetchCount should be 0
+      assert.equal(requestsFetchCount, 0, 'requests fetch must wait until userToken is ready');
+
+      // Now resolve storage read to finish cleanly
+      await act(async () => {
+        resolvePendingRead('tok_fr_ready');
+      });
+      await flush();
+    } finally {
+      globalThis.fetch = originalFetch;
+      UserTokenStore.resetSharedForTests();
+      renderer?.unmount();
     }
   }
 );

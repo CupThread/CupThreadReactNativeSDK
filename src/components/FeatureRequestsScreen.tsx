@@ -105,7 +105,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     isLoading: isVersionsLoading,
     error: versionsError,
     reload: reloadVersions,
-  } = useAsyncData(fetchVersions, { enabled: isTokenReady });
+  } = useAsyncData(fetchVersions, { enabled: isEnabled || isLoadingConfig });
 
   const versions: AppVersion[] = versionsData ?? [];
 
