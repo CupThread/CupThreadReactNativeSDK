@@ -39,6 +39,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+  const [isNotFound, setIsNotFound] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     setIsLoading(true);
     setError(null);
     setIsRateLimited(false);
+    setIsNotFound(false);
     client
       .fetchUserProfile(userId, { signal: controller.signal })
       .then((res) => {
@@ -62,7 +64,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
         }
         if (err instanceof UnexpectedStatusException && err.status === 404) {
           setData(null);
-          setError(strings.userProfile.notFound);
+          setIsNotFound(true);
           return;
         }
         setError(userFacingErrorMessage(err, strings.userProfile.loadFailed, strings.common));
@@ -76,14 +78,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     return () => {
       controller.abort();
     };
-  }, [
-    client,
-    userId,
-    reloadKey,
-    strings.userProfile.loadFailed,
-    strings.userProfile.notFound,
-    strings.common,
-  ]);
+  }, [client, userId, reloadKey, strings.userProfile.loadFailed, strings.common]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -105,10 +100,16 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
-      ) : isRateLimited ? (
+      ) : isNotFound ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
-            {strings.userProfile.rateLimited}
+            {strings.userProfile.notFound}
+          </Text>
+        </View>
+      ) : isRateLimited || error ? (
+        <View style={styles.center}>
+          <Text style={[styles.errorText, { color: colors.textPrimary }]}>
+            {isRateLimited ? strings.userProfile.rateLimited : error}
           </Text>
           <TouchableOpacity
             onPress={() => setReloadKey((key) => key + 1)}
@@ -122,10 +123,10 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             </Text>
           </TouchableOpacity>
         </View>
-      ) : error || !data ? (
+      ) : !data ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
-            {error || strings.userProfile.notFound}
+            {strings.userProfile.notFound}
           </Text>
         </View>
       ) : (

@@ -243,6 +243,7 @@ test(
   screenTestOptions,
   async () => {
     const fetchMock = installFetch(404, { error: 'User profile not found' });
+    pressables.length = 0;
 
     try {
       const renderer = renderProfileScreen();
@@ -254,9 +255,124 @@ test(
         'an unknown id must render the not-found copy, not the generic failure'
       );
       assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+      assert.equal(
+        pressables.find((p) => p.accessibilityLabel === enStrings.common.retry),
+        undefined,
+        'permanent 404 not-found state must not offer a misleading retry button'
+      );
       renderer.unmount();
     } finally {
       fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen shows generic error state with working retry on 500 network failure (#198)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(500, { error: 'Internal Server Error' });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      assert.ok(
+        collectTexts(renderer.root).includes(enStrings.userProfile.loadFailed),
+        'transient server error must display the user-facing loadFailed copy'
+      );
+
+      const retry = pressables.find((p) => p.accessibilityLabel === enStrings.common.retry);
+      assert.ok(retry, 'generic load failures must offer a retry affordance');
+      assert.equal(retry.accessibilityRole, 'button');
+
+      // Retry against a recovered server: the profile renders successfully.
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        if (url.toString().includes('/api/v1/public/config/')) {
+          return new Response(JSON.stringify({ appKey: 'app_key_abc', sdk: { features: {} } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            profile: {
+              clerkUserId: 'u_abc',
+              displayName: 'Grace Hopper',
+              avatarUrl: null,
+              bio: null,
+              websiteUrl: null,
+              createdAt: '2025-01-01T00:00:00.000Z',
+            },
+            publicApps: [],
+            recentComments: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }) as any;
+
+      await act(async () => {
+        retry.onPress();
+      });
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes('Grace Hopper'),
+        'retry must reload the profile after transient error resolves'
+      );
+      assert.equal(
+        texts.includes(enStrings.userProfile.loadFailed),
+        false,
+        'the loadFailed error state must clear once the reload succeeds'
+      );
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen shows the network error copy with a working retry on fetch rejection',
+  screenTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    let profileRequests = 0;
+    pressables.length = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      if (url.toString().includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify({ appKey: 'app_key_abc', sdk: { features: {} } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      profileRequests += 1;
+      throw new TypeError('Network request failed');
+    }) as any;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      assert.ok(
+        collectTexts(renderer.root).includes(enStrings.common.networkError),
+        'a network failure must display the networkError copy'
+      );
+      const retry = pressables.find((p) => p.accessibilityLabel === enStrings.common.retry);
+      assert.ok(retry, 'network failures must offer a retry affordance');
+      assert.equal(retry.accessibilityRole, 'button');
+
+      const requestsBeforeRetry = profileRequests;
+      await act(async () => {
+        retry.onPress();
+      });
+      await settle();
+      assert.ok(profileRequests > requestsBeforeRetry, 'retry must re-invoke fetchUserProfile');
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   }
 );
