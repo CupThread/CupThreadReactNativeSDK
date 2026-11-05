@@ -74,6 +74,118 @@ test('isSurfaceEnabled: maintains isolation between flags', () => {
   assert.equal(isSurfaceEnabled(config, 'roadmap'), true);
 });
 
+test('prepareChangelogOverlay: gates only on explicit changelog=false and allows undefined/omitted flags', async () => {
+  const originalFetch = globalThis.fetch;
+  let listChangelogCalled = false;
+
+  const makeConfigResponse = (features?: Partial<SdkFeatures> | null) => ({
+    appKey: 'app_flag_test',
+    sdk: {
+      ...(features !== null ? { features } : {}),
+      changelogOverlay: { entryCount: 3 },
+    },
+  });
+
+  const mockChangelogResponse = {
+    entries: [
+      {
+        id: 'ch_flag_1',
+        versionLabel: '2.0.0',
+        title: 'Feature Release',
+        body: 'Notes',
+        publishedAt: '2026-11-01T00:00:00.000Z',
+      },
+    ],
+  };
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_flag_test',
+    });
+
+    // 1. Explicit false: prepareChangelogOverlay must return null and abort before listChangelog
+    listChangelogCalled = false;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify(makeConfigResponse({ changelog: false })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (s.includes('/changelog')) {
+        listChangelogCalled = true;
+        return new Response(JSON.stringify(mockChangelogResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const disabledOverlay = await client.prepareChangelogOverlay();
+    assert.equal(disabledOverlay, null, 'explicit changelog: false must return null');
+    assert.equal(
+      listChangelogCalled,
+      false,
+      'must not fetch changelog entries when surface is disabled'
+    );
+
+    // 2. Undefined changelog flag: safe-by-default must succeed
+    listChangelogCalled = false;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify(makeConfigResponse({ feedback: true })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (s.includes('/changelog')) {
+        listChangelogCalled = true;
+        return new Response(JSON.stringify(mockChangelogResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const undefinedFlagOverlay = await client.prepareChangelogOverlay();
+    assert.ok(undefinedFlagOverlay, 'undefined changelog flag must allow overlay preparation');
+    assert.equal(undefinedFlagOverlay?.latestKey, '2.0.0');
+    assert.equal(listChangelogCalled, true);
+
+    // 3. Entire features object omitted: safe-by-default must succeed
+    listChangelogCalled = false;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(JSON.stringify(makeConfigResponse(null)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (s.includes('/changelog')) {
+        listChangelogCalled = true;
+        return new Response(JSON.stringify(mockChangelogResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const noFeaturesOverlay = await client.prepareChangelogOverlay();
+    assert.ok(noFeaturesOverlay, 'omitted sdk.features must allow overlay preparation');
+    assert.equal(noFeaturesOverlay?.latestKey, '2.0.0');
+    assert.equal(listChangelogCalled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // --- UI Render Tests with Mocked React Native ---
 
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
