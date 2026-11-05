@@ -71,7 +71,8 @@ export function Avatar({ url, name, size = 32 }: AvatarProps) {
     );
   }
 
-  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  const initial = (trimmedName || '?').charAt(0).toUpperCase();
 
   return (
     <View
