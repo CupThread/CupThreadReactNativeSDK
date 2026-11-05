@@ -143,12 +143,17 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   );
 
   useEffect(() => {
-    if (visibleColumns.length === 0) return;
+    if (visibleColumns.length === 0) {
+      setSelectedColumnId(null);
+      return;
+    }
     setSelectedColumnId((prev) => {
-      if (prev === ROADMAP_OTHER_COLUMN_ID) return prev;
+      if (prev === ROADMAP_OTHER_COLUMN_ID) {
+        return orphanRequests.length > 0 ? prev : visibleColumns[0].id;
+      }
       return prev && visibleColumns.some((c) => c.id === prev) ? prev : visibleColumns[0].id;
     });
-  }, [visibleColumns]);
+  }, [visibleColumns, orphanRequests.length]);
 
   const handleRefresh = useCallback(async () => {
     if (!isTokenReady) return;
