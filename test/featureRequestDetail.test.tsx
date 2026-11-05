@@ -714,3 +714,47 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestDetail: whitespace-only requesterName falls back to Anonymous and trims padded names (#270)',
+  renderTestOptions,
+  async () => {
+    // 1. Whitespace-only requesterName falls back to Anonymous
+    const wsItem = makeItem({ id: 'fr_ws_req', requesterName: '   \t  ' });
+    const harness = await renderDetail(wsItem, true);
+
+    try {
+      const textWs = collectText(harness.renderer.root);
+      assert.ok(
+        textWs.includes('Anonymous'),
+        'must display Anonymous fallback when requesterName is whitespace-only'
+      );
+
+      // 2. Whitespace-padded requesterName is trimmed
+      await harness.update(
+        makeItem({ id: 'fr_padded_req', requesterName: '  Taylor Swift  ' }),
+        true
+      );
+      const textPadded = collectText(harness.renderer.root);
+      assert.ok(
+        textPadded.includes('Taylor Swift'),
+        'must display trimmed name when requesterName contains surrounding whitespace'
+      );
+      assert.ok(
+        !textPadded.includes('  Taylor Swift  '),
+        'must not display leading/trailing whitespace in requester name'
+      );
+
+      // 3. Null or undefined requesterName falls back to Anonymous
+      await harness.update(makeItem({ id: 'fr_null_req', requesterName: null as any }), true);
+      const textNull = collectText(harness.renderer.root);
+      assert.ok(
+        textNull.includes('Anonymous'),
+        'must display Anonymous fallback when requesterName is null'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);

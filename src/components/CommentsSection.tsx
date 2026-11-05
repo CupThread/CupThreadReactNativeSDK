@@ -268,7 +268,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         body: commentText.trim(),
         parentId: replyTo?.id || undefined,
         replyToClerkId: replyTo?.authorClerkId || undefined,
-        replyToAuthorName: replyTo?.authorName || undefined,
+        replyToAuthorName: replyTo?.authorName?.trim() || undefined,
       };
 
       const newComment = await client.postComment(featureRequestId, draft, effectiveToken, {
@@ -346,10 +346,14 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
               ]}
             >
               <View style={styles.authorRow}>
-                <Avatar url={item.authorAvatarUrl} name={item.authorName} size={28} />
+                <Avatar
+                  url={item.authorAvatarUrl}
+                  name={item.authorName?.trim() || undefined}
+                  size={28}
+                />
                 <View style={styles.authorMeta}>
                   <Text style={[styles.authorName, { color: colors.textPrimary }]}>
-                    {item.authorName || strings.common.anonymous}
+                    {item.authorName?.trim() || strings.common.anonymous}
                   </Text>
                   <Text style={[styles.timeText, { color: colors.textMuted }]}>
                     {formatDate(item.createdAt, strings.common, locale)}
@@ -357,11 +361,11 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
                 </View>
               </View>
 
-              {item.replyToAuthorName && (
+              {item.replyToAuthorName && item.replyToAuthorName.trim() ? (
                 <Text style={[styles.replyNotice, { color: colors.primary }]}>
-                  {strings.comments.replyingTo(item.replyToAuthorName)}
+                  {strings.comments.replyingTo(item.replyToAuthorName.trim())}
                 </Text>
-              )}
+              ) : null}
 
               <MarkdownText content={item.body} style={{ fontSize: 13 }} />
 
@@ -414,7 +418,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
           {replyTo && (
             <View style={[styles.replyingBar, { backgroundColor: colors.chipBg }]}>
               <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
-                {strings.comments.replyingTo(replyTo.authorName || strings.common.anonymous)}
+                {strings.comments.replyingTo(
+                  replyTo.authorName?.trim() || strings.common.anonymous
+                )}
               </Text>
               <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
                 <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>

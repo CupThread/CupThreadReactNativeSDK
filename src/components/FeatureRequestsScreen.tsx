@@ -193,7 +193,11 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                 { marginLeft: idx > 0 ? -8 : 0, borderColor: colors.card },
               ]}
             >
-              <Avatar url={commenter.avatarUrl} name={commenter.authorName} size={20} />
+              <Avatar
+                url={commenter.avatarUrl}
+                name={commenter.authorName?.trim() || undefined}
+                size={20}
+              />
             </View>
           ))}
           {item.hasMoreCommenters && (

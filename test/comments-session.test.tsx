@@ -82,9 +82,10 @@ class CommentsStubClient extends FeedbackClient {
   postCalls: PostCall[] = [];
   postBehavior: 'success' | 'unauthorized' = 'success';
   postedComment = makeComment('c_new', { authorName: null, body: 'Hello thread' });
+  seedComments: FeatureRequestComment[] = [makeComment('c_seed')];
 
   override async listComments(): Promise<ListFeatureRequestCommentsResult> {
-    const comments = [makeComment('c_seed')];
+    const comments = this.seedComments;
     return { comments, total: comments.length, hasMore: false, nextCursor: null };
   }
 
@@ -98,7 +99,7 @@ class CommentsStubClient extends FeedbackClient {
     if (this.postBehavior === 'unauthorized') {
       throw new AuthenticationRequiredException();
     }
-    return this.postedComment;
+    return { ...this.postedComment, id: `c_new_${this.postCalls.length}` };
   }
 }
 
@@ -131,7 +132,8 @@ interface Harness {
 }
 
 async function renderComments(
-  sessionProvider?: () => string | null | undefined | Promise<string | null | undefined>
+  sessionProvider?: () => string | null | undefined | Promise<string | null | undefined>,
+  initialComments?: FeatureRequestComment[]
 ): Promise<Harness> {
   // The provider's config fetch is the only call reaching global fetch; it
   // gets a rejection (non-fatal, falls back to system theme).
@@ -142,6 +144,9 @@ async function renderComments(
     baseUrl: 'https://api.cupthread.com',
     appKey: 'app_comments_session_test',
   });
+  if (initialComments) {
+    client.seedComments = initialComments;
+  }
 
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -545,6 +550,134 @@ test(
     } finally {
       globalThis.fetch = originalFetch;
       renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'CommentsSection: whitespace-only author and replyTo names render anonymous fallback and omit empty reply notice (#270)',
+  renderTestOptions,
+  async () => {
+    const comments = [
+      makeComment('c_ws', { authorName: '   \t  ', body: 'Whitespace author comment' }),
+      makeComment('c_padded', {
+        authorName: '  Alice Padded  ',
+        replyToAuthorName: '   ',
+        body: 'Comment with whitespace replyToAuthorName',
+      }),
+      makeComment('c_reply_valid', {
+        authorName: 'Bob Normal',
+        replyToAuthorName: '  Charlie Target  ',
+        body: 'Comment with padded replyToAuthorName',
+      }),
+    ];
+
+    const harness = await renderComments(() => 'clerk_jwt_test', comments);
+
+    try {
+      const text = collectText(harness.renderer.root);
+
+      // 1. Whitespace author renders Anonymous fallback
+      assert.ok(
+        text.includes('Anonymous'),
+        'comment with whitespace-only authorName must display Anonymous fallback'
+      );
+
+      // 2. Padded author name is trimmed
+      assert.ok(
+        text.includes('Alice Padded'),
+        'comment with whitespace-padded authorName must display trimmed name'
+      );
+      assert.ok(
+        !text.includes('  Alice Padded  '),
+        'must not render untrimmed whitespace around authorName'
+      );
+
+      // 3. Whitespace replyToAuthorName does NOT render "Replying to" notice
+      assert.ok(
+        !text.includes('Replying to @   ') && !text.includes('Replying to @\n'),
+        'whitespace-only replyToAuthorName must not render empty reply notice'
+      );
+      const replyNoticeCount = text.split('Replying to @').length - 1;
+      assert.equal(
+        replyNoticeCount,
+        1,
+        'only the single valid replyToAuthorName should produce a reply notice'
+      );
+
+      // 4. Padded replyToAuthorName is trimmed in reply notice
+      assert.ok(
+        text.includes('Replying to @Charlie Target'),
+        'padded replyToAuthorName must render trimmed target name in reply notice'
+      );
+
+      // 5. Active reply bar displays Anonymous when replying to whitespace author
+      const replyButtons = harness.renderer.root
+        .findAllByType(TouchableOpacityStub as any)
+        .filter((b) => b.findAllByType(TextStub as any).some((t) => t.props?.children === 'Reply'));
+      assert.ok(replyButtons.length >= 2, 'must have reply buttons for comments');
+
+      // Click reply on the first comment (which has authorName: '   \t  ')
+      await act(async () => {
+        replyButtons[0].props.onPress();
+      });
+      await flush();
+
+      const textAfterReplyWs = collectText(harness.renderer.root);
+      assert.ok(
+        textAfterReplyWs.includes('Replying to @Anonymous'),
+        'active reply bar must show Replying to @Anonymous when target author is whitespace-only'
+      );
+
+      // Submit reply to whitespace author and verify draft.replyToAuthorName is undefined
+      const input = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Replying to ws author');
+      });
+      const postBtn = findButtonByText(harness.renderer.root, 'Post Comment');
+      assert.ok(postBtn, 'post button must exist');
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      assert.equal(harness.client.postCalls.length, 1);
+      assert.equal(
+        harness.client.postCalls[0].draft.replyToAuthorName,
+        undefined,
+        'draft.replyToAuthorName must be undefined when replying to whitespace author'
+      );
+
+      // 6. Click reply on the second comment (authorName: '  Alice Padded  ')
+      await act(async () => {
+        replyButtons[1].props.onPress();
+      });
+      await flush();
+
+      const textAfterReplyPadded = collectText(harness.renderer.root);
+      assert.ok(
+        textAfterReplyPadded.includes('Replying to @Alice Padded'),
+        'active reply bar must show trimmed author name when target author has whitespace padding'
+      );
+
+      // Submit reply to padded author and verify draft.replyToAuthorName is trimmed
+      await act(async () => {
+        input.props.onChangeText('Replying to padded author');
+      });
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      assert.equal(harness.client.postCalls.length, 2);
+      assert.equal(
+        harness.client.postCalls[1].draft.replyToAuthorName,
+        'Alice Padded',
+        'draft.replyToAuthorName must be trimmed string when replying to padded author'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
     }
   }
 );

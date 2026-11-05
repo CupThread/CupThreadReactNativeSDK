@@ -230,9 +230,13 @@ export function FeatureRequestDetail({
           )}
 
           <View style={styles.authorRow}>
-            <Avatar url={item.requesterAvatarUrl} name={item.requesterName} size={24} />
+            <Avatar
+              url={item.requesterAvatarUrl}
+              name={item.requesterName?.trim() || undefined}
+              size={24}
+            />
             <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-              {item.requesterName || strings.common.anonymous}
+              {item.requesterName?.trim() || strings.common.anonymous}
             </Text>
             <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
             <Text style={[styles.dateText, { color: colors.textMuted }]}>
