@@ -28,6 +28,7 @@ interface CapturedPressable {
 const pressables: CapturedPressable[] = [];
 const modalProps: Record<string, any>[] = [];
 const textProps: Record<string, any>[] = [];
+const textInputProps: Record<string, any>[] = [];
 
 /** Recursively collects the visible text inside a stubbed element tree. */
 function collectText(node: any): string {
@@ -65,7 +66,10 @@ if (supportsModuleMocks) {
       // rendered tree.
       View: ({ children }: any) => children ?? null,
       Text: TextStub,
-      TextInput: () => null,
+      TextInput: (props: any) => {
+        textInputProps.push(props);
+        return null;
+      },
       Image: () => null,
       TouchableOpacity: TouchableOpacityStub,
       ActivityIndicator: () => null,
@@ -402,6 +406,7 @@ test(
 
       const subscribe = findPressable('Subscribe');
       assert.equal(subscribe.props.accessibilityRole, 'button');
+      assert.equal(subscribe.props.accessibilityLabel, 'Subscribe');
       assert.deepEqual(subscribe.props.accessibilityState, { disabled: false });
     } finally {
       restoreFetch();
@@ -607,6 +612,83 @@ test(
 );
 
 test(
+  'WhatsNewScreen: subscribe button updates accessibilityLabel to Subscribing... while in flight',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+    textInputProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let resolveSubscribe!: (res: Response) => void;
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { changelog: true } },
+        });
+      }
+      if (target.includes('/changelog/subscribe')) {
+        return new Promise<Response>((resolve) => {
+          resolveSubscribe = resolve;
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(WhatsNewScreen, { onBack: () => {} })
+      );
+      await flush(4);
+
+      const emailInput = textInputProps.find((p) => p.keyboardType === 'email-address');
+      assert.ok(emailInput, 'email TextInput should be rendered');
+
+      await act(async () => {
+        emailInput.onChangeText('alex@example.com');
+      });
+      await flush(2);
+
+      const subscribeButtons = pressables.filter((p) => p.text === 'Subscribe');
+      const subscribeButton = subscribeButtons[subscribeButtons.length - 1];
+      assert.ok(subscribeButton, 'subscribe button should be rendered');
+      assert.equal(subscribeButton.props.accessibilityLabel, 'Subscribe');
+
+      await act(async () => {
+        subscribeButton.props.onPress();
+      });
+      await flush(2);
+
+      const subscribingButtons = pressables.filter(
+        (p) => p.props.accessibilityLabel === 'Subscribing...'
+      );
+      assert.ok(
+        subscribingButtons.length > 0,
+        'WhatsNewScreen subscribe button must have accessibilityLabel="Subscribing..." during subscription'
+      );
+      const latestSubscribing = subscribingButtons[subscribingButtons.length - 1];
+      assert.equal(latestSubscribing.props.accessibilityRole, 'button');
+      assert.equal(latestSubscribing.text, '');
+      assert.deepEqual(latestSubscribing.props.accessibilityState, { disabled: true });
+      assertIconOnlyPressablesAreLabeled('WhatsNewScreen[subscribing]');
+
+      await act(async () => {
+        resolveSubscribe(jsonResponse({ success: true }));
+      });
+      await flush(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
   'ChangelogOverlay: close button is labeled, continue button has a role, modal is contained',
   renderTestOptions,
   async () => {
@@ -793,6 +875,15 @@ test('all locale dictionaries provide non-empty a11y label strings', async () =>
       typeof strings.feedbackComposer.removeAttachment === 'string' &&
         strings.feedbackComposer.removeAttachment.length > 0,
       `[${locale}] feedbackComposer.removeAttachment must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.changelog.subscribeButton === 'string' &&
+        strings.changelog.subscribeButton.length > 0,
+      `[${locale}] changelog.subscribeButton must be a non-empty string`
+    );
+    assert.ok(
+      typeof strings.changelog.subscribing === 'string' && strings.changelog.subscribing.length > 0,
+      `[${locale}] changelog.subscribing must be a non-empty string`
     );
   }
 });

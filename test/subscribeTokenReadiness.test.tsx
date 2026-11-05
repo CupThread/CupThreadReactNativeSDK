@@ -236,6 +236,7 @@ test(
 
     const getButton = () => touchableOpacityProps[touchableOpacityProps.length - 1];
     assert.ok(getButton(), 'the subscribe button must be rendered');
+    assert.equal(getButton().accessibilityLabel, 'Subscribe');
     assert.equal(
       getButton().disabled,
       true,
