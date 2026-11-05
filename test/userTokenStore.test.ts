@@ -1011,3 +1011,63 @@ test('UserTokenStore: blanks the legacy blob when removeItem fails after migrati
   const appB = new UserTokenStore(adapter, { appKey: 'app_b' });
   assert.equal(await appB.hasSeenChangelog('8.0.0'), false);
 });
+
+test('UserTokenStore: normalizes and trims versionOrId in hasSeenChangelog and markChangelogSeen (#227)', async () => {
+  const { adapter, mem } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 'app_trim_test' });
+
+  // 1. Empty and whitespace-only inputs return false / do not persist
+  assert.equal(await store.hasSeenChangelog(''), false);
+  assert.equal(await store.hasSeenChangelog('   '), false);
+  assert.equal(await store.hasSeenChangelog(null as unknown as string), false);
+  assert.equal(await store.hasSeenChangelog(undefined as unknown as string), false);
+
+  await store.markChangelogSeen('');
+  await store.markChangelogSeen('   ');
+  await store.markChangelogSeen(null as unknown as string);
+  await store.markChangelogSeen(undefined as unknown as string);
+
+  // Storage should remain empty
+  assert.equal(mem['cupthread_seen_changelogs_v1:app_trim_test'], undefined);
+
+  // 2. Whitespace padding is trimmed when recording and querying
+  await store.markChangelogSeen('  1.2.0  ');
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1:app_trim_test'],
+    JSON.stringify(['1.2.0']),
+    'persisted record must store the trimmed version string'
+  );
+
+  assert.equal(await store.hasSeenChangelog('1.2.0'), true);
+  assert.equal(await store.hasSeenChangelog('  1.2.0  '), true);
+  assert.equal(await store.hasSeenChangelog('  1.2.1  '), false);
+
+  // Calling markChangelogSeen again with different whitespace padding is a no-op
+  await store.markChangelogSeen(' 1.2.0 ');
+  assert.equal(
+    mem['cupthread_seen_changelogs_v1:app_trim_test'],
+    JSON.stringify(['1.2.0']),
+    'duplicate entry with different whitespace should not create second record'
+  );
+});
+
+test('UserTokenStore: parseSeenChangelogs trims JSON array entries and filters blanks (#227)', async () => {
+  const { adapter, mem } = memoryAdapter();
+  mem['cupthread_seen_changelogs_v1:app_json_trim'] = JSON.stringify([
+    '  1.0.0  ',
+    '   ',
+    '2.0.0',
+    '',
+    123,
+    null,
+    '  3.0.0\n',
+  ]);
+
+  const store = new UserTokenStore(adapter, { appKey: 'app_json_trim' });
+
+  assert.equal(await store.hasSeenChangelog('1.0.0'), true);
+  assert.equal(await store.hasSeenChangelog('2.0.0'), true);
+  assert.equal(await store.hasSeenChangelog('3.0.0'), true);
+  assert.equal(await store.hasSeenChangelog('   '), false);
+  assert.equal(await store.hasSeenChangelog(''), false);
+});
