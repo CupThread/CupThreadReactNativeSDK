@@ -388,7 +388,7 @@ test(
       }
       if (url.includes('/public/versions/')) {
         versionsFetchCount += 1;
-        return new Response(JSON.stringify(versions), {
+        return new Response(JSON.stringify({ versions }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -436,6 +436,13 @@ test(
       );
       // Requests require token readiness, so requestsFetchCount should be 0
       assert.equal(requestsFetchCount, 0, 'requests fetch must wait until userToken is ready');
+
+      // Verify that version 1.0.0 is actually loaded and rendered in the picker
+      const matchingNodes = renderer.root.findAllByProps({ children: '1.0.0' });
+      assert.ok(
+        matchingNodes.length > 0,
+        'version 1.0.0 should be rendered in the versions filter'
+      );
 
       // Now resolve storage read to finish cleanly
       await act(async () => {
