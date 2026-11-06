@@ -20,6 +20,7 @@ import {
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem } from '../types';
 import { isSurfaceEnabled } from '../utils/featureFlags';
+import { formatVersionLabel } from '../utils/formatters';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { FeatureRequestDetail } from './FeatureRequestDetail';
@@ -439,46 +440,49 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setSelectedItem(item)}
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.cardBorder,
-                },
-              ]}
-            >
-              <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderLeft}>
-                  <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
-                    {item.title}
-                  </Text>
-                  {item.versionLabel && (
-                    <View style={styles.versionBadge}>
-                      <Badge label={`v${item.versionLabel}`} variant="outline" />
-                    </View>
-                  )}
-                </View>
-                <VoteButton
-                  voteCount={item.voteCount}
-                  hasVoted={item.hasVoted}
-                  onPress={() => handleToggleVote(item)}
-                  disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
-                  error={getVoteError(item.id)}
-                />
-              </View>
-
-              <Text
-                numberOfLines={3}
-                style={[styles.cardDescription, { color: colors.textSecondary }]}
+          renderItem={({ item }) => {
+            const versionBadge = formatVersionLabel(item.versionLabel);
+            return (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setSelectedItem(item)}
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
               >
-                {item.description}
-              </Text>
-            </TouchableOpacity>
-          )}
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+                      {item.title}
+                    </Text>
+                    {versionBadge ? (
+                      <View style={styles.versionBadge}>
+                        <Badge label={versionBadge} variant="outline" />
+                      </View>
+                    ) : null}
+                  </View>
+                  <VoteButton
+                    voteCount={item.voteCount}
+                    hasVoted={item.hasVoted}
+                    onPress={() => handleToggleVote(item)}
+                    disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
+                    error={getVoteError(item.id)}
+                  />
+                </View>
+
+                <Text
+                  numberOfLines={3}
+                  style={[styles.cardDescription, { color: colors.textSecondary }]}
+                >
+                  {item.description}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 
