@@ -298,7 +298,17 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
           data={entries}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={subscribeHeader}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            entries.length === 0 && styles.listContentEmpty,
+          ]}
+          ListEmptyComponent={
+            <View style={styles.centerEmpty}>
+              <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+                {strings.changelog.emptyChangelog}
+              </Text>
+            </View>
+          }
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -419,6 +429,9 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 16,
   },
+  listContentEmpty: {
+    flexGrow: 1,
+  },
   subscribeCard: {
     padding: 16,
     borderRadius: 12,
@@ -535,6 +548,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
+    paddingVertical: 32,
   },
   emptyTitle: {
     fontSize: 16,
