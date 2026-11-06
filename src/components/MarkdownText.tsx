@@ -78,26 +78,16 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
     return tokens.map((token, index) => {
       switch (token.type) {
         case 'text':
-          return (
-            <Text key={`${baseKey}-txt-${index}`} style={{ color: colors.textPrimary }}>
-              {token.content}
-            </Text>
-          );
+          return <Text key={`${baseKey}-txt-${index}`}>{token.content}</Text>;
         case 'bold':
           return (
-            <Text
-              key={`${baseKey}-b-${index}`}
-              style={{ fontWeight: '700', color: colors.textPrimary }}
-            >
+            <Text key={`${baseKey}-b-${index}`} style={{ fontWeight: '700' }}>
               {token.content}
             </Text>
           );
         case 'italic':
           return (
-            <Text
-              key={`${baseKey}-i-${index}`}
-              style={{ fontStyle: 'italic', color: colors.textPrimary }}
-            >
+            <Text key={`${baseKey}-i-${index}`} style={{ fontStyle: 'italic' }}>
               {token.content}
             </Text>
           );
@@ -124,9 +114,7 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
             <Text
               key={`${baseKey}-a-${index}`}
               style={
-                isPressable
-                  ? { color: colors.primary, textDecorationLine: 'underline' }
-                  : { color: colors.textPrimary }
+                isPressable ? { color: colors.primary, textDecorationLine: 'underline' } : undefined
               }
               onPress={isPressable ? () => handleLinkPress(url) : undefined}
               accessibilityRole={isPressable ? 'link' : undefined}
