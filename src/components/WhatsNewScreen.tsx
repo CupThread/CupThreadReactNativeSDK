@@ -25,7 +25,7 @@ import { isSurfaceEnabled } from '../utils/featureFlags';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
-import { formatDate } from '../utils/formatters';
+import { formatDate, formatVersionLabel } from '../utils/formatters';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import { userFacingErrorMessage } from '../utils/errors';
 import { isValidEmail } from '../utils/email';
@@ -351,38 +351,43 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <View
-              style={[
-                styles.card,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.cardBorder,
-                },
-              ]}
-            >
-              <View style={styles.cardHeader}>
-                <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-                {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
-              </View>
-
-              <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
-                {formatDate(item.publishedAt, strings.common, locale)}
-              </Text>
-
-              {item.linkedRequests && item.linkedRequests.length > 0 && (
-                <View style={styles.linkedRequestsRow}>
-                  {item.linkedRequests.map((req) => (
-                    <Badge key={req.id} label={`★ ${req.title}`} />
-                  ))}
+          renderItem={({ item }) => {
+            const versionBadge = formatVersionLabel(item.versionLabel);
+            return (
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.cardBorder,
+                  },
+                ]}
+              >
+                <View style={styles.cardHeader}>
+                  <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
+                    {item.title}
+                  </Text>
+                  {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
                 </View>
-              )}
 
-              <View style={styles.bodyArea}>
-                <MarkdownText content={item.body} />
+                <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
+                  {formatDate(item.publishedAt, strings.common, locale)}
+                </Text>
+
+                {item.linkedRequests && item.linkedRequests.length > 0 && (
+                  <View style={styles.linkedRequestsRow}>
+                    {item.linkedRequests.map((req) => (
+                      <Badge key={req.id} label={`★ ${req.title}`} />
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.bodyArea}>
+                  <MarkdownText content={item.body} />
+                </View>
               </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
     </SafeAreaView>

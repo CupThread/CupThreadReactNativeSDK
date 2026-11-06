@@ -21,6 +21,7 @@ import {
 } from '../theme/CupThreadThemeProvider';
 import type { FeatureRequestItem, AppVersion } from '../types';
 import { isSurfaceEnabled } from '../utils/featureFlags';
+import { formatVersionLabel } from '../utils/formatters';
 import { VoteButton } from './VoteButton';
 import { Badge } from './Badge';
 import { Avatar } from './Avatar';
@@ -150,66 +151,69 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     getVoteError,
   } = useToggleVote(client, userToken, applyItemChange);
 
-  const renderItem = ({ item }: { item: FeatureRequestItem }) => (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={() => setSelectedItem(item)}
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.cardBorder,
-        },
-      ]}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.cardHeaderLeft}>
-          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
-          <View style={styles.badgeRow}>
-            {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
-            {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
-          </View>
-        </View>
-
-        <VoteButton
-          voteCount={item.voteCount}
-          hasVoted={item.hasVoted}
-          onPress={() => handleToggleVote(item)}
-          disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
-          error={getVoteError(item.id)}
-        />
-      </View>
-
-      <Text numberOfLines={2} style={[styles.cardDescription, { color: colors.textSecondary }]}>
-        {item.description}
-      </Text>
-
-      {item.recentCommenters && item.recentCommenters.length > 0 && (
-        <View style={styles.commentersStack}>
-          {item.recentCommenters.slice(0, 3).map((commenter, idx) => (
-            <View
-              key={idx}
-              style={[
-                styles.avatarOverlap,
-                { marginLeft: idx > 0 ? -8 : 0, borderColor: colors.card },
-              ]}
-            >
-              <Avatar
-                url={commenter.avatarUrl}
-                name={commenter.authorName?.trim() || undefined}
-                size={20}
-              />
+  const renderItem = ({ item }: { item: FeatureRequestItem }) => {
+    const versionBadge = formatVersionLabel(item.versionLabel);
+    return (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => setSelectedItem(item)}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.cardBorder,
+          },
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+            <View style={styles.badgeRow}>
+              {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
+              {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
             </View>
-          ))}
-          {item.hasMoreCommenters && (
-            <Text style={[styles.moreCommenters, { color: colors.textMuted }]}>
-              {strings.featureRequests.moreCommenters}
-            </Text>
-          )}
+          </View>
+
+          <VoteButton
+            voteCount={item.voteCount}
+            hasVoted={item.hasVoted}
+            onPress={() => handleToggleVote(item)}
+            disabled={item.isOwnRequest || isVoting(item.id) || !isTokenReady}
+            error={getVoteError(item.id)}
+          />
         </View>
-      )}
-    </TouchableOpacity>
-  );
+
+        <Text numberOfLines={2} style={[styles.cardDescription, { color: colors.textSecondary }]}>
+          {item.description}
+        </Text>
+
+        {item.recentCommenters && item.recentCommenters.length > 0 && (
+          <View style={styles.commentersStack}>
+            {item.recentCommenters.slice(0, 3).map((commenter, idx) => (
+              <View
+                key={idx}
+                style={[
+                  styles.avatarOverlap,
+                  { marginLeft: idx > 0 ? -8 : 0, borderColor: colors.card },
+                ]}
+              >
+                <Avatar
+                  url={commenter.avatarUrl}
+                  name={commenter.authorName?.trim() || undefined}
+                  size={20}
+                />
+              </View>
+            ))}
+            {item.hasMoreCommenters && (
+              <Text style={[styles.moreCommenters, { color: colors.textMuted }]}>
+                {strings.featureRequests.moreCommenters}
+              </Text>
+            )}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (!isLoadingConfig && !isEnabled) {
     return (
