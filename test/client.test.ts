@@ -2036,7 +2036,7 @@ test('FeedbackClient handles non-string optional inputs gracefully (#298)', asyn
     const headers: Record<string, string> = {};
     if (init?.headers) {
       if (typeof (init.headers as Headers).forEach === 'function') {
-        (init.headers as Headers).forEach((v, k) => {
+        (init.headers as Headers).forEach((v: string, k: string) => {
           headers[k.toLowerCase()] = v;
         });
       } else {
