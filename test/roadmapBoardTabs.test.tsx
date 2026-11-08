@@ -244,7 +244,8 @@ function getColumnTabs(renderer: TestRenderer.ReactTestRenderer): TestRenderer.R
       node.type === TouchableOpacityStub &&
       node.props?.accessibilityRole === 'button' &&
       node.props?.accessibilityState &&
-      typeof node.props.accessibilityState.selected === 'boolean'
+      typeof node.props.accessibilityState.selected === 'boolean' &&
+      node.props.accessibilityState.disabled === undefined
   );
 }
 

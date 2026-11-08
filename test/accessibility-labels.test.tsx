@@ -97,6 +97,7 @@ const { FeatureRequestDetail } = await import('../src/components/FeatureRequestD
 const { ErrorState } = await import('../src/components/ErrorState');
 const { MarkdownText } = await import('../src/components/MarkdownText');
 const { CommentsSection } = await import('../src/components/CommentsSection');
+const { VoteButton } = await import('../src/components/VoteButton');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -1048,6 +1049,95 @@ test(
       );
       const retry = findPressable('Retry');
       assert.deepEqual(retry.props.accessibilityState, { disabled: true });
+    } finally {
+      restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'VoteButton: exposes accessibilityRole="button" and accessibilityState with disabled and selected states (#224)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    const restoreFetch = stubFetch();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    try {
+      // 1. Idle unvoted: disabled: false, selected: false
+      renderer = await renderWithProvider(
+        React.createElement(VoteButton, {
+          voteCount: 5,
+          hasVoted: false,
+          disabled: false,
+          onPress: () => {},
+        })
+      );
+      assert.ok(pressables.length > 0);
+      const btn1 = pressables[pressables.length - 1];
+      assert.equal(btn1.props.accessibilityRole, 'button');
+      assert.deepEqual(btn1.props.accessibilityState, {
+        disabled: false,
+        selected: false,
+      });
+      assert.equal(btn1.props.accessibilityLabel, 'Upvote');
+      renderer.unmount();
+
+      // 2. Disabled unvoted (e.g. submitting or unready): disabled: true, selected: false
+      pressables.length = 0;
+      renderer = await renderWithProvider(
+        React.createElement(VoteButton, {
+          voteCount: 5,
+          hasVoted: false,
+          disabled: true,
+          onPress: () => {},
+        })
+      );
+      assert.ok(pressables.length > 0);
+      const btn2 = pressables[pressables.length - 1];
+      assert.deepEqual(btn2.props.accessibilityState, {
+        disabled: true,
+        selected: false,
+      });
+      renderer.unmount();
+
+      // 3. Upvoted (hasVoted = true): disabled: false, selected: true
+      pressables.length = 0;
+      renderer = await renderWithProvider(
+        React.createElement(VoteButton, {
+          voteCount: 6,
+          hasVoted: true,
+          disabled: false,
+          onPress: () => {},
+        })
+      );
+      assert.ok(pressables.length > 0);
+      const btn3 = pressables[pressables.length - 1];
+      assert.deepEqual(btn3.props.accessibilityState, {
+        disabled: false,
+        selected: true,
+      });
+      assert.equal(btn3.props.accessibilityLabel, 'Upvoted');
+      renderer.unmount();
+
+      // 4. Disabled and upvoted (e.g. own request that was voted): disabled: true, selected: true
+      pressables.length = 0;
+      renderer = await renderWithProvider(
+        React.createElement(VoteButton, {
+          voteCount: 6,
+          hasVoted: true,
+          disabled: true,
+          onPress: () => {},
+        })
+      );
+      assert.ok(pressables.length > 0);
+      const btn4 = pressables[pressables.length - 1];
+      assert.deepEqual(btn4.props.accessibilityState, {
+        disabled: true,
+        selected: true,
+      });
+      renderer.unmount();
     } finally {
       restoreFetch();
       renderer?.unmount();
