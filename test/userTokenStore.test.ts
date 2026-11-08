@@ -778,6 +778,32 @@ test('UserTokenStore: getSeenStorageKey scopes keys and falls back to the legacy
   assert.equal(UserTokenStore.getSeenStorageKey(undefined), 'cupthread_seen_changelogs_v1');
 });
 
+test('UserTokenStore: normalizeAppKey gracefully handles non-string values without throwing (#296)', async () => {
+  assert.equal(UserTokenStore.getSeenStorageKey(123 as any), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey(true as any), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey({} as any), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey([] as any), 'cupthread_seen_changelogs_v1');
+  assert.equal(UserTokenStore.getSeenStorageKey((() => {}) as any), 'cupthread_seen_changelogs_v1');
+
+  const { adapter } = memoryAdapter();
+  const store = new UserTokenStore(adapter, { appKey: 12345 as any });
+  assert.equal(store.getAppKey(), null);
+
+  store.setAppKey({ invalid: true } as any);
+  assert.equal(store.getAppKey(), null);
+
+  store.setAppKey(true as any);
+  assert.equal(store.getAppKey(), null);
+
+  // Per-call non-string appKey falls back to unscoped legacy key
+  await store.markChangelogSeen('1.0.0', 999 as any);
+  assert.equal(await store.hasSeenChangelog('1.0.0', 999 as any), true);
+  assert.equal(await store.hasSeenChangelog('1.0.0', null), true);
+
+  await store.clearSeenChangelogs(999 as any);
+  assert.equal(await store.hasSeenChangelog('1.0.0'), false);
+});
+
 test('UserTokenStore: evicts the oldest seen changelogs once the retention cap is reached', async () => {
   const { adapter, mem } = memoryAdapter();
   const store = new UserTokenStore(adapter, { appKey: 'app_cap' });

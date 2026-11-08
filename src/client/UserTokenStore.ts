@@ -878,10 +878,14 @@ export class UserTokenStore {
 }
 
 /**
- * Normalizes a caller-supplied app key, treating blank strings as unscoped.
+ * Normalizes a caller-supplied app key, treating blank strings and non-string
+ * values as unscoped.
  */
 function normalizeAppKey(appKey?: string | null): string | null {
-  const trimmed = appKey?.trim();
+  if (typeof appKey !== 'string') {
+    return null;
+  }
+  const trimmed = appKey.trim();
   return trimmed ? trimmed : null;
 }
 
