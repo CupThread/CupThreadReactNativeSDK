@@ -54,6 +54,10 @@ export function VoteButton({ voteCount, hasVoted, onPress, disabled, error }: Vo
       disabled={disabled}
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityState={{
+        disabled: Boolean(disabled),
+        selected: Boolean(hasVoted),
+      }}
       accessibilityLabel={
         hasError
           ? `${strings.featureRequests.voteFailed} ${hasVoted ? strings.featureRequests.upvoted : strings.featureRequests.upvote}`

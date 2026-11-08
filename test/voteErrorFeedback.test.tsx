@@ -427,6 +427,7 @@ test(
 
     let touchable = renderer.root.findByType(TouchableOpacityStub as any);
     assert.equal(touchable.props.accessibilityLabel, 'Upvote');
+    assert.deepEqual(touchable.props.accessibilityState, { disabled: false, selected: false });
 
     // With error:
     act(() => {
@@ -444,6 +445,7 @@ test(
     });
 
     touchable = renderer.root.findByType(TouchableOpacityStub as any);
+    assert.deepEqual(touchable.props.accessibilityState, { disabled: false, selected: false });
     assert.ok(
       touchable.props.accessibilityLabel.includes('Failed to update vote'),
       'accessibility label must mention vote failure'
