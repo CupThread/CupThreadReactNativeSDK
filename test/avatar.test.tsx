@@ -174,6 +174,59 @@ test('Avatar: renders Image component when url is provided (#246)', renderTestOp
   renderer.unmount();
 });
 
+test(
+  'Avatar: whitespace-only url renders fallback initial instead of an empty Image (#290)',
+  renderTestOptions,
+  () => {
+    const whitespaceUrls = ['   ', '\t\n ', ' '];
+    for (const wsUrl of whitespaceUrls) {
+      const renderer = renderAvatar({ url: wsUrl, name: 'Taylor Swift' });
+      assert.throws(
+        () => renderer.root.findByType('Image' as any),
+        `no Image must be mounted for whitespace-only url ${JSON.stringify(wsUrl)}`
+      );
+      const texts = collectTexts(renderer.root);
+      assert.equal(
+        texts.join(''),
+        'T',
+        `whitespace-only url ${JSON.stringify(wsUrl)} must fall back to the 'T' initial`
+      );
+      renderer.unmount();
+    }
+  }
+);
+
+test(
+  'Avatar: whitespace-only url with whitespace-only name falls back to "?" (#290)',
+  renderTestOptions,
+  () => {
+    const renderer = renderAvatar({ url: '   ', name: '   ' });
+    assert.throws(
+      () => renderer.root.findByType('Image' as any),
+      'no Image must be mounted for whitespace-only url'
+    );
+    const texts = collectTexts(renderer.root);
+    assert.equal(texts.join(''), '?', 'whitespace-only url and name must fall back to "?"');
+    renderer.unmount();
+  }
+);
+
+test(
+  'Avatar: trims surrounding whitespace from a valid url used as the image source (#290)',
+  renderTestOptions,
+  () => {
+    const renderer = renderAvatar({ url: '  https://example.com/avatar.png  ', name: 'Taylor' });
+    const imageNode = renderer.root.findByType('Image' as any);
+    assert.ok(imageNode, 'Image element must be rendered for a url with surrounding whitespace');
+    assert.deepEqual(
+      imageNode.props.source,
+      { uri: 'https://example.com/avatar.png' },
+      'surrounding whitespace must be trimmed from the resolved uri'
+    );
+    renderer.unmount();
+  }
+);
+
 test('Avatar: applies custom size and scaled initial font size (#246)', renderTestOptions, () => {
   const customSize = 48;
   const renderer = renderAvatar({ name: 'Taylor', size: customSize });
