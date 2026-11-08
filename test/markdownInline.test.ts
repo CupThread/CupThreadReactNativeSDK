@@ -6,6 +6,15 @@ test('tokenizeMarkdownInline: empty or blank input returns empty array', () => {
   assert.deepEqual(tokenizeMarkdownInline(''), []);
 });
 
+test('tokenizeMarkdownInline: handles non-string inputs safely without throwing TypeError (#302)', () => {
+  assert.deepEqual(tokenizeMarkdownInline(null as any), []);
+  assert.deepEqual(tokenizeMarkdownInline(undefined as any), []);
+  assert.deepEqual(tokenizeMarkdownInline(12345 as any), []);
+  assert.deepEqual(tokenizeMarkdownInline(true as any), []);
+  assert.deepEqual(tokenizeMarkdownInline({} as any), []);
+  assert.deepEqual(tokenizeMarkdownInline([] as any), []);
+});
+
 test('tokenizeMarkdownInline: plain text without markdown formatting', () => {
   const tokens = tokenizeMarkdownInline('Hello world, this is plain text.');
   assert.deepEqual(tokens, [
