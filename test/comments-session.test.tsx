@@ -730,8 +730,15 @@ test(
       await flush();
 
       // No raw string child rendered in View, and no error message rendered in text
-      const renderedText = collectText(harnessEmpty.renderer.root);
-      assert.ok(!renderedText.includes('Failed to post comment'));
+      const hasInputErrorText = harnessEmpty.renderer.root
+        .findAllByType(TextStub as any)
+        .some((node: any) => {
+          const stylesList = Array.isArray(node.props.style)
+            ? node.props.style
+            : [node.props.style];
+          return stylesList.some((s: any) => s && s.marginBottom === 6);
+        });
+      assert.strictEqual(hasInputErrorText, false, 'no input error Text should be rendered');
     } finally {
       harnessEmpty.restoreFetch();
       harnessEmpty.renderer.unmount();
@@ -757,8 +764,19 @@ test(
       });
       await flush();
 
-      const renderedText = collectText(harnessWhitespace.renderer.root);
-      assert.ok(!renderedText.includes('Failed to post comment'));
+      const hasInputErrorText = harnessWhitespace.renderer.root
+        .findAllByType(TextStub as any)
+        .some((node: any) => {
+          const stylesList = Array.isArray(node.props.style)
+            ? node.props.style
+            : [node.props.style];
+          return stylesList.some((s: any) => s && s.marginBottom === 6);
+        });
+      assert.strictEqual(
+        hasInputErrorText,
+        false,
+        'no input error Text should be rendered for whitespace error'
+      );
     } finally {
       harnessWhitespace.restoreFetch();
       harnessWhitespace.renderer.unmount();
@@ -783,11 +801,16 @@ test(
       });
       await flush();
 
-      const renderedText = collectText(harnessPadded.renderer.root);
-      assert.ok(
-        renderedText.includes('Server is busy right now'),
-        'input error banner must render trimmed error message'
-      );
+      const errorNode = harnessPadded.renderer.root
+        .findAllByType(TextStub as any)
+        .find((node: any) => {
+          const stylesList = Array.isArray(node.props.style)
+            ? node.props.style
+            : [node.props.style];
+          return stylesList.some((s: any) => s && s.marginBottom === 6);
+        });
+      assert.ok(errorNode, 'input error Text should be rendered');
+      assert.strictEqual(errorNode.props.children, 'Server is busy right now');
     } finally {
       harnessPadded.restoreFetch();
       harnessPadded.renderer.unmount();
