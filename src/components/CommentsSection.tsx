@@ -430,7 +430,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
             </View>
           )}
 
-          {error && <Text style={[styles.inputError, { color: colors.danger }]}>{error}</Text>}
+          {typeof error === 'string' && error.trim().length > 0 ? (
+            <Text style={[styles.inputError, { color: colors.danger }]}>{error.trim()}</Text>
+          ) : null}
 
           <TextInput
             style={[
