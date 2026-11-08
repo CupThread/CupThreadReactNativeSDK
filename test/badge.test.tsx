@@ -388,3 +388,46 @@ test('Badge: empty and whitespace-only labels return null (#248)', renderTestOpt
   const text = trimmedRenderer.root.findByType(TextStub as any);
   assert.equal(text.props.children, 'Trimmed');
 });
+
+test(
+  'Badge: handles non-string truthy color prop gracefully without throwing TypeError (#301)',
+  renderTestOptions,
+  () => {
+    const nonStringColors = [12345, 0x3b82f6, true, false, {}, [], () => {}, Symbol('color')];
+
+    for (const invalidColor of nonStringColors) {
+      for (const variant of ['subtle', 'outline', 'default'] as const) {
+        const renderer = renderBadge({
+          label: 'Safe Badge',
+          color: invalidColor as any,
+          variant,
+        });
+
+        assert.ok(
+          renderer.toJSON(),
+          `Badge with non-string color (${typeof invalidColor}) and variant ${variant} should render`
+        );
+        const text = renderer.root.findByType(TextStub as any);
+        assert.equal(text.props.children, 'Safe Badge');
+
+        const view = renderer.root.findByType(ViewStub as any);
+        const viewStyle = flattenStyle(view.props.style);
+        const textStyle = flattenStyle(text.props.style);
+
+        if (variant === 'subtle') {
+          assert.equal(viewStyle.backgroundColor, lightTheme.chipBg);
+          assert.equal(textStyle.color, lightTheme.chipText);
+        } else if (variant === 'outline') {
+          assert.equal(viewStyle.backgroundColor, 'transparent');
+          assert.equal(viewStyle.borderColor, lightTheme.border);
+          assert.equal(textStyle.color, lightTheme.chipText);
+        } else if (variant === 'default') {
+          assert.equal(viewStyle.backgroundColor, lightTheme.primary);
+          assert.equal(textStyle.color, lightTheme.primaryText);
+        }
+
+        renderer.unmount();
+      }
+    }
+  }
+);
