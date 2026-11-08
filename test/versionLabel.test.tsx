@@ -97,7 +97,7 @@ function makeClient(appKey = 'app_version_label_test'): FeedbackClient {
     },
   })) as any;
   client.fetchVersions = (async () => []) as any;
-  client.listColumns = (async () => []) as any;
+  client.fetchColumns = (async () => []) as any;
   return client;
 }
 
@@ -205,11 +205,14 @@ test(
 
     const itemWhitespace: FeatureRequestItem = {
       id: 'fr-ws',
+      appId: 'app_detail_test',
       title: 'Request with whitespace version',
       description: 'Desc',
       status: 'planned',
       voteCount: 1,
       hasVoted: false,
+      isOwnRequest: false,
+      approved: true,
       commentCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -366,13 +369,20 @@ test(
   renderTestOptions,
   async () => {
     const client = makeClient('app_roadmap_test');
-    client.listColumns = (async () => [
+    client.fetchColumns = (async (): Promise<BoardColumn[]> => [
       {
         id: 'col-planned',
+        appId: 'app_roadmap_test',
         name: 'Planned',
+        slug: 'planned',
+        position: 0,
+        isVisible: true,
+        isSystem: false,
+        kind: 'normal',
         color: '#3b82f6',
-        sortOrder: 1,
-      } as BoardColumn,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
     ]) as any;
 
     client.fetchFeatureRequests = (async () => ({
