@@ -19,14 +19,24 @@ const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 const TouchableOpacityStub = (props: any) => props.children ?? null;
 const TextStub = (props: any) => props.children ?? null;
 const TextInputStub = () => null;
+const ViewStub = (props: any) => {
+  React.Children.forEach(props.children, (child) => {
+    if (typeof child === 'string') {
+      throw new Error(
+        `Text strings must be rendered within a <Text> component. Found raw string: "${child}"`
+      );
+    }
+  });
+  return props.children ?? null;
+};
 
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
     namedExports: {
       useColorScheme: () => 'light',
       // Layout stubs must pass children through so nested pressables stay in
-      // the rendered tree.
-      View: ({ children }: any) => children ?? null,
+      // the rendered tree, but validate against raw string children as React Native does.
+      View: ViewStub,
       Text: TextStub,
       TextInput: TextInputStub,
       TouchableOpacity: TouchableOpacityStub,
@@ -80,7 +90,8 @@ interface PostCall {
 
 class CommentsStubClient extends FeedbackClient {
   postCalls: PostCall[] = [];
-  postBehavior: 'success' | 'unauthorized' = 'success';
+  postBehavior: 'success' | 'unauthorized' | 'error' = 'success';
+  postError: Error | null = null;
   postedComment = makeComment('c_new', { authorName: null, body: 'Hello thread' });
   seedComments: FeatureRequestComment[] = [makeComment('c_seed')];
 
@@ -98,6 +109,9 @@ class CommentsStubClient extends FeedbackClient {
     this.postCalls.push({ featureRequestId, draft, userToken, options });
     if (this.postBehavior === 'unauthorized') {
       throw new AuthenticationRequiredException();
+    }
+    if (this.postBehavior === 'error') {
+      throw this.postError ?? new Error('Post failed');
     }
     return { ...this.postedComment, id: `c_new_${this.postCalls.length}` };
   }
@@ -133,7 +147,8 @@ interface Harness {
 
 async function renderComments(
   sessionProvider?: () => string | null | undefined | Promise<string | null | undefined>,
-  initialComments?: FeatureRequestComment[]
+  initialComments?: FeatureRequestComment[],
+  customStrings?: any
 ): Promise<Harness> {
   // The provider's config fetch is the only call reaching global fetch; it
   // gets a rejection (non-fatal, falls back to system theme).
@@ -155,6 +170,7 @@ async function renderComments(
         client,
         userToken: 'usr_tok_test',
         ...(sessionProvider ? { commentSessionProvider: sessionProvider } : {}),
+        ...(customStrings ? { strings: customStrings } : {}),
         children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
       })
     );
@@ -680,6 +696,101 @@ test(
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Issue #310 — CommentsSection input error guards against raw empty-string render
+// ---------------------------------------------------------------------------
+
+test(
+  'CommentsSection: empty-string or whitespace input error does not crash View and renders valid errors trimmed (#310)',
+  renderTestOptions,
+  async () => {
+    // 1. When post fails with an empty-string error message (postFailed = '')
+    const harnessEmpty = await renderComments(() => 'jwt_session_empty_error', undefined, {
+      comments: { postFailed: '' },
+    });
+    try {
+      harnessEmpty.client.postBehavior = 'error';
+
+      const input = harnessEmpty.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('A new test comment');
+      });
+      const postBtn = findButtonByText(harnessEmpty.renderer.root, 'Post Comment');
+      assert.ok(postBtn, 'post button must exist');
+
+      // Submitting with empty-string error message must not throw
+      // "Text strings must be rendered within a <Text> component"
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      // No raw string child rendered in View, and no error message rendered in text
+      const renderedText = collectText(harnessEmpty.renderer.root);
+      assert.ok(!renderedText.includes('Failed to post comment'));
+    } finally {
+      harnessEmpty.restoreFetch();
+      harnessEmpty.renderer.unmount();
+    }
+
+    // 2. When post fails with a whitespace-only error message (postFailed = '   \t  ')
+    const harnessWhitespace = await renderComments(() => 'jwt_session_ws_error', undefined, {
+      comments: { postFailed: '   \t  ' },
+    });
+    try {
+      harnessWhitespace.client.postBehavior = 'error';
+
+      const input = harnessWhitespace.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Another test comment');
+      });
+      const postBtn = findButtonByText(harnessWhitespace.renderer.root, 'Post Comment');
+      assert.ok(postBtn, 'post button must exist');
+
+      // Submitting must safely collapse whitespace-only error to null without throwing
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      const renderedText = collectText(harnessWhitespace.renderer.root);
+      assert.ok(!renderedText.includes('Failed to post comment'));
+    } finally {
+      harnessWhitespace.restoreFetch();
+      harnessWhitespace.renderer.unmount();
+    }
+
+    // 3. When post fails with a padded non-empty error message, it renders trimmed
+    const harnessPadded = await renderComments(() => 'jwt_session_padded_error', undefined, {
+      comments: { postFailed: '   Server is busy right now   ' },
+    });
+    try {
+      harnessPadded.client.postBehavior = 'error';
+
+      const input = harnessPadded.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Third test comment');
+      });
+      const postBtn = findButtonByText(harnessPadded.renderer.root, 'Post Comment');
+      assert.ok(postBtn, 'post button must exist');
+
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      const renderedText = collectText(harnessPadded.renderer.root);
+      assert.ok(
+        renderedText.includes('Server is busy right now'),
+        'input error banner must render trimmed error message'
+      );
+    } finally {
+      harnessPadded.restoreFetch();
+      harnessPadded.renderer.unmount();
     }
   }
 );
