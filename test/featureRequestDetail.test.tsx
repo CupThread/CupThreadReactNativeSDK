@@ -790,7 +790,15 @@ test(
         'must not render Badge component when columnName is an empty string'
       );
 
-      // 2. When item has whitespace-only columnName: "   \t  ", it safely renders null
+      // 2. When item has columnName: null, it safely renders null
+      await harness.update(makeItem({ id: 'fr_null_col', columnName: null }), true);
+      assert.equal(
+        harness.renderer.root.findAllByType(Badge).length,
+        0,
+        'must not render Badge component when columnName is null'
+      );
+
+      // 3. When item has whitespace-only columnName: "   \t  ", it safely renders null
       await harness.update(makeItem({ id: 'fr_ws_col', columnName: '   \t  ' }), true);
       const wsBadges = harness.renderer.root.findAllByType(Badge);
       assert.equal(
@@ -799,7 +807,7 @@ test(
         'must not render Badge component when columnName is whitespace-only'
       );
 
-      // 3. When item has valid columnName: "  In Progress  ", it renders Badge with trimmed label
+      // 4. When item has valid columnName: "  In Progress  ", it renders Badge with trimmed label
       await harness.update(
         makeItem({
           id: 'fr_valid_col',

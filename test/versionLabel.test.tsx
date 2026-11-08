@@ -472,6 +472,18 @@ test(
           columnName: '',
         },
         {
+          id: 'fr-null-col',
+          title: 'Null column request',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 1,
+          hasVoted: false,
+          commentCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columnName: null,
+        },
+        {
           id: 'fr-ws-col',
           title: 'Whitespace column request',
           description: 'Desc',
