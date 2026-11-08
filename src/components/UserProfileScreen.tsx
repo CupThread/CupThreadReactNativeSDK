@@ -174,14 +174,14 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
                   ]}
                 >
                   <Text style={[styles.appName, { color: colors.textPrimary }]}>{app.name}</Text>
-                  {app.description && (
+                  {typeof app.description === 'string' && app.description.trim().length > 0 ? (
                     <Text
                       numberOfLines={2}
                       style={[styles.appDesc, { color: colors.textSecondary }]}
                     >
-                      {app.description}
+                      {app.description.trim()}
                     </Text>
-                  )}
+                  ) : null}
                 </View>
               ))}
             </View>

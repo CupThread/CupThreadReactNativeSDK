@@ -175,7 +175,16 @@ const openedUrls: string[] = [];
 const TextStub = (props: any) => {
   return props.children ?? null;
 };
-const ViewStub = (props: any) => props.children ?? null;
+const ViewStub = (props: any) => {
+  React.Children.forEach(props.children, (child) => {
+    if (typeof child === 'string') {
+      throw new Error(
+        `Text strings must be rendered within a <Text> component. Found raw string: "${child}"`
+      );
+    }
+  });
+  return props.children ?? null;
+};
 const TouchableOpacityStub = (props: any) => {
   pressables.push(props);
   return props.children ?? null;
@@ -648,6 +657,83 @@ test(
         ['https://nasa.gov/katherine'],
         'Linking.openURL must receive the trimmed website URL'
       );
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen: handles empty, whitespace, and non-string app description safely without raw string render (#306)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_desc_test',
+        displayName: 'Test Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [
+        {
+          id: 'app_empty_desc',
+          name: 'Empty Desc App',
+          description: '',
+        },
+        {
+          id: 'app_whitespace_desc',
+          name: 'Whitespace Desc App',
+          description: '   \t  \n  ',
+        },
+        {
+          id: 'app_null_desc',
+          name: 'Null Desc App',
+          description: null,
+        },
+        {
+          id: 'app_non_string_desc',
+          name: 'Non String Desc App',
+          description: 12345 as any,
+        },
+        {
+          id: 'app_valid_desc',
+          name: 'Valid Desc App',
+          description: '   Clean and useful app   ',
+        },
+      ],
+      recentComments: [],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(texts.includes('Empty Desc App'), 'Empty Desc App name must render');
+      assert.ok(texts.includes('Whitespace Desc App'), 'Whitespace Desc App name must render');
+      assert.ok(texts.includes('Null Desc App'), 'Null Desc App name must render');
+      assert.ok(texts.includes('Non String Desc App'), 'Non String Desc App name must render');
+      assert.ok(texts.includes('Valid Desc App'), 'Valid Desc App name must render');
+
+      assert.ok(
+        texts.includes('Clean and useful app'),
+        'valid app description must be rendered trimmed'
+      );
+      assert.equal(
+        texts.includes('   Clean and useful app   '),
+        false,
+        'untrimmed app description must not be rendered'
+      );
+      assert.equal(
+        texts.some((t) => t.trim() === ''),
+        false,
+        'no empty or whitespace-only Text elements should be rendered for app description'
+      );
+
       renderer.unmount();
     } finally {
       fetchMock.restore();
