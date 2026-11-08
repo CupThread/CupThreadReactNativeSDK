@@ -115,5 +115,7 @@ test('formatDate returns an empty string for truthy non-string types (#305)', ()
 test('formatDate trims whitespace around valid and invalid date strings (#305)', () => {
   const iso = daysAgo(30);
   assert.equal(formatDate(`   ${iso}   `), calendarExpected(iso));
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  assert.equal(formatDate(`   ${fiveMinAgo}   `), '5m ago');
   assert.equal(formatDate('   not-a-date   '), 'not-a-date');
 });
