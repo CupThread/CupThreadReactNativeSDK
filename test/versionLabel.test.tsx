@@ -13,7 +13,16 @@ import type { FeatureRequestItem, ChangelogEntry, BoardColumn } from '../src/typ
 
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 
-const ViewStub = (props: any) => React.createElement('View', props, props.children ?? null);
+const ViewStub = (props: any) => {
+  React.Children.forEach(props.children, (child) => {
+    if (typeof child === 'string') {
+      throw new Error(
+        `Text strings must be rendered within a <Text> component. Found raw string: "${child}"`
+      );
+    }
+  });
+  return React.createElement('View', props, props.children ?? null);
+};
 const TextStub = (props: any) => React.createElement('Text', props, props.children ?? null);
 const TouchableOpacityStub = (props: any) =>
   React.createElement('TouchableOpacity', props, props.children ?? null);
@@ -434,6 +443,91 @@ test(
       ['v2.0.0'],
       'RoadmapBoardScreen must omit whitespace badge and render "v2.0.0" without duplicate "vv"'
     );
+
+    renderer.unmount();
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Issue #309 — FeatureRequestsScreen: raw empty-string render in item.columnName
+// ---------------------------------------------------------------------------
+
+test(
+  'FeatureRequestsScreen: empty-string or whitespace-only columnName does not crash View and renders valid columnName trimmed (#309)',
+  renderTestOptions,
+  async () => {
+    const client = makeClient('app_fr_col_test');
+    client.fetchFeatureRequests = (async () => ({
+      requests: [
+        {
+          id: 'fr-empty-col',
+          title: 'Empty column request',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 1,
+          hasVoted: false,
+          commentCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columnName: '',
+        },
+        {
+          id: 'fr-null-col',
+          title: 'Null column request',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 1,
+          hasVoted: false,
+          commentCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columnName: null,
+        },
+        {
+          id: 'fr-ws-col',
+          title: 'Whitespace column request',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 2,
+          hasVoted: false,
+          commentCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columnName: '   \t  ',
+        },
+        {
+          id: 'fr-valid-col',
+          title: 'Valid column request',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 3,
+          hasVoted: false,
+          commentCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columnName: '  Planned  ',
+          columnColor: '#10b981',
+        },
+      ] as FeatureRequestItem[],
+      hasMore: false,
+    })) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={client} userToken="usr_tok_test">
+          <FeatureRequestsScreen />
+        </CupThreadProvider>
+      );
+    });
+
+    await waitForCondition(() => renderer.root.findAllByType(Badge).length > 0);
+
+    const badges = renderer.root.findAllByType(Badge);
+    // Only the valid columnName badge should be rendered
+    assert.equal(badges.length, 1, 'only valid columnName should render Badge');
+    assert.equal(badges[0].props.label, 'Planned');
+    assert.equal(badges[0].props.color, '#10b981');
 
     renderer.unmount();
   }

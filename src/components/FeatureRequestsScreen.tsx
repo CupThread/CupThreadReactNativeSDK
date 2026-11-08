@@ -169,7 +169,9 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           <View style={styles.cardHeaderLeft}>
             <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
             <View style={styles.badgeRow}>
-              {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
+              {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
+                <Badge label={item.columnName.trim()} color={item.columnColor} />
+              ) : null}
               {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
             </View>
           </View>
