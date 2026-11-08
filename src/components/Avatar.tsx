@@ -57,10 +57,11 @@ export interface AvatarProps {
 export function Avatar({ url, name, size = 32 }: AvatarProps) {
   const { colors } = useCupThreadTheme();
 
-  if (url) {
+  const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+  if (trimmedUrl) {
     return (
       <Image
-        source={{ uri: url }}
+        source={{ uri: trimmedUrl }}
         style={{
           width: size,
           height: size,
