@@ -19,6 +19,7 @@ import { UserTokenStore } from '../client/UserTokenStore';
 import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
+import { formatVersionLabel } from '../utils/formatters';
 
 /**
  * Props for configuring the {@link ChangelogOverlay} modal sheet.
@@ -182,19 +183,20 @@ export function ChangelogOverlay({
             />
           ) : (
             <ScrollView contentContainerStyle={styles.content}>
-              {entries.map((item) => (
-                <View key={item.id} style={[styles.entryCard, { borderColor: colors.border }]}>
-                  <View style={styles.entryHeader}>
-                    <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
-                      {item.title}
-                    </Text>
-                    {item.versionLabel && (
-                      <Badge label={`v${item.versionLabel}`} variant="outline" />
-                    )}
+              {entries.map((item) => {
+                const versionBadge = formatVersionLabel(item.versionLabel);
+                return (
+                  <View key={item.id} style={[styles.entryCard, { borderColor: colors.border }]}>
+                    <View style={styles.entryHeader}>
+                      <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
+                        {item.title}
+                      </Text>
+                      {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
+                    </View>
+                    <MarkdownText content={item.body} />
                   </View>
-                  <MarkdownText content={item.body} />
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
 

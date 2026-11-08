@@ -105,6 +105,35 @@ export function formatFileSize(bytes?: number): string {
 }
 
 /**
+ * Normalizes a release or milestone version label for badge presentation.
+ *
+ * Strips any redundant leading `'v'` or `'V'` prefix if followed by version content
+ * and normalizes the string so that it displays with a single leading `'v'`
+ * (e.g. `'1.2.0'` -> `'v1.2.0'`, `'v1.2.0'` -> `'v1.2.0'`, `'V2.0.0'` -> `'v2.0.0'`).
+ *
+ * Returns `null` when the version label is undefined, null, non-string,
+ * whitespace-only, or lacks version content (such as a solitary `'v'`),
+ * preventing phantom or empty badges.
+ *
+ * @param versionLabel - Raw version label string.
+ * @returns Normalized version label prefixed with a single `'v'`, or `null` if invalid or empty.
+ */
+export function formatVersionLabel(versionLabel?: string | null): string | null {
+  if (typeof versionLabel !== 'string') {
+    return null;
+  }
+  const trimmed = versionLabel.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const stripped = trimmed.replace(/^[vV]+\s*(?=\d|\.|$)/, '');
+  if (!stripped) {
+    return null;
+  }
+  return `v${stripped}`;
+}
+
+/**
  * Minimal structural view of the Web Crypto surfaces used by {@link generateUUID}.
  * Optional members tolerate runtimes and polyfills that expose only one of them.
  */

@@ -22,7 +22,7 @@ import { Badge } from './Badge';
 import { Avatar } from './Avatar';
 import { MarkdownText } from './MarkdownText';
 import { CommentsSection } from './CommentsSection';
-import { formatDate } from '../utils/formatters';
+import { formatDate, formatVersionLabel } from '../utils/formatters';
 import { useToggleVote, type VoteChangeApplier, type VoteChangeMeta } from '../hooks/useToggleVote';
 
 /**
@@ -176,6 +176,7 @@ export function FeatureRequestDetail({
   }, [initialItem.id, clearVoteError]);
 
   const currentVoteError = getVoteError(item.id);
+  const versionBadge = formatVersionLabel(item.versionLabel);
 
   return (
     <Modal
@@ -204,7 +205,7 @@ export function FeatureRequestDetail({
               <Text style={[styles.title, { color: colors.textPrimary }]}>{item.title}</Text>
               <View style={styles.badgesRow}>
                 {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
-                {item.versionLabel && <Badge label={`v${item.versionLabel}`} variant="outline" />}
+                {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
               </View>
             </View>
             <VoteButton
