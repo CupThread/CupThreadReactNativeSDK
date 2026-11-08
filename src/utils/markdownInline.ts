@@ -29,7 +29,7 @@ export const INLINE_MARKDOWN_REGEX =
  * @returns Array of inline tokens.
  */
 export function tokenizeMarkdownInline(text: string): MarkdownInlineToken[] {
-  if (!text) return [];
+  if (typeof text !== 'string' || !text) return [];
 
   const tokens: MarkdownInlineToken[] = [];
   const regex = new RegExp(INLINE_MARKDOWN_REGEX.source, 'g');

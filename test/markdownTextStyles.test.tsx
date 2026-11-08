@@ -238,3 +238,20 @@ test(
     renderer.unmount();
   }
 );
+
+test(
+  'MarkdownText: handles non-string content prop gracefully without throwing TypeError (#302)',
+  renderTestOptions,
+  () => {
+    const nonStringValues = [12345, true, false, {}, [], () => {}];
+    for (const val of nonStringValues) {
+      const renderer = renderMarkdown({ content: val as any });
+      assert.equal(
+        renderer.toJSON(),
+        null,
+        `MarkdownText should return null for non-string content: ${typeof val}`
+      );
+      renderer.unmount();
+    }
+  }
+);
