@@ -757,7 +757,7 @@ export function FeedbackComposer({
           isSubmitting ? strings.common.submitting : strings.feedbackComposer.submitButton
         }
         accessibilityState={{
-          disabled: isSubmitting || isUploadingAttachment || !isTokenReady,
+          disabled: isSubmitting || isUploadingAttachment || !isTokenReady || isFeedbackDisabled,
         }}
       >
         {isSubmitting ? (

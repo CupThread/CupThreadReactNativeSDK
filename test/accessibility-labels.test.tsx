@@ -488,9 +488,89 @@ test(
       assert.ok(submit, 'submit button should render');
       assert.equal(submit.props.accessibilityRole, 'button');
       assert.equal(submit.props.accessibilityLabel, 'Submit Proposal');
+      assert.deepEqual(submit.props.accessibilityState, { disabled: false });
     } finally {
       restoreFetch();
       renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeedbackComposer & FeatureRequestComposeSheet: submit button reflects disabled accessibilityState when surface is disabled (#208)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: {
+            features: {
+              feedback: false,
+              featureRequests: false,
+            },
+          },
+        });
+      }
+      if (target.includes('/api/v1/public/versions/')) {
+        return jsonResponse({ versions: [] });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let composerRenderer!: TestRenderer.ReactTestRenderer;
+    let sheetRenderer!: TestRenderer.ReactTestRenderer;
+
+    try {
+      // 1. FeedbackComposer with feedback surface disabled
+      composerRenderer = await renderWithProvider(
+        React.createElement(FeedbackComposer, {
+          onClose: () => {},
+          initialDraft: {
+            title: 'Disabled feedback test',
+            description: 'Feedback surface is turned off in appConfig',
+          },
+        })
+      );
+      await flush(10);
+
+      const composerMatching = pressables.filter((p) => p.text.includes('Submit Feedback'));
+      assert.ok(composerMatching.length > 0, 'FeedbackComposer submit button should render');
+      const composerSubmit = composerMatching[composerMatching.length - 1];
+      assert.equal(composerSubmit.props.accessibilityRole, 'button');
+      assert.equal(composerSubmit.props.disabled, true);
+      assert.deepEqual(composerSubmit.props.accessibilityState, { disabled: true });
+
+      // 2. FeatureRequestComposeSheet with featureRequests surface disabled
+      pressables.length = 0;
+      sheetRenderer = await renderWithProvider(
+        React.createElement(FeatureRequestComposeSheet, {
+          onClose: () => {},
+          initialDraft: {
+            title: 'Disabled feature request test',
+            description: 'Feature requests surface is turned off in appConfig',
+          },
+        })
+      );
+      await flush(10);
+
+      const sheetMatching = pressables.filter((p) => p.text.includes('Submit'));
+      assert.ok(sheetMatching.length > 0, 'FeatureRequestComposeSheet submit button should render');
+      const sheetSubmit = sheetMatching[sheetMatching.length - 1];
+      assert.equal(sheetSubmit.props.accessibilityRole, 'button');
+      assert.equal(sheetSubmit.props.disabled, true);
+      assert.deepEqual(sheetSubmit.props.accessibilityState, { disabled: true });
+    } finally {
+      globalThis.fetch = originalFetch;
+      composerRenderer?.unmount();
+      sheetRenderer?.unmount();
     }
   }
 );

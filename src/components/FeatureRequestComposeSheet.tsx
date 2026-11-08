@@ -454,7 +454,9 @@ export function FeatureRequestComposeSheet({
         accessibilityLabel={
           isSubmitting ? strings.common.submitting : strings.featureRequestCompose.submitButton
         }
-        accessibilityState={{ disabled: isSubmitting || !isTokenReady }}
+        accessibilityState={{
+          disabled: isSubmitting || !isTokenReady || isFeatureRequestsDisabled,
+        }}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} size="small" />
