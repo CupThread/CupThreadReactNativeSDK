@@ -40,7 +40,7 @@ if (supportsModuleMocks) {
 
 const { Badge } = await import('../src/components/Badge');
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { lightTheme } = await import('../src/theme/SdkTheme');
+const { lightTheme, darkTheme } = await import('../src/theme/SdkTheme');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -57,12 +57,13 @@ function makeClient(): FeedbackClient {
   return client;
 }
 
-function renderBadge(props: any): TestRenderer.ReactTestRenderer {
+function renderBadge(props: any, theme?: 'light' | 'dark'): TestRenderer.ReactTestRenderer {
   let renderer!: TestRenderer.ReactTestRenderer;
   act(() => {
     renderer = TestRenderer.create(
       React.createElement(CupThreadProvider, {
         client: makeClient(),
+        ...(theme ? { theme } : {}),
         children: React.createElement(Badge, props),
       })
     );
@@ -388,3 +389,52 @@ test('Badge: empty and whitespace-only labels return null (#248)', renderTestOpt
   const text = trimmedRenderer.root.findByType(TextStub as any);
   assert.equal(text.props.children, 'Trimmed');
 });
+
+test(
+  'Badge: handles non-string truthy color prop gracefully without throwing TypeError (#301)',
+  renderTestOptions,
+  () => {
+    const nonStringColors = [12345, 0x3b82f6, true, false, {}, [], () => {}, Symbol('color')];
+
+    for (const invalidColor of nonStringColors) {
+      for (const variant of ['subtle', 'outline', 'default'] as const) {
+        for (const mode of ['light', 'dark'] as const) {
+          const expectedTheme = mode === 'dark' ? darkTheme : lightTheme;
+          const renderer = renderBadge(
+            {
+              label: 'Safe Badge',
+              color: invalidColor as any,
+              variant,
+            },
+            mode
+          );
+
+          assert.ok(
+            renderer.toJSON(),
+            `Badge with non-string color (${typeof invalidColor}), variant ${variant}, and theme ${mode} should render`
+          );
+          const text = renderer.root.findByType(TextStub as any);
+          assert.equal(text.props.children, 'Safe Badge');
+
+          const view = renderer.root.findByType(ViewStub as any);
+          const viewStyle = flattenStyle(view.props.style);
+          const textStyle = flattenStyle(text.props.style);
+
+          if (variant === 'subtle') {
+            assert.equal(viewStyle.backgroundColor, expectedTheme.chipBg);
+            assert.equal(textStyle.color, expectedTheme.chipText);
+          } else if (variant === 'outline') {
+            assert.equal(viewStyle.backgroundColor, 'transparent');
+            assert.equal(viewStyle.borderColor, expectedTheme.border);
+            assert.equal(textStyle.color, expectedTheme.chipText);
+          } else if (variant === 'default') {
+            assert.equal(viewStyle.backgroundColor, expectedTheme.primary);
+            assert.equal(textStyle.color, expectedTheme.primaryText);
+          }
+
+          renderer.unmount();
+        }
+      }
+    }
+  }
+);

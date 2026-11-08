@@ -122,7 +122,7 @@ export function Badge({ label, color, variant = 'subtle' }: BadgeProps) {
     return null;
   }
 
-  const rawColor = color?.trim() || null;
+  const rawColor = typeof color === 'string' ? color.trim() || null : null;
   const hex6 = rawColor ? parseHexColor(rawColor) : null;
   const effectiveColor = hex6 || (rawColor && !rawColor.startsWith('#') ? rawColor : null);
 
