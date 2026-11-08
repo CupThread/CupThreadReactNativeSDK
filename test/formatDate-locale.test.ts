@@ -78,3 +78,44 @@ test('runtimes without Intl fall back to the runtime-default calendar rendering'
     (globalThis as { Intl?: typeof Intl }).Intl = originalIntl;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #305 — formatDate safely handles non-string, whitespace, and null values
+// ---------------------------------------------------------------------------
+
+test('formatDate returns an empty string for null, undefined, empty, or whitespace-only inputs (#305)', () => {
+  assert.equal(formatDate(null), '');
+  assert.equal(formatDate(undefined), '');
+  assert.equal(formatDate(''), '');
+  assert.equal(formatDate('   '), '');
+  assert.equal(formatDate('\t\n  '), '');
+});
+
+test('formatDate returns an empty string for truthy non-string types (#305)', () => {
+  const nonStringInputs = [
+    {},
+    { seconds: 1234, nanos: 0 },
+    [],
+    ['2025-01-01'],
+    true,
+    false,
+    12345,
+    0,
+    Symbol('timestamp'),
+    () => '2025-01-01',
+  ];
+
+  for (const input of nonStringInputs) {
+    const result = formatDate(input as any);
+    assert.equal(typeof result, 'string', `result for ${String(input)} must be a string`);
+    assert.equal(result, '', `result for ${String(input)} must be an empty string`);
+  }
+});
+
+test('formatDate trims whitespace around valid and invalid date strings (#305)', () => {
+  const iso = daysAgo(30);
+  assert.equal(formatDate(`   ${iso}   `), calendarExpected(iso));
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  assert.equal(formatDate(`   ${fiveMinAgo}   `), '5m ago');
+  assert.equal(formatDate('   not-a-date   '), 'not-a-date');
+});

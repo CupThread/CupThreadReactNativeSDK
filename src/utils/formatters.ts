@@ -54,9 +54,12 @@ export function formatDate(
   commonStrings?: CommonStrings,
   locale?: string
 ): string {
-  if (!isoDateString) return '';
-  const date = new Date(isoDateString);
-  if (isNaN(date.getTime())) return isoDateString;
+  if (!isoDateString || typeof isoDateString !== 'string') return '';
+  const trimmed = isoDateString.trim();
+  if (!trimmed) return '';
+
+  const date = new Date(trimmed);
+  if (isNaN(date.getTime())) return trimmed;
 
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
