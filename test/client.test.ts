@@ -2025,3 +2025,143 @@ test('subscribeToChangelog validates and trims email parameter', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('FeedbackClient handles non-string optional inputs gracefully (#298)', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: { url: string; method: string; headers: Record<string, string>; body: any }[] =
+    [];
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const headers: Record<string, string> = {};
+    if (init?.headers) {
+      if (typeof (init.headers as Headers).forEach === 'function') {
+        (init.headers as Headers).forEach((v, k) => {
+          headers[k.toLowerCase()] = v;
+        });
+      } else {
+        for (const [k, v] of Object.entries(init.headers as Record<string, string>)) {
+          headers[k.toLowerCase()] = String(v);
+        }
+      }
+    }
+    const body = init?.body ? JSON.parse(init.body as string) : undefined;
+    captured.push({ url, method: init?.method || 'GET', headers, body });
+
+    if (url.includes('/api/v1/feature-requests/fr_123/vote')) {
+      return new Response(JSON.stringify({ voted: true, voteCount: 1 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url.includes('/api/v1/feature-requests/fr_123/comments')) {
+      return new Response(
+        JSON.stringify({
+          comment: {
+            id: 'c_1',
+            featureRequestId: 'fr_123',
+            body: 'test comment',
+            authorName: 'Tester',
+            createdAt: '2026-10-01T00:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (url.includes('/api/v1/feature-requests/fr_123')) {
+      return new Response(
+        JSON.stringify({
+          request: {
+            id: 'fr_123',
+            title: 'Test',
+            description: 'Desc',
+            voteCount: 1,
+            voted: false,
+            status: 'open',
+            isOwnRequest: false,
+            createdAt: '2026-10-01T00:00:00.000Z',
+            updatedAt: '2026-10-01T00:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (url.includes('/profile')) {
+      return new Response(
+        JSON.stringify({
+          profile: {
+            id: 'u_123',
+            displayName: 'Dev',
+            joinedAt: '2026-01-01T00:00:00.000Z',
+            apps: [],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_default_test',
+    });
+
+    // 1. fetchFeatureRequest with non-string userToken does not throw and omits X-User-Token
+    await client.fetchFeatureRequest('fr_123', { userToken: 12345 as any });
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].headers['x-user-token'], undefined);
+
+    await client.fetchFeatureRequest('fr_123', { userToken: {} as any });
+    assert.equal(captured.length, 2);
+    assert.equal(captured[1].headers['x-user-token'], undefined);
+
+    // 2. fetchUserProfile with non-string appKey falls back to config.appKey
+    await client.fetchUserProfile('u_123', { appKey: 999 as any });
+    assert.equal(captured.length, 3);
+    assert.equal(
+      captured[2].url,
+      'https://api.cupthread.com/api/v1/users/u_123/profile?appKey=app_default_test'
+    );
+
+    await client.fetchUserProfile('u_123', { appKey: { custom: true } as any });
+    assert.equal(captured.length, 4);
+    assert.equal(
+      captured[3].url,
+      'https://api.cupthread.com/api/v1/users/u_123/profile?appKey=app_default_test'
+    );
+
+    // 3. castVote with non-string shipNotifyEmail and turnstileToken ignores them
+    await client.castVote('fr_123', 'tok_abc', {
+      shipNotifyEmail: true as any,
+      turnstileToken: 123 as any,
+    });
+    assert.equal(captured.length, 5);
+    assert.deepEqual(captured[4].body, {
+      appKey: 'app_default_test',
+      userToken: 'tok_abc',
+    });
+
+    // 4. postComment with non-string sessionToken falls back to userToken
+    await client.postComment('fr_123', { body: 'test' }, 'tok_abc', {
+      sessionToken: {} as any,
+    });
+    assert.equal(captured.length, 6);
+    assert.equal(captured[5].headers['authorization'], undefined);
+    assert.equal(captured[5].headers['x-user-token'], 'tok_abc');
+
+    await client.postComment('fr_123', { body: 'test 2' }, 'tok_abc', {
+      sessionToken: 9999 as any,
+    });
+    assert.equal(captured.length, 7);
+    assert.equal(captured[6].headers['authorization'], undefined);
+    assert.equal(captured[6].headers['x-user-token'], 'tok_abc');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

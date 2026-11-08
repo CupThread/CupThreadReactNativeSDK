@@ -1551,9 +1551,11 @@ export class FeedbackClient {
       options &&
       typeof options === 'object' &&
       !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
-    const userToken = isOptionsObject
-      ? (options as FetchFeatureRequestOptions).userToken?.trim() || undefined
+    const rawUserToken = isOptionsObject
+      ? (options as FetchFeatureRequestOptions).userToken
       : undefined;
+    const userToken =
+      typeof rawUserToken === 'string' ? rawUserToken.trim() || undefined : undefined;
 
     const res = await this.request<{ request?: FeatureRequestItem }>({
       method: 'GET',
@@ -1666,8 +1668,14 @@ export class FeedbackClient {
       typeof options === 'object' &&
       !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
     const castOpts = isOptionsObject ? (options as CastVoteOptions) : undefined;
-    const shipNotifyEmail = castOpts?.shipNotifyEmail?.trim() || undefined;
-    const turnstileToken = castOpts?.turnstileToken?.trim() || undefined;
+    const shipNotifyEmail =
+      typeof castOpts?.shipNotifyEmail === 'string'
+        ? castOpts.shipNotifyEmail.trim() || undefined
+        : undefined;
+    const turnstileToken =
+      typeof castOpts?.turnstileToken === 'string'
+        ? castOpts.turnstileToken.trim() || undefined
+        : undefined;
 
     return this.request<VoteResult>({
       method: 'POST',
@@ -1912,7 +1920,10 @@ export class FeedbackClient {
       typeof options === 'object' &&
       !('aborted' in options && typeof (options as AbortSignal).aborted === 'boolean');
     const postOpts = isOptionsObject ? (options as PostCommentOptions) : undefined;
-    const sessionToken = postOpts?.sessionToken?.trim() || undefined;
+    const sessionToken =
+      typeof postOpts?.sessionToken === 'string'
+        ? postOpts.sessionToken.trim() || undefined
+        : undefined;
 
     const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
     const parentId =
@@ -2467,7 +2478,10 @@ export class FeedbackClient {
     const profileOptions = isOptionsObject ? (options as FetchUserProfileOptions) : undefined;
 
     const params = new URLSearchParams();
-    const appKey = profileOptions?.appKey?.trim() || this.config.appKey;
+    const appKey =
+      typeof profileOptions?.appKey === 'string' && profileOptions.appKey.trim()
+        ? profileOptions.appKey.trim()
+        : this.config.appKey;
     if (appKey) params.append('appKey', appKey);
     const query = params.toString();
 
