@@ -13,6 +13,8 @@ test('tokenizeMarkdownInline: handles non-string inputs safely without throwing 
   assert.deepEqual(tokenizeMarkdownInline(true as any), []);
   assert.deepEqual(tokenizeMarkdownInline({} as any), []);
   assert.deepEqual(tokenizeMarkdownInline([] as any), []);
+  assert.deepEqual(tokenizeMarkdownInline(Symbol('test') as any), []);
+  assert.deepEqual(tokenizeMarkdownInline(['**bold**'] as any), []);
 });
 
 test('tokenizeMarkdownInline: plain text without markdown formatting', () => {
