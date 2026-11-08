@@ -204,7 +204,9 @@ export function FeatureRequestDetail({
             <View style={styles.titleArea}>
               <Text style={[styles.title, { color: colors.textPrimary }]}>{item.title}</Text>
               <View style={styles.badgesRow}>
-                {item.columnName && <Badge label={item.columnName} color={item.columnColor} />}
+                {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
+                  <Badge label={item.columnName.trim()} color={item.columnColor} />
+                ) : null}
                 {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
               </View>
             </View>

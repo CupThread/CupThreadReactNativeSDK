@@ -21,14 +21,24 @@ const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 const TouchableOpacityStub = (props: any) => props.children ?? null;
 const TextStub = (props: any) => props.children ?? null;
 const TextInputStub = () => null;
+const ViewStub = (props: any) => {
+  React.Children.forEach(props.children, (child) => {
+    if (typeof child === 'string') {
+      throw new Error(
+        `Text strings must be rendered within a <Text> component. Found raw string: "${child}"`
+      );
+    }
+  });
+  return props.children ?? null;
+};
 
 if (supportsModuleMocks) {
   (test as any).mock.module('react-native', {
     namedExports: {
       useColorScheme: () => 'light',
       // Layout stubs must pass children through so nested pressables stay in
-      // the rendered tree.
-      View: ({ children }: any) => children ?? null,
+      // the rendered tree, but validate against raw string children as React Native does.
+      View: ViewStub,
       Text: TextStub,
       TextInput: TextInputStub,
       TouchableOpacity: TouchableOpacityStub,
@@ -50,6 +60,7 @@ const { VoteButton } = await import('../src/components/VoteButton');
 const { MarkdownText } = await import('../src/components/MarkdownText');
 const { FeedbackClient } = await import('../src/client/FeedbackClient');
 const { UserTokenStore } = await import('../src/client/UserTokenStore');
+const { Badge } = await import('../src/components/Badge');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -752,6 +763,55 @@ test(
         textNull.includes('Anonymous'),
         'must display Anonymous fallback when requesterName is null'
       );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Issue #309 — FeatureRequestDetail: raw empty-string render in item.columnName
+// ---------------------------------------------------------------------------
+
+test(
+  'FeatureRequestDetail: empty-string or whitespace-only columnName does not crash View and renders valid columnName trimmed (#309)',
+  renderTestOptions,
+  async () => {
+    // 1. When item has columnName: "" (empty string), it must not crash View with raw string
+    const emptyColItem = makeItem({ id: 'fr_empty_col', columnName: '' });
+    const harness = await renderDetail(emptyColItem, true);
+
+    try {
+      const badges = harness.renderer.root.findAllByType(Badge);
+      assert.equal(
+        badges.length,
+        0,
+        'must not render Badge component when columnName is an empty string'
+      );
+
+      // 2. When item has whitespace-only columnName: "   \t  ", it safely renders null
+      await harness.update(makeItem({ id: 'fr_ws_col', columnName: '   \t  ' }), true);
+      const wsBadges = harness.renderer.root.findAllByType(Badge);
+      assert.equal(
+        wsBadges.length,
+        0,
+        'must not render Badge component when columnName is whitespace-only'
+      );
+
+      // 3. When item has valid columnName: "  In Progress  ", it renders Badge with trimmed label
+      await harness.update(
+        makeItem({
+          id: 'fr_valid_col',
+          columnName: '  In Progress  ',
+          columnColor: '#3b82f6',
+        }),
+        true
+      );
+      const validBadges = harness.renderer.root.findAllByType(Badge);
+      assert.equal(validBadges.length, 1, 'must render Badge for valid columnName');
+      assert.equal(validBadges[0].props.label, 'In Progress');
+      assert.equal(validBadges[0].props.color, '#3b82f6');
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
