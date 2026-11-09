@@ -28,15 +28,25 @@ export interface AvatarProps {
   /**
    * Diameter of the circular avatar in density-independent pixels.
    *
+   * Clamped to a positive finite number, defaulting to `32` if non-positive, NaN, or invalid.
+   *
    * @defaultValue 32
    */
   size?: number;
+
+  /**
+   * Optional custom accessibility label announced by assistive technologies.
+   *
+   * When omitted or empty, defaults to `"${name}'s avatar"` if `name` is provided,
+   * or `"User avatar"` otherwise.
+   */
+  accessibilityLabel?: string;
 }
 
 /**
  * Circular user avatar component rendering a remote image with an initial-based letter fallback.
  *
- * @param props - {@link AvatarProps} containing URL, name, and size.
+ * @param props - {@link AvatarProps} containing URL, name, size, and accessibility attributes.
  *
  * @example
  * ```tsx
@@ -54,40 +64,60 @@ export interface AvatarProps {
  * }
  * ```
  */
-export function Avatar({ url, name, size = 32 }: AvatarProps) {
+export function Avatar({
+  url,
+  name,
+  size = 32,
+  accessibilityLabel: customAccessibilityLabel,
+}: AvatarProps) {
   const { colors } = useCupThreadTheme();
+
+  const safeSize = typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : 32;
+
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  const initial = (trimmedName || '?').charAt(0).toUpperCase();
+
+  const trimmedCustomA11yLabel =
+    typeof customAccessibilityLabel === 'string' ? customAccessibilityLabel.trim() : '';
+  const defaultA11yLabel = trimmedName ? `${trimmedName}'s avatar` : 'User avatar';
+  const resolvedAccessibilityLabel = trimmedCustomA11yLabel || defaultA11yLabel;
 
   const trimmedUrl = typeof url === 'string' ? url.trim() : '';
   if (trimmedUrl) {
     return (
       <Image
         source={{ uri: trimmedUrl }}
+        accessible={true}
+        accessibilityRole="image"
+        accessibilityLabel={resolvedAccessibilityLabel}
         style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
+          width: safeSize,
+          height: safeSize,
+          borderRadius: safeSize / 2,
           backgroundColor: colors.chipBg,
         }}
       />
     );
   }
 
-  const trimmedName = typeof name === 'string' ? name.trim() : '';
-  const initial = (trimmedName || '?').charAt(0).toUpperCase();
-
   return (
     <View
+      accessible={true}
+      accessibilityRole="image"
+      accessibilityLabel={resolvedAccessibilityLabel}
       style={[
         styles.fallback,
         {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
+          width: safeSize,
+          height: safeSize,
+          borderRadius: safeSize / 2,
           backgroundColor: colors.chipBg,
         },
       ]}
     >
-      <Text style={[styles.initialText, { fontSize: size * 0.45, color: colors.textSecondary }]}>
+      <Text
+        style={[styles.initialText, { fontSize: safeSize * 0.45, color: colors.textSecondary }]}
+      >
         {initial}
       </Text>
     </View>

@@ -241,3 +241,134 @@ test('Avatar: applies custom size and scaled initial font size (#246)', renderTe
   assert.equal(viewStyle.borderRadius, customSize / 2);
   renderer.unmount();
 });
+
+test(
+  'Avatar: clamps non-positive, NaN, infinite, or invalid size to default 32 (#358)',
+  renderTestOptions,
+  () => {
+    const invalidSizes = [
+      0,
+      -10,
+      NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      '40',
+      null,
+      {},
+    ];
+    for (const badSize of invalidSizes) {
+      // Test fallback View
+      const fallbackRenderer = renderAvatar({ name: 'Taylor', size: badSize as any });
+      const viewNode = fallbackRenderer.root.findByType('View' as any);
+      const viewStyle = flattenStyle(viewNode.props.style);
+      assert.equal(
+        viewStyle.width,
+        32,
+        `bad size ${String(badSize)} must clamp fallback width to 32`
+      );
+      assert.equal(
+        viewStyle.height,
+        32,
+        `bad size ${String(badSize)} must clamp fallback height to 32`
+      );
+      assert.equal(
+        viewStyle.borderRadius,
+        16,
+        `bad size ${String(badSize)} must clamp fallback borderRadius to 16`
+      );
+      fallbackRenderer.unmount();
+
+      // Test Image
+      const imageRenderer = renderAvatar({
+        url: 'https://example.com/avatar.png',
+        name: 'Taylor',
+        size: badSize as any,
+      });
+      const imageNode = imageRenderer.root.findByType('Image' as any);
+      const imageStyle = flattenStyle(imageNode.props.style);
+      assert.equal(
+        imageStyle.width,
+        32,
+        `bad size ${String(badSize)} must clamp image width to 32`
+      );
+      assert.equal(
+        imageStyle.height,
+        32,
+        `bad size ${String(badSize)} must clamp image height to 32`
+      );
+      assert.equal(
+        imageStyle.borderRadius,
+        16,
+        `bad size ${String(badSize)} must clamp image borderRadius to 16`
+      );
+      imageRenderer.unmount();
+    }
+  }
+);
+
+test(
+  'Avatar: exposes accessibilityRole="image" and computed accessibilityLabel (#358)',
+  renderTestOptions,
+  () => {
+    // 1. Fallback view with name
+    const namedFallback = renderAvatar({ name: 'Alex Morgan' });
+    const viewNode1 = namedFallback.root.findByType('View' as any);
+    assert.equal(viewNode1.props.accessible, true);
+    assert.equal(viewNode1.props.accessibilityRole, 'image');
+    assert.equal(viewNode1.props.accessibilityLabel, "Alex Morgan's avatar");
+    namedFallback.unmount();
+
+    // 2. Fallback view without name or with whitespace name
+    const anonymousFallback = renderAvatar({ name: '   ' });
+    const viewNode2 = anonymousFallback.root.findByType('View' as any);
+    assert.equal(viewNode2.props.accessible, true);
+    assert.equal(viewNode2.props.accessibilityRole, 'image');
+    assert.equal(viewNode2.props.accessibilityLabel, 'User avatar');
+    anonymousFallback.unmount();
+
+    // 3. Fallback view with null name
+    const nullFallback = renderAvatar({ name: null });
+    const viewNode3 = nullFallback.root.findByType('View' as any);
+    assert.equal(viewNode3.props.accessible, true);
+    assert.equal(viewNode3.props.accessibilityRole, 'image');
+    assert.equal(viewNode3.props.accessibilityLabel, 'User avatar');
+    nullFallback.unmount();
+
+    // 4. Image with name
+    const namedImage = renderAvatar({ url: 'https://example.com/avatar.png', name: 'Jordan' });
+    const imageNode1 = namedImage.root.findByType('Image' as any);
+    assert.equal(imageNode1.props.accessible, true);
+    assert.equal(imageNode1.props.accessibilityRole, 'image');
+    assert.equal(imageNode1.props.accessibilityLabel, "Jordan's avatar");
+    namedImage.unmount();
+
+    // 5. Image without name
+    const anonImage = renderAvatar({ url: 'https://example.com/avatar.png' });
+    const imageNode2 = anonImage.root.findByType('Image' as any);
+    assert.equal(imageNode2.props.accessible, true);
+    assert.equal(imageNode2.props.accessibilityRole, 'image');
+    assert.equal(imageNode2.props.accessibilityLabel, 'User avatar');
+    anonImage.unmount();
+
+    // 6. Custom accessibilityLabel overrides default
+    const customFallback = renderAvatar({
+      name: 'Jordan',
+      accessibilityLabel: 'Author avatar photo',
+    });
+    const viewNode4 = customFallback.root.findByType('View' as any);
+    assert.equal(viewNode4.props.accessible, true);
+    assert.equal(viewNode4.props.accessibilityRole, 'image');
+    assert.equal(viewNode4.props.accessibilityLabel, 'Author avatar photo');
+    customFallback.unmount();
+
+    const customImage = renderAvatar({
+      url: 'https://example.com/avatar.png',
+      accessibilityLabel: 'Profile picture of Jordan',
+    });
+    const imageNode3 = customImage.root.findByType('Image' as any);
+    assert.equal(imageNode3.props.accessible, true);
+    assert.equal(imageNode3.props.accessibilityRole, 'image');
+    assert.equal(imageNode3.props.accessibilityLabel, 'Profile picture of Jordan');
+    customImage.unmount();
+  }
+);
