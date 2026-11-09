@@ -358,6 +358,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
                   (req) => typeof req?.title === 'string' && req.title.trim().length > 0
                 )
               : [];
+            const publishedDate = formatDate(item.publishedAt, strings.common, locale);
             return (
               <View
                 style={[
@@ -375,9 +376,11 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
                   {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
                 </View>
 
-                <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
-                  {formatDate(item.publishedAt, strings.common, locale)}
-                </Text>
+                {publishedDate ? (
+                  <Text style={[styles.publishedDate, { color: colors.textMuted }]}>
+                    {publishedDate}
+                  </Text>
+                ) : null}
 
                 {validLinkedRequests.length > 0 ? (
                   <View style={styles.linkedRequestsRow}>
