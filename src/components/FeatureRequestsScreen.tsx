@@ -153,6 +153,10 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
 
   const renderItem = ({ item }: { item: FeatureRequestItem }) => {
     const versionBadge = formatVersionLabel(item.versionLabel);
+    const columnBadgeLabel =
+      typeof item.columnName === 'string' && item.columnName.trim().length > 0
+        ? item.columnName.trim()
+        : null;
     return (
       <TouchableOpacity
         activeOpacity={0.8}
@@ -170,12 +174,14 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
               {typeof item.title === 'string' ? item.title.trim() : ''}
             </Text>
-            <View style={styles.badgeRow}>
-              {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
-                <Badge label={item.columnName.trim()} color={item.columnColor} />
-              ) : null}
-              {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
-            </View>
+            {columnBadgeLabel || versionBadge ? (
+              <View style={styles.badgeRow}>
+                {columnBadgeLabel ? (
+                  <Badge label={columnBadgeLabel} color={item.columnColor} />
+                ) : null}
+                {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
+              </View>
+            ) : null}
           </View>
 
           <VoteButton

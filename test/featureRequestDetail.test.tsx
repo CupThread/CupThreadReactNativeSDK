@@ -1066,3 +1066,131 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestDetail: does not render badgesRow when all badges are absent and trims title (#336)',
+  renderTestOptions,
+  async () => {
+    const isBadgesRow = (node: TestRenderer.ReactTestInstance) => {
+      if (node.type !== ViewStub) return false;
+      const style = node.props?.style;
+      if (!style) return false;
+      const array = Array.isArray(style) ? style : [style];
+      return array.some(
+        (s: any) => s?.marginTop === 4 && s?.flexDirection === 'row' && s?.flexWrap === 'wrap'
+      );
+    };
+
+    const isTitleText = (node: TestRenderer.ReactTestInstance) => {
+      if (node.type !== TextStub) return false;
+      const style = node.props?.style;
+      if (!style) return false;
+      const array = Array.isArray(style) ? style : [style];
+      return array.some((s: any) => s?.fontSize === 20 && s?.fontWeight === '700');
+    };
+
+    // 1. Item without badges and untrimmed title
+    const harness = await renderDetail(
+      makeItem({
+        id: 'fr_no_badges',
+        title: '   Trimmed Title Detail   ',
+        columnName: null,
+        versionLabel: null,
+      })
+    );
+
+    try {
+      assert.equal(
+        harness.renderer.root.findAll(isBadgesRow).length,
+        0,
+        'badgesRow must not be rendered when column and version are absent'
+      );
+      assert.equal(
+        harness.renderer.root.findAllByType(Badge).length,
+        0,
+        'no Badge must be rendered when column and version are absent'
+      );
+
+      const titleNode = harness.renderer.root.find(isTitleText);
+      assert.equal(
+        titleNode.props.children,
+        'Trimmed Title Detail',
+        'title must be trimmed of surrounding whitespace'
+      );
+
+      // 2. Whitespace-only column name and null version
+      await harness.update(
+        makeItem({
+          id: 'fr_ws_col_only',
+          title: 'Title',
+          columnName: '   \t   ',
+          versionLabel: null,
+        }),
+        true
+      );
+      assert.equal(
+        harness.renderer.root.findAll(isBadgesRow).length,
+        0,
+        'badgesRow must not be rendered when column is whitespace-only'
+      );
+
+      // 3. Item with column name only
+      await harness.update(
+        makeItem({
+          id: 'fr_with_col',
+          title: 'Title',
+          columnName: '  In Progress  ',
+          versionLabel: null,
+        }),
+        true
+      );
+      assert.equal(
+        harness.renderer.root.findAll(isBadgesRow).length,
+        1,
+        'badgesRow must be rendered when column is present'
+      );
+      const colBadges = harness.renderer.root.findAllByType(Badge);
+      assert.equal(colBadges.length, 1);
+      assert.equal(colBadges[0].props.label, 'In Progress');
+
+      // 4. Item with version label only
+      await harness.update(
+        makeItem({
+          id: 'fr_with_ver',
+          title: 'Title',
+          columnName: null,
+          versionLabel: '1.2.0',
+        }),
+        true
+      );
+      assert.equal(
+        harness.renderer.root.findAll(isBadgesRow).length,
+        1,
+        'badgesRow must be rendered when versionLabel is present'
+      );
+      const verBadges = harness.renderer.root.findAllByType(Badge);
+      assert.equal(verBadges.length, 1);
+      assert.equal(verBadges[0].props.label, 'v1.2.0');
+
+      // 5. Item with both column name and version label
+      await harness.update(
+        makeItem({
+          id: 'fr_with_both',
+          title: 'Title',
+          columnName: 'Completed',
+          versionLabel: '2.0.0',
+        }),
+        true
+      );
+      assert.equal(
+        harness.renderer.root.findAll(isBadgesRow).length,
+        1,
+        'badgesRow must be rendered when both are present'
+      );
+      assert.equal(harness.renderer.root.findAllByType(Badge).length, 2);
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);

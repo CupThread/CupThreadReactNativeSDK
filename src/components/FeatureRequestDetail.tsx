@@ -178,6 +178,10 @@ export function FeatureRequestDetail({
   const currentVoteError = getVoteError(item.id);
   const versionBadge = formatVersionLabel(item.versionLabel);
   const formattedDate = formatDate(item.createdAt, strings.common, locale);
+  const columnBadgeLabel =
+    typeof item.columnName === 'string' && item.columnName.trim().length > 0
+      ? item.columnName.trim()
+      : null;
 
   return (
     <Modal
@@ -204,14 +208,16 @@ export function FeatureRequestDetail({
           <View style={styles.headerRow}>
             <View style={styles.titleArea}>
               <Text style={[styles.title, { color: colors.textPrimary }]}>
-                {typeof item.title === 'string' ? item.title : ''}
+                {typeof item.title === 'string' ? item.title.trim() : ''}
               </Text>
-              <View style={styles.badgesRow}>
-                {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
-                  <Badge label={item.columnName.trim()} color={item.columnColor} />
-                ) : null}
-                {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
-              </View>
+              {columnBadgeLabel || versionBadge ? (
+                <View style={styles.badgesRow}>
+                  {columnBadgeLabel ? (
+                    <Badge label={columnBadgeLabel} color={item.columnColor} />
+                  ) : null}
+                  {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
+                </View>
+              ) : null}
             </View>
             <VoteButton
               voteCount={item.voteCount}

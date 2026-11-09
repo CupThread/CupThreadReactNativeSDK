@@ -322,3 +322,115 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestsScreen: does not render badgeRow when all badges are absent (#336)',
+  renderTestOptions,
+  async () => {
+    const items: FeatureRequestItem[] = [
+      {
+        ...makeRequest('fr_no_badges', 'Request Without Badges'),
+        columnName: null,
+        versionLabel: null,
+      },
+      {
+        ...makeRequest('fr_with_column', 'Request With Column'),
+        columnName: 'In Progress',
+        columnColor: '#3b82f6',
+        versionLabel: null,
+      },
+      {
+        ...makeRequest('fr_with_version', 'Request With Version'),
+        columnName: null,
+        versionLabel: '2.0.0',
+      },
+      {
+        ...makeRequest('fr_with_both', 'Request With Both'),
+        columnName: 'Completed',
+        versionLabel: '3.0.0',
+      },
+      {
+        ...makeRequest('fr_whitespace_col', 'Request With Whitespace Column'),
+        columnName: '   \t  ',
+        versionLabel: null,
+      },
+    ];
+
+    const client = makeClient('app_test_fr_badges');
+    client.fetchFeatureRequests = (async () => ({
+      requests: items,
+      total: items.length,
+      hasMore: false,
+    })) as any;
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <FeatureRequestsScreen />
+          </CupThreadProvider>
+        );
+      });
+
+      const isCard = (node: any) =>
+        node.type === 'TouchableOpacity' &&
+        Array.isArray(node.props?.style) &&
+        node.props.style[0]?.borderRadius === 12 &&
+        node.props.style[0]?.marginBottom === 12;
+
+      await waitForCondition(() => {
+        const cards = renderer!.root.findAll(isCard);
+        return cards.length === items.length;
+      });
+
+      const cards = renderer!.root.findAll(isCard);
+      assert.equal(cards.length, items.length);
+
+      const isBadgeRow = (node: any) => {
+        if (node.type !== 'View') return false;
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some((s: any) => s?.marginTop === 2 && s?.flexDirection === 'row');
+      };
+
+      // Item 0: no badges -> badgeRow must NOT be rendered
+      assert.equal(
+        cards[0].findAll(isBadgeRow).length,
+        0,
+        'badgeRow must not be rendered when both badges are absent'
+      );
+
+      // Item 1: with column -> badgeRow must be rendered
+      assert.equal(
+        cards[1].findAll(isBadgeRow).length,
+        1,
+        'badgeRow must be rendered when column is present'
+      );
+
+      // Item 2: with version -> badgeRow must be rendered
+      assert.equal(
+        cards[2].findAll(isBadgeRow).length,
+        1,
+        'badgeRow must be rendered when versionLabel is present'
+      );
+
+      // Item 3: with both -> badgeRow must be rendered
+      assert.equal(
+        cards[3].findAll(isBadgeRow).length,
+        1,
+        'badgeRow must be rendered when both badges are present'
+      );
+
+      // Item 4: with whitespace column -> badgeRow must NOT be rendered
+      assert.equal(
+        cards[4].findAll(isBadgeRow).length,
+        0,
+        'badgeRow must not be rendered when column is whitespace and version is absent'
+      );
+    } finally {
+      renderer?.unmount();
+    }
+  }
+);
