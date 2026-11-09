@@ -146,6 +146,25 @@ test('resolveAllowedPlatform: honors fallback without warning when fallback is i
   }
 });
 
+test('resolveAllowedPlatform: does not throw ReferenceError when process is undefined in browser ESM or worker runtimes (#343)', () => {
+  const originalProcess = (globalThis as any).process;
+  const originalDev = (globalThis as any).__DEV__;
+  delete (globalThis as any).__DEV__;
+  delete (globalThis as any).process;
+
+  try {
+    const result = resolveAllowedPlatform('ios', ['android'], 'universal');
+    assert.equal(result, 'android');
+  } finally {
+    if (originalProcess !== undefined) {
+      (globalThis as any).process = originalProcess;
+    }
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Integration / Component tests: FeedbackComposer wiring
 // ---------------------------------------------------------------------------
