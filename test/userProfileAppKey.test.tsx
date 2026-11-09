@@ -740,3 +740,151 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen: handles undefined, empty, whitespace, and non-string comment fields safely without broken strings (#320)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_comment_test',
+        displayName: 'Test Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [],
+      recentComments: [
+        {
+          id: 'cmt_valid',
+          body: '   Useful feature suggestion   ',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_1',
+          featureRequestTitle: '   Dark Mode Support   ',
+          appName: '   CupThread App   ',
+        },
+        {
+          id: 'cmt_empty_title',
+          body: 'Comment with empty title',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_2',
+          featureRequestTitle: '',
+          appName: 'Another App',
+        },
+        {
+          id: 'cmt_whitespace_title',
+          body: 'Comment with whitespace title',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_3',
+          featureRequestTitle: '   \t  \n  ',
+          appName: 'Third App',
+        },
+        {
+          id: 'cmt_undefined_title',
+          body: 'Comment with undefined title',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_4',
+          featureRequestTitle: undefined as any,
+          appName: 'Fourth App',
+        },
+        {
+          id: 'cmt_non_string_title',
+          body: 'Comment with object title',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_5',
+          featureRequestTitle: { some: 'object' } as any,
+          appName: 'Fifth App',
+        },
+        {
+          id: 'cmt_missing_appname',
+          body: 'Comment with no app name',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_6',
+          featureRequestTitle: 'Offline Mode',
+          appName: undefined as any,
+        },
+        {
+          id: 'cmt_whitespace_appname',
+          body: 'Comment with whitespace app name',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_7',
+          featureRequestTitle: 'Export Data',
+          appName: '   \t   ',
+        },
+        {
+          id: 'cmt_non_string_body',
+          body: { complex: 'object' } as any,
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_8',
+          featureRequestTitle: 'Keyboard Nav',
+          appName: 'Nav App',
+        },
+        {
+          id: 'cmt_whitespace_body',
+          body: '   ',
+          createdAt: '2026-08-10T14:00:00.000Z',
+          featureRequestId: 'fr_9',
+          featureRequestTitle: 'Cloud Sync',
+          appName: 'Sync App',
+        },
+      ],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+
+      // Valid trimmed fields render as expected
+      assert.ok(
+        texts.includes(enStrings.userProfile.commentOn('Dark Mode Support')),
+        'valid comment title must render with commentOn prefix'
+      );
+      assert.ok(
+        texts.includes('"Useful feature suggestion"'),
+        'valid comment body must render trimmed in quotes'
+      );
+      assert.ok(
+        texts.some((t) => t.includes('CupThread App')),
+        'valid appName must render in date line'
+      );
+
+      // Broken string interpolations must never leak into rendered copy
+      assert.ok(
+        texts.every((t) => !t.includes('on undefined')),
+        'must not render "on undefined"'
+      );
+      assert.ok(
+        texts.every((t) => !t.includes('on null')),
+        'must not render "on null"'
+      );
+      assert.ok(
+        texts.every((t) => t !== 'on ' && t !== 'on'),
+        'must not render empty "on " title'
+      );
+      assert.ok(
+        texts.every((t) => !t.endsWith(' · ') && !t.includes(' · undefined')),
+        'date line must not have trailing dot or " · undefined" when appName is missing or whitespace'
+      );
+
+      // Non-string or empty body must not render empty quotes `""`
+      assert.ok(
+        texts.every((t) => t !== '""'),
+        'empty or non-string body must not render empty quotes'
+      );
+
+      // Comments without appName still render dateText
+      assert.ok(
+        texts.includes(enStrings.userProfile.commentOn('Offline Mode')),
+        'comment with valid title but missing appName must render title'
+      );
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);

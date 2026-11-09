@@ -195,25 +195,53 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 {strings.userProfile.recentComments}
               </Text>
-              {data.recentComments.map((comment) => (
-                <View
-                  key={comment.id}
-                  style={[
-                    styles.commentCard,
-                    { backgroundColor: colors.card, borderColor: colors.cardBorder },
-                  ]}
-                >
-                  <Text style={[styles.commentTitle, { color: colors.textPrimary }]}>
-                    {strings.userProfile.commentOn(comment.featureRequestTitle)}
-                  </Text>
-                  <Text style={[styles.commentBody, { color: colors.textSecondary }]}>
-                    "{comment.body}"
-                  </Text>
-                  <Text style={[styles.commentDate, { color: colors.textMuted }]}>
-                    {formatDate(comment.createdAt, strings.common, locale)} · {comment.appName}
-                  </Text>
-                </View>
-              ))}
+              {data.recentComments.map((comment, index) => {
+                const title =
+                  typeof comment?.featureRequestTitle === 'string' &&
+                  comment.featureRequestTitle.trim().length > 0
+                    ? comment.featureRequestTitle.trim()
+                    : null;
+                const body =
+                  typeof comment?.body === 'string' && comment.body.trim().length > 0
+                    ? comment.body.trim()
+                    : null;
+                const appName =
+                  typeof comment?.appName === 'string' && comment.appName.trim().length > 0
+                    ? comment.appName.trim()
+                    : null;
+                const dateText = formatDate(comment?.createdAt, strings.common, locale);
+                const dateLine = appName
+                  ? dateText
+                    ? `${dateText} · ${appName}`
+                    : appName
+                  : dateText;
+
+                return (
+                  <View
+                    key={comment?.id || `comment-${index}`}
+                    style={[
+                      styles.commentCard,
+                      { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                    ]}
+                  >
+                    {title ? (
+                      <Text style={[styles.commentTitle, { color: colors.textPrimary }]}>
+                        {strings.userProfile.commentOn(title)}
+                      </Text>
+                    ) : null}
+                    {body ? (
+                      <Text style={[styles.commentBody, { color: colors.textSecondary }]}>
+                        {`"${body}"`}
+                      </Text>
+                    ) : null}
+                    {dateLine ? (
+                      <Text style={[styles.commentDate, { color: colors.textMuted }]}>
+                        {dateLine}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
             </View>
           )}
 
