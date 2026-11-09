@@ -920,6 +920,20 @@ test(
   'FeatureRequestDetail: author row hides separator bullet dot and date text when createdAt is missing, empty, or invalid (#324)',
   renderTestOptions,
   async () => {
+    const isAuthorRow = (node: TestRenderer.ReactTestInstance) => {
+      const s = node.props?.style;
+      return s && s.flexDirection === 'row' && s.alignItems === 'center' && s.marginBottom === 14;
+    };
+    const findAuthorRowDateTextNodes = (root: TestRenderer.ReactTestInstance) => {
+      const authorRow = root.find(isAuthorRow);
+      return authorRow.findAll((node) => {
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some((s: any) => s?.fontSize === 12);
+      });
+    };
+
     // 1. Item with empty string createdAt
     const harness = await renderDetail(
       makeItem({
@@ -935,6 +949,11 @@ test(
       assert.ok(
         !textEmpty.includes('•'),
         'bullet dot must not be rendered when createdAt is empty string'
+      );
+      assert.equal(
+        findAuthorRowDateTextNodes(harness.renderer.root).length,
+        0,
+        'author-row date text must not be rendered when createdAt is empty string'
       );
 
       // 2. Item with undefined createdAt
@@ -952,6 +971,11 @@ test(
         !textUndefined.includes('•'),
         'bullet dot must not be rendered when createdAt is undefined'
       );
+      assert.equal(
+        findAuthorRowDateTextNodes(harness.renderer.root).length,
+        0,
+        'author-row date text must not be rendered when createdAt is undefined'
+      );
 
       // 3. Item with null createdAt
       await harness.update(
@@ -965,6 +989,11 @@ test(
       const textNull = collectText(harness.renderer.root);
       assert.ok(textNull.includes('Charlie'), 'requesterName Charlie must be rendered');
       assert.ok(!textNull.includes('•'), 'bullet dot must not be rendered when createdAt is null');
+      assert.equal(
+        findAuthorRowDateTextNodes(harness.renderer.root).length,
+        0,
+        'author-row date text must not be rendered when createdAt is null'
+      );
 
       // 4. Item with whitespace-only createdAt
       await harness.update(
@@ -981,6 +1010,11 @@ test(
         !textWs.includes('•'),
         'bullet dot must not be rendered when createdAt is whitespace-only'
       );
+      assert.equal(
+        findAuthorRowDateTextNodes(harness.renderer.root).length,
+        0,
+        'author-row date text must not be rendered when createdAt is whitespace-only'
+      );
 
       // 5. Item with non-string createdAt
       await harness.update(
@@ -996,6 +1030,11 @@ test(
       assert.ok(
         !textNonString.includes('•'),
         'bullet dot must not be rendered when createdAt is non-string'
+      );
+      assert.equal(
+        findAuthorRowDateTextNodes(harness.renderer.root).length,
+        0,
+        'author-row date text must not be rendered when createdAt is non-string'
       );
 
       // 6. Item with valid createdAt ISO timestamp
@@ -1014,6 +1053,13 @@ test(
         textValid.includes('Aug 10'),
         'formatted date must be rendered when createdAt is valid'
       );
+      const validDateNodes = findAuthorRowDateTextNodes(harness.renderer.root);
+      assert.equal(
+        validDateNodes.length,
+        1,
+        'author-row date text must be rendered when createdAt is valid'
+      );
+      assert.equal(collectText(validDateNodes[0]), 'Aug 10');
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
