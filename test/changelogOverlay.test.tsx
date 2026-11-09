@@ -252,6 +252,8 @@ test(
         },
       });
 
+      lastModalProps = null;
+
       let renderer!: TestRenderer.ReactTestRenderer;
       await act(async () => {
         renderer = TestRenderer.create(
@@ -262,8 +264,16 @@ test(
       });
       await flush();
 
-      assert.ok(lastModalProps);
+      assert.ok(lastModalProps, 'lastModalProps must be captured');
       assert.equal(lastModalProps.visible, true);
+
+      const json = JSON.stringify(renderer.toJSON());
+      assert.ok(json.includes('Trimmed Overlay Title'), 'Trimmed title must be rendered');
+      assert.equal(
+        json.includes('   Trimmed Overlay Title   '),
+        false,
+        'Untrimmed title must not be rendered'
+      );
 
       renderer?.unmount();
     } finally {
