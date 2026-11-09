@@ -42,6 +42,11 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const [isNotFound, setIsNotFound] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
 
+  const profile =
+    data?.profile && typeof data.profile === 'object'
+      ? (data.profile as PublicUserProfileResult['profile'])
+      : null;
+
   useEffect(() => {
     const controller = new AbortController();
     setIsLoading(true);
@@ -123,7 +128,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             </Text>
           </TouchableOpacity>
         </View>
-      ) : !data ? (
+      ) : !data || !profile ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
             {strings.userProfile.notFound}
@@ -138,29 +143,29 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             ]}
           >
             <Avatar
-              url={data.profile.avatarUrl}
+              url={typeof profile.avatarUrl === 'string' ? profile.avatarUrl : undefined}
               name={
-                typeof data.profile.displayName === 'string'
-                  ? data.profile.displayName.trim() || undefined
+                typeof profile.displayName === 'string'
+                  ? profile.displayName.trim() || undefined
                   : undefined
               }
               size={64}
             />
             <Text style={[styles.displayName, { color: colors.textPrimary }]}>
-              {(typeof data.profile.displayName === 'string' && data.profile.displayName.trim()) ||
+              {(typeof profile.displayName === 'string' && profile.displayName.trim()) ||
                 strings.userProfile.anonymous}
             </Text>
-            {typeof data.profile.bio === 'string' && data.profile.bio.trim() ? (
+            {typeof profile.bio === 'string' && profile.bio.trim() ? (
               <Text style={[styles.bio, { color: colors.textSecondary }]}>
-                {data.profile.bio.trim()}
+                {profile.bio.trim()}
               </Text>
             ) : null}
-            {typeof data.profile.websiteUrl === 'string' && data.profile.websiteUrl.trim() ? (
-              <ProfileWebsiteLink websiteUrl={data.profile.websiteUrl.trim()} />
+            {typeof profile.websiteUrl === 'string' && profile.websiteUrl.trim() ? (
+              <ProfileWebsiteLink websiteUrl={profile.websiteUrl.trim()} />
             ) : null}
           </View>
 
-          {data.publicApps && data.publicApps.length > 0 && (
+          {Array.isArray(data.publicApps) && data.publicApps.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 {strings.userProfile.appsSection(data.publicApps.length)}
@@ -192,7 +197,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
           {/* A hidden comment history never reaches the client as a flag: the
               server simply omits the comments (PRIV-06), so there is no
               client-side gate to consult. */}
-          {data.recentComments && data.recentComments.length > 0 && (
+          {Array.isArray(data.recentComments) && data.recentComments.length > 0 && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 {strings.userProfile.recentComments}
@@ -247,8 +252,8 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             </View>
           )}
 
-          {(!data.publicApps || data.publicApps.length === 0) &&
-            (!data.recentComments || data.recentComments.length === 0) && (
+          {(!Array.isArray(data.publicApps) || data.publicApps.length === 0) &&
+            (!Array.isArray(data.recentComments) || data.recentComments.length === 0) && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                   {strings.userProfile.activityTitle}
