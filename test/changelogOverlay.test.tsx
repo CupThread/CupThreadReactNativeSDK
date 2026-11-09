@@ -256,7 +256,7 @@ test(
       await act(async () => {
         renderer = TestRenderer.create(
           <CupThreadProvider client={client}>
-            <ChangelogOverlay tokenStore={customStore} />
+            <ChangelogOverlay visible={true} tokenStore={customStore} onClose={() => {}} />
           </CupThreadProvider>
         );
       });
