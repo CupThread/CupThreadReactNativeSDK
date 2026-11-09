@@ -14,6 +14,10 @@ export interface FeedbackComposerState {
   errorMessage: string | null;
 }
 
+function safeString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 /**
  * Creates a clean initial state for {@link FeedbackComposer} derived from optional initial draft.
  */
@@ -21,11 +25,11 @@ export function createFeedbackComposerState(
   initialDraft?: Partial<FeedbackDraft>
 ): FeedbackComposerState {
   return {
-    title: initialDraft?.title ?? '',
-    description: initialDraft?.description ?? '',
-    reporterName: initialDraft?.reporterName ?? '',
-    reporterEmail: initialDraft?.reporterEmail ?? '',
-    attachments: initialDraft?.attachments ? [...initialDraft.attachments] : [],
+    title: safeString(initialDraft?.title),
+    description: safeString(initialDraft?.description),
+    reporterName: safeString(initialDraft?.reporterName),
+    reporterEmail: safeString(initialDraft?.reporterEmail),
+    attachments: Array.isArray(initialDraft?.attachments) ? [...initialDraft.attachments] : [],
     isUploadingAttachment: false,
     isSubmitting: false,
     errorMessage: null,
@@ -59,9 +63,9 @@ export function createFeatureRequestComposeState(
   initialDraft?: Partial<FeatureRequestDraft>
 ): FeatureRequestComposeState {
   return {
-    title: initialDraft?.title ?? '',
-    description: initialDraft?.description ?? '',
-    requesterName: initialDraft?.requesterName ?? '',
+    title: safeString(initialDraft?.title),
+    description: safeString(initialDraft?.description),
+    requesterName: safeString(initialDraft?.requesterName),
     isSubmitting: false,
     errorMessage: null,
   };

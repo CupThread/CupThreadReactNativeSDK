@@ -403,3 +403,54 @@ test('Reopen semantics ship as a single implementation: components call the shar
     'FeatureRequestComposeSheet must not re-implement the reopen decision inline'
   );
 });
+
+// ---------------------------------------------------------------------------
+// Malformed initialDraft Safety Tests (#341)
+// ---------------------------------------------------------------------------
+
+test('createFeedbackComposerState guards non-string fields and non-array attachments against TypeErrors (#341)', () => {
+  const malformedDraft = {
+    title: 12345 as any,
+    description: true as any,
+    reporterName: { first: 'John', last: 'Doe' } as any,
+    reporterEmail: Symbol('email') as any,
+    attachments: { invalid: true } as any,
+  };
+
+  const state = createFeedbackComposerState(malformedDraft);
+
+  assert.equal(state.title, '', 'non-string title must fall back to empty string');
+  assert.equal(state.description, '', 'non-string description must fall back to empty string');
+  assert.equal(state.reporterName, '', 'non-string reporterName must fall back to empty string');
+  assert.equal(state.reporterEmail, '', 'non-string reporterEmail must fall back to empty string');
+  assert.deepEqual(state.attachments, [], 'non-array attachments must fall back to empty array');
+  assert.equal(state.isUploadingAttachment, false);
+  assert.equal(state.isSubmitting, false);
+  assert.equal(state.errorMessage, null);
+
+  // Additional non-array attachment variations
+  for (const invalidAttachments of [null, undefined, 42, 'attachments-str', true]) {
+    const s = createFeedbackComposerState({ attachments: invalidAttachments as any });
+    assert.deepEqual(
+      s.attachments,
+      [],
+      `attachments of type ${typeof invalidAttachments} must return empty array`
+    );
+  }
+});
+
+test('createFeatureRequestComposeState guards non-string fields against TypeErrors (#341)', () => {
+  const malformedDraft = {
+    title: 9999 as any,
+    description: false as any,
+    requesterName: ['not', 'a', 'string'] as any,
+  };
+
+  const state = createFeatureRequestComposeState(malformedDraft);
+
+  assert.equal(state.title, '', 'non-string title must fall back to empty string');
+  assert.equal(state.description, '', 'non-string description must fall back to empty string');
+  assert.equal(state.requesterName, '', 'non-string requesterName must fall back to empty string');
+  assert.equal(state.isSubmitting, false);
+  assert.equal(state.errorMessage, null);
+});
