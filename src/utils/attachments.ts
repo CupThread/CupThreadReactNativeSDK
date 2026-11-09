@@ -269,19 +269,32 @@ export async function processPickedAttachments(
   items: readonly unknown[],
   options: ProcessPickedAttachmentsOptions
 ): Promise<AttachmentBatchResult> {
+  const safeOptions =
+    typeof options === 'object' && options !== null
+      ? options
+      : ({} as ProcessPickedAttachmentsOptions);
+
   const failed: AttachmentBatchFailure[] = [];
   const unsupported: unknown[] = [];
   const rejected: AttachmentBatchRejection[] = [];
   const limit =
-    typeof options.maxBytes === 'number' &&
-    Number.isFinite(options.maxBytes) &&
-    options.maxBytes > 0
-      ? Math.ceil(options.maxBytes)
+    typeof safeOptions.maxBytes === 'number' &&
+    Number.isFinite(safeOptions.maxBytes) &&
+    safeOptions.maxBytes > 0
+      ? Math.ceil(safeOptions.maxBytes)
       : undefined;
+
+  const safeItems: readonly unknown[] = Array.isArray(items)
+    ? items
+    : items !== null && typeof items === 'object'
+      ? [items]
+      : [];
 
   // One slot per picked item, so uploads run batch-first while `succeeded`
   // still reports descriptors in pick order.
-  const results: Array<FeedbackAttachment | undefined> = new Array(items.length).fill(undefined);
+  const results: Array<FeedbackAttachment | undefined> = new Array(safeItems.length).fill(
+    undefined
+  );
 
   // Every pending item keeps its original object and index so a failed upload
   // can be reported against the pick the host handed in.
@@ -291,7 +304,7 @@ export async function processPickedAttachments(
     index: number;
   }> = [];
 
-  items.forEach((item, index) => {
+  safeItems.forEach((item, index) => {
     const classification = classifyPickedAttachment(item);
     if (classification.type === 'unsupported') {
       unsupported.push(item);
@@ -311,11 +324,12 @@ export async function processPickedAttachments(
     pending.push({ item, options: classification.options, index });
   });
 
-  if (options.uploadBatch && pending.length > 0) {
+  if (typeof safeOptions.uploadBatch === 'function' && pending.length > 0) {
     try {
-      const outcomes = await options.uploadBatch(pending.map((entry) => entry.options));
+      const outcomes = await safeOptions.uploadBatch(pending.map((entry) => entry.options));
+      const safeOutcomes = Array.isArray(outcomes) ? outcomes : [];
       pending.forEach((entry, position) => {
-        const outcome = outcomes[position];
+        const outcome = safeOutcomes[position];
         if (outcome?.ok) {
           results[entry.index] = outcome.attachment;
           return;
@@ -333,13 +347,20 @@ export async function processPickedAttachments(
         failed.push({ item: entry.item, error });
       }
     }
-  } else {
+  } else if (typeof safeOptions.upload === 'function') {
     for (const entry of pending) {
       try {
-        results[entry.index] = await options.upload(entry.options);
+        results[entry.index] = await safeOptions.upload(entry.options);
       } catch (error) {
         failed.push({ item: entry.item, error });
       }
+    }
+  } else {
+    for (const entry of pending) {
+      failed.push({
+        item: entry.item,
+        error: new Error('No upload function provided'),
+      });
     }
   }
 
@@ -416,15 +437,39 @@ export async function uploadInSessionChunks(
   batch: readonly UploadAttachmentOptions[],
   seams: SessionChunkedUploadSeams
 ): Promise<AttachmentBatchOutcome[]> {
+  const safeBatch = Array.isArray(batch) ? batch : [];
+  const safeSeams =
+    typeof seams === 'object' && seams !== null ? seams : ({} as SessionChunkedUploadSeams);
   const chunkSize =
-    Number.isFinite(seams.chunkSize) && seams.chunkSize >= 1 ? Math.floor(seams.chunkSize) : 1;
+    typeof safeSeams.chunkSize === 'number' &&
+    Number.isFinite(safeSeams.chunkSize) &&
+    safeSeams.chunkSize >= 1
+      ? Math.floor(safeSeams.chunkSize)
+      : 1;
   const outcomes: AttachmentBatchOutcome[] = [];
 
-  for (let start = 0; start < batch.length; start += chunkSize) {
-    const chunk = batch.slice(start, start + chunkSize);
+  for (let start = 0; start < safeBatch.length; start += chunkSize) {
+    const chunk = safeBatch.slice(start, start + chunkSize);
+    if (typeof safeSeams.uploadBatch !== 'function') {
+      if (typeof safeSeams.upload === 'function') {
+        for (const options of chunk) {
+          try {
+            outcomes.push({ ok: true, attachment: await safeSeams.upload(options) });
+          } catch (itemError) {
+            outcomes.push({ ok: false, error: itemError });
+          }
+        }
+      } else {
+        for (const _ of chunk) {
+          outcomes.push({ ok: false, error: new Error('No upload function provided') });
+        }
+      }
+      continue;
+    }
+
     let uploaded: FeedbackAttachment[];
     try {
-      uploaded = await seams.uploadBatch(chunk);
+      uploaded = await safeSeams.uploadBatch(chunk);
     } catch (error) {
       if (chunk.length === 1) {
         // A single-item chunk has no siblings to doom: its session-level
@@ -438,8 +483,12 @@ export async function uploadInSessionChunks(
       // one by one so each file gets its own session and its own actionable
       // error, and valid siblings keep their descriptors.
       for (const options of chunk) {
+        if (typeof safeSeams.upload !== 'function') {
+          outcomes.push({ ok: false, error });
+          continue;
+        }
         try {
-          outcomes.push({ ok: true, attachment: await seams.upload(options) });
+          outcomes.push({ ok: true, attachment: await safeSeams.upload(options) });
         } catch (itemError) {
           outcomes.push({ ok: false, error: itemError });
         }
@@ -448,9 +497,10 @@ export async function uploadInSessionChunks(
     }
     // One outcome per chunk item, positionally — an under-delivering batch
     // seam must not shift the positions of later chunks.
+    const safeUploaded = Array.isArray(uploaded) ? uploaded : [];
     outcomes.push(
       ...chunk.map((_, position): AttachmentBatchOutcome => {
-        const attachment = uploaded[position];
+        const attachment = safeUploaded[position];
         return attachment !== undefined
           ? { ok: true, attachment }
           : { ok: false, error: new Error('Batch upload returned no result') };
