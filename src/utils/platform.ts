@@ -62,7 +62,9 @@ function isDev(): boolean {
   if (typeof (globalThis as any).__DEV__ !== 'undefined') {
     return Boolean((globalThis as any).__DEV__);
   }
-  return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  return (
+    typeof process !== 'undefined' && Boolean(process.env) && process.env.NODE_ENV !== 'production'
+  );
 }
 
 /**
