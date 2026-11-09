@@ -381,16 +381,13 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
 
                 {validLinkedRequests.length > 0 ? (
                   <View style={styles.linkedRequestsRow}>
-                    {validLinkedRequests.map((req, idx) => (
-                      <Badge
-                        key={
-                          typeof req?.id === 'string' && req.id.trim().length > 0
-                            ? req.id.trim()
-                            : idx
-                        }
-                        label={`★ ${req.title.trim()}`}
-                      />
-                    ))}
+                    {validLinkedRequests.map((req, idx) => {
+                      const badgeKey =
+                        typeof req?.id === 'string' && req.id.trim().length > 0
+                          ? `${req.id.trim()}-${idx}`
+                          : `req-${idx}`;
+                      return <Badge key={badgeKey} label={`★ ${req.title.trim()}`} />;
+                    })}
                   </View>
                 ) : null}
 
