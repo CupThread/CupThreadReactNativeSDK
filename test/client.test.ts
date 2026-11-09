@@ -1324,11 +1324,13 @@ test('FeedbackClient.submit: safely handles non-array attachments without throwi
     assert.equal(capturedBody.uploadIds, undefined);
 
     // Via submitFeedback alias
+    capturedBody = null;
     await client.submitFeedback({
       title: 'Valid title',
       description: 'Valid description',
       attachments: { uploadId: 'up_1' } as any,
     });
+    assert.ok(capturedBody);
     assert.equal(capturedBody.uploadIds, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1361,11 +1363,13 @@ test('FeedbackClient.submit: safely handles null/undefined/primitive elements in
     assert.equal(capturedBody.uploadIds, undefined);
 
     // Via submitFeedback alias
+    capturedBody = null;
     await client.submitFeedback({
       title: 'Valid title',
       description: 'Valid description',
       attachments: [null as any, undefined as any],
     });
+    assert.ok(capturedBody);
     assert.equal(capturedBody.uploadIds, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1398,6 +1402,7 @@ test('FeedbackClient.submit: extracts valid uploadIds from mixed attachments and
         { kind: 'image', key: 'img.png', uploadId: '  up_valid_123  ' },
         undefined as any,
         { kind: 'r2', key: 'log.txt', uploadId: '   ' },
+        { kind: 'r2', key: 'num.txt', uploadId: 99999 as any },
         { kind: 'r2', key: 'log2.txt' },
       ],
     });
