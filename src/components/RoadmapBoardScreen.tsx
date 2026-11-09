@@ -474,12 +474,14 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   />
                 </View>
 
-                <Text
-                  numberOfLines={3}
-                  style={[styles.cardDescription, { color: colors.textSecondary }]}
-                >
-                  {item.description}
-                </Text>
+                {typeof item.description === 'string' && item.description.trim().length > 0 ? (
+                  <Text
+                    numberOfLines={3}
+                    style={[styles.cardDescription, { color: colors.textSecondary }]}
+                  >
+                    {item.description.trim()}
+                  </Text>
+                ) : null}
               </TouchableOpacity>
             );
           }}
