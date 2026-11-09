@@ -189,7 +189,7 @@ export function ChangelogOverlay({
                   <View key={item.id} style={[styles.entryCard, { borderColor: colors.border }]}>
                     <View style={styles.entryHeader}>
                       <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
-                        {item.title}
+                        {typeof item?.title === 'string' ? item.title.trim() : ''}
                       </Text>
                       {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
                     </View>

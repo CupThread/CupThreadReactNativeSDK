@@ -157,3 +157,117 @@ test(
     }
   }
 );
+
+test(
+  'ChangelogOverlay safely guards entry title against empty, whitespace, and non-string types (#333)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_overlay_title_guard_test',
+            sdk: {
+              features: { changelog: true },
+              changelogOverlay: { entryCount: 10 },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (s.includes('/changelog')) {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: 'ch_overlay_valid',
+                versionLabel: '1.0.0',
+                title: '   Trimmed Overlay Title   ',
+                body: 'Release details',
+                publishedAt: '2025-01-01T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_object',
+                versionLabel: '1.0.1',
+                title: { invalid: true } as any,
+                body: 'Release details object',
+                publishedAt: '2025-01-02T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_bool',
+                versionLabel: '1.0.2',
+                title: true as any,
+                body: 'Release details bool',
+                publishedAt: '2025-01-03T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_num',
+                versionLabel: '1.0.3',
+                title: 12345 as any,
+                body: 'Release details num',
+                publishedAt: '2025-01-04T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_null',
+                versionLabel: '1.0.4',
+                title: null as any,
+                body: 'Release details null',
+                publishedAt: '2025-01-05T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_empty',
+                versionLabel: '1.0.5',
+                title: '',
+                body: 'Release details empty',
+                publishedAt: '2025-01-06T00:00:00.000Z',
+              },
+              {
+                id: 'ch_overlay_ws',
+                versionLabel: '1.0.6',
+                title: '   \t   ',
+                body: 'Release details ws',
+                publishedAt: '2025-01-07T00:00:00.000Z',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    try {
+      const client = new FeedbackClient({
+        baseUrl: 'https://api.cupthread.com',
+        appKey: 'app_overlay_title_guard_test',
+      });
+
+      const mem: Record<string, string> = {};
+      const customStore = new UserTokenStore({
+        getItem: (k) => mem[k] || null,
+        setItem: (k, v) => {
+          mem[k] = v;
+        },
+      });
+
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client}>
+            <ChangelogOverlay tokenStore={customStore} />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      assert.ok(lastModalProps);
+      assert.equal(lastModalProps.visible, true);
+
+      renderer?.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
