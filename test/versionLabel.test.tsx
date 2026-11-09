@@ -57,6 +57,7 @@ if (supportsModuleMocks) {
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 const { Badge } = await import('../src/components/Badge');
+const { Avatar } = await import('../src/components/Avatar');
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
 const { ChangelogOverlay } = await import('../src/components/ChangelogOverlay');
 const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
@@ -528,6 +529,102 @@ test(
     assert.equal(badges.length, 1, 'only valid columnName should render Badge');
     assert.equal(badges[0].props.label, 'Planned');
     assert.equal(badges[0].props.color, '#10b981');
+
+    renderer.unmount();
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Issue #313 — FeatureRequestsScreen: unhandled TypeError when commenter.authorName
+// is a non-string truthy value in recentCommenters
+// ---------------------------------------------------------------------------
+
+test(
+  'FeatureRequestsScreen: recentCommenters with non-string truthy, empty, or whitespace authorName does not throw TypeError (#313)',
+  renderTestOptions,
+  async () => {
+    const client = makeClient('app_fr_commenters_test');
+    client.fetchFeatureRequests = (async () => ({
+      requests: [
+        {
+          id: 'fr-commenters-types',
+          title: 'Request with varied commenter types',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 5,
+          hasVoted: false,
+          commentCount: 4,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          recentCommenters: [
+            { authorName: 123 as any, avatarUrl: null },
+            { authorName: true as any, avatarUrl: null },
+            { authorName: { name: 'Nested' } as any, avatarUrl: null },
+          ],
+        },
+        {
+          id: 'fr-commenters-strings',
+          title: 'Request with trimmed and fallback commenter strings',
+          description: 'Desc',
+          status: 'planned',
+          voteCount: 3,
+          hasVoted: false,
+          commentCount: 3,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          recentCommenters: [
+            { authorName: '  Jane Doe  ', avatarUrl: null },
+            { authorName: '   \t  ', avatarUrl: null },
+            { authorName: '', avatarUrl: null },
+          ],
+        },
+      ] as FeatureRequestItem[],
+      hasMore: false,
+    })) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={client} userToken="usr_tok_test">
+          <FeatureRequestsScreen />
+        </CupThreadProvider>
+      );
+    });
+
+    await waitForCondition(() => renderer.root.findAllByType(Avatar).length >= 6);
+
+    const avatars = renderer.root.findAllByType(Avatar);
+    assert.equal(avatars.length, 6, 'must render 6 Avatar components for both requests');
+
+    // First request avatars (non-string types: 123, true, {})
+    assert.equal(
+      avatars[0].props.name,
+      undefined,
+      'number authorName must resolve to undefined without TypeError'
+    );
+    assert.equal(
+      avatars[1].props.name,
+      undefined,
+      'boolean authorName must resolve to undefined without TypeError'
+    );
+    assert.equal(
+      avatars[2].props.name,
+      undefined,
+      'object authorName must resolve to undefined without TypeError'
+    );
+
+    // Second request avatars (strings: '  Jane Doe  ', '   \t  ', '')
+    assert.equal(avatars[3].props.name, 'Jane Doe', 'valid string authorName must be trimmed');
+    assert.equal(
+      avatars[4].props.name,
+      undefined,
+      'whitespace-only authorName must resolve to undefined'
+    );
+    assert.equal(
+      avatars[5].props.name,
+      undefined,
+      'empty string authorName must resolve to undefined'
+    );
 
     renderer.unmount();
   }

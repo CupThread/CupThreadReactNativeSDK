@@ -200,8 +200,12 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                 ]}
               >
                 <Avatar
-                  url={commenter.avatarUrl}
-                  name={commenter.authorName?.trim() || undefined}
+                  url={commenter?.avatarUrl}
+                  name={
+                    typeof commenter?.authorName === 'string'
+                      ? commenter.authorName.trim() || undefined
+                      : undefined
+                  }
                   size={20}
                 />
               </View>
