@@ -457,7 +457,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                 <View style={styles.cardHeader}>
                   <View style={styles.cardHeaderLeft}>
                     <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
-                      {item.title}
+                      {typeof item.title === 'string' ? item.title.trim() : ''}
                     </Text>
                     {versionBadge ? (
                       <View style={styles.versionBadge}>

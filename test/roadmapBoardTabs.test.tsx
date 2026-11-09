@@ -1135,3 +1135,139 @@ test(
     }
   }
 );
+
+test(
+  'RoadmapBoardScreen: card title guarded against non-string types, empty, and whitespace-only strings (#327)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    const mockColumns = [makeColumn('col_progress', 'In Progress')];
+
+    const items: any[] = [
+      {
+        ...makeRequest('fr_valid_title', 'col_progress'),
+        title: '  Valid Roadmap Feature Title  ',
+      },
+      {
+        ...makeRequest('fr_empty_title', 'col_progress'),
+        title: '',
+      },
+      {
+        ...makeRequest('fr_whitespace_title', 'col_progress'),
+        title: '   \t  \n  ',
+      },
+      {
+        ...makeRequest('fr_undefined_title', 'col_progress'),
+        title: undefined,
+      },
+      {
+        ...makeRequest('fr_null_title', 'col_progress'),
+        title: null,
+      },
+      {
+        ...makeRequest('fr_object_title', 'col_progress'),
+        title: { invalid: true },
+      },
+      {
+        ...makeRequest('fr_bool_title', 'col_progress'),
+        title: true,
+      },
+      {
+        ...makeRequest('fr_number_title', 'col_progress'),
+        title: 12345,
+      },
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        return new Response(JSON.stringify({ columns: mockColumns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        return new Response(
+          JSON.stringify({
+            requests: items,
+            total: items.length,
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const isCardTitle = (node: any) => {
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some((s: any) => s?.fontSize === 16 && s?.fontWeight === '600');
+      };
+
+      const titleNodes = renderer!.root.findAll(isCardTitle);
+      assert.equal(
+        titleNodes.length,
+        items.length,
+        'every item card must render a title Text component'
+      );
+
+      // Verify each card's rendered title
+      assert.equal(titleNodes[0].props.children, 'Valid Roadmap Feature Title');
+      assert.equal(titleNodes[1].props.children, '');
+      assert.equal(titleNodes[2].props.children, '');
+      assert.equal(titleNodes[3].props.children, '');
+      assert.equal(titleNodes[4].props.children, '');
+      assert.equal(titleNodes[5].props.children, '');
+      assert.equal(titleNodes[6].props.children, '');
+      assert.equal(titleNodes[7].props.children, '');
+
+      // Ensure every rendered title prop is a string (never an object or boolean)
+      for (const node of titleNodes) {
+        assert.equal(typeof node.props.children, 'string');
+      }
+
+      const texts = finalPassTexts();
+      assert.ok(
+        texts.includes('Valid Roadmap Feature Title'),
+        'final pass texts must include trimmed title'
+      );
+      assert.ok(
+        !texts.includes('[object Object]'),
+        'final pass texts must not contain raw object stringification'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
