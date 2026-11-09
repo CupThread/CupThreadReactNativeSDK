@@ -796,13 +796,22 @@ export class FeedbackClient {
     // storage keys and URLs (`direct_attachment_forbidden`), so legacy
     // descriptors without an uploadId are omitted instead of failing the whole
     // draft.
-    const uploadIds = (draft.attachments || [])
-      .map((attachment) => attachment.uploadId)
-      .filter((uploadId): uploadId is string => typeof uploadId === 'string' && !!uploadId);
+    const rawAttachments = draft.attachments;
+    const attachments = Array.isArray(rawAttachments)
+      ? rawAttachments.filter(
+          (attachment): attachment is FeedbackAttachment =>
+            attachment !== null && typeof attachment === 'object'
+        )
+      : [];
+    const uploadIds = attachments
+      .map((attachment) =>
+        typeof attachment.uploadId === 'string' ? attachment.uploadId.trim() : ''
+      )
+      .filter((uploadId): uploadId is string => uploadId.length > 0);
     // Descriptors without an uploadId predate the session flow and cannot be
     // sent (the API rejects raw keys/URLs). Say so in development instead of
     // submitting a silently attachment-less draft.
-    const legacyCount = (draft.attachments || []).length - uploadIds.length;
+    const legacyCount = attachments.length - uploadIds.length;
     if (legacyCount > 0 && FeedbackClient.isDevelopment()) {
       console.warn(
         `[CupThread] ${legacyCount} attachment${legacyCount === 1 ? '' : 's'} without an uploadId ` +
@@ -850,6 +859,22 @@ export class FeedbackClient {
       signal: extractSignal(resolvedOptions),
       timeoutMs: extractTimeoutMs(resolvedOptions),
     });
+  }
+
+  /**
+   * Alias for {@link FeedbackClient.submit}.
+   *
+   * @param draft - The feedback payload including title, description, and optional attachments.
+   * @param userToken - Optional persistent anonymous or authenticated user token.
+   * @param options - Optional request options or abort signal.
+   * @returns A promise resolving to the submission result metadata.
+   */
+  public async submitFeedback(
+    draft: FeedbackDraft,
+    userToken?: string,
+    options?: RequestOptions | AbortSignal
+  ): Promise<FeedbackSubmissionResult> {
+    return this.submit(draft, userToken, options);
   }
 
   /**

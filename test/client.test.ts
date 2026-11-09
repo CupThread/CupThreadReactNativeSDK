@@ -1289,6 +1289,129 @@ test('FeedbackClient.submit without attachments omits X-User-Token header when u
   }
 });
 
+test('FeedbackClient.submit: safely handles non-array attachments without throwing TypeError (#350)', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = JSON.parse(init?.body as string);
+    return new Response(JSON.stringify({ feedbackId: 'fb_non_array_test', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_non_array_test',
+    });
+
+    // Object instead of array
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: { file: 'screenshot.png' } as any,
+    });
+    assert.equal(capturedBody.uploadIds, undefined);
+
+    // Number instead of array
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: 42 as any,
+    });
+    assert.equal(capturedBody.uploadIds, undefined);
+
+    // Via submitFeedback alias
+    capturedBody = null;
+    await client.submitFeedback({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: { uploadId: 'up_1' } as any,
+    });
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.uploadIds, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit: safely handles null/undefined/primitive elements in attachments (#350)', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = JSON.parse(init?.body as string);
+    return new Response(JSON.stringify({ feedbackId: 'fb_null_att_test', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_null_att_test',
+    });
+
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: [null as any, undefined as any, 123 as any, 'malformed' as any],
+    });
+    assert.equal(capturedBody.uploadIds, undefined);
+
+    // Via submitFeedback alias
+    capturedBody = null;
+    await client.submitFeedback({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: [null as any, undefined as any],
+    });
+    assert.ok(capturedBody);
+    assert.equal(capturedBody.uploadIds, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submit: extracts valid uploadIds from mixed attachments and trims whitespace (#350)', async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedBody: any = null;
+
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    capturedBody = JSON.parse(init?.body as string);
+    return new Response(JSON.stringify({ feedbackId: 'fb_mixed_att_test', status: 'created' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_mixed_att_test',
+    });
+
+    await client.submit({
+      title: 'Valid title',
+      description: 'Valid description',
+      attachments: [
+        null as any,
+        { kind: 'image', key: 'img.png', uploadId: '  up_valid_123  ' },
+        undefined as any,
+        { kind: 'r2', key: 'log.txt', uploadId: '   ' },
+        { kind: 'r2', key: 'num.txt', uploadId: 99999 as any },
+        { kind: 'r2', key: 'log2.txt' },
+      ],
+    });
+    assert.deepEqual(capturedBody.uploadIds, ['up_valid_123']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Deprecated FeedbackClient.toggleVote delegates to castVote (POST)', async () => {
   const originalFetch = globalThis.fetch;
   const methods: string[] = [];
