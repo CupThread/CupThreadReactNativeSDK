@@ -9,7 +9,9 @@ test('isValidEmail: returns true for empty string as documented (#347)', () => {
 test('isValidEmail: returns false safely for non-string inputs (#347)', () => {
   assert.equal(isValidEmail(null as any), false);
   assert.equal(isValidEmail(undefined as any), false);
+  assert.equal(isValidEmail(0 as any), false);
   assert.equal(isValidEmail(12345 as any), false);
+  assert.equal(isValidEmail(false as any), false);
   assert.equal(isValidEmail(true as any), false);
   assert.equal(isValidEmail({} as any), false);
   assert.equal(isValidEmail([] as any), false);
@@ -25,6 +27,7 @@ test('isValidEmail: returns true for well-formed email addresses', () => {
 test('isValidEmail: returns false for malformed email addresses', () => {
   assert.equal(isValidEmail('john@gmail'), false);
   assert.equal(isValidEmail('jane@example.com,'), false);
+  assert.equal(isValidEmail('user@exa,mple.com'), false);
   assert.equal(isValidEmail('jane@example..com'), false);
   assert.equal(isValidEmail('@example.com'), false);
   assert.equal(isValidEmail('user@'), false);
