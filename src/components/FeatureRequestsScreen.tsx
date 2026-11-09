@@ -185,9 +185,11 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
           />
         </View>
 
-        <Text numberOfLines={2} style={[styles.cardDescription, { color: colors.textSecondary }]}>
-          {item.description}
-        </Text>
+        {typeof item.description === 'string' && item.description.trim().length > 0 ? (
+          <Text numberOfLines={2} style={[styles.cardDescription, { color: colors.textSecondary }]}>
+            {item.description.trim()}
+          </Text>
+        ) : null}
 
         {item.recentCommenters && item.recentCommenters.length > 0 && (
           <View style={styles.commentersStack}>
