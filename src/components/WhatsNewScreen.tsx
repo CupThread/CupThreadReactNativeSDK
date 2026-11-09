@@ -353,6 +353,11 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
           }
           renderItem={({ item }) => {
             const versionBadge = formatVersionLabel(item.versionLabel);
+            const validLinkedRequests = Array.isArray(item.linkedRequests)
+              ? item.linkedRequests.filter(
+                  (req) => typeof req?.title === 'string' && req.title.trim().length > 0
+                )
+              : [];
             return (
               <View
                 style={[
@@ -374,13 +379,17 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
                   {formatDate(item.publishedAt, strings.common, locale)}
                 </Text>
 
-                {item.linkedRequests && item.linkedRequests.length > 0 && (
+                {validLinkedRequests.length > 0 ? (
                   <View style={styles.linkedRequestsRow}>
-                    {item.linkedRequests.map((req) => (
-                      <Badge key={req.id} label={`★ ${req.title}`} />
-                    ))}
+                    {validLinkedRequests.map((req, idx) => {
+                      const badgeKey =
+                        typeof req?.id === 'string' && req.id.trim().length > 0
+                          ? `${req.id.trim()}-${idx}`
+                          : `req-${idx}`;
+                      return <Badge key={badgeKey} label={`★ ${req.title.trim()}`} />;
+                    })}
                   </View>
-                )}
+                ) : null}
 
                 <View style={styles.bodyArea}>
                   <MarkdownText content={item.body} />

@@ -55,6 +55,7 @@ const { CupThreadProvider } = supportsModuleMocks
 const { WhatsNewScreen } = supportsModuleMocks
   ? await import('../src/components/WhatsNewScreen')
   : ({} as any);
+const { Badge } = supportsModuleMocks ? await import('../src/components/Badge') : ({} as any);
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -441,6 +442,145 @@ test(
       for (const node of entryTitleTexts) {
         assert.equal(typeof node.props.children, 'string');
       }
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen safely guards linkedRequests against missing, whitespace, and non-string titles (#314)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_whats_new_empty_test',
+            sdk: { features: { changelog: true } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (s.includes('/changelog')) {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: 'ch_empty_whitespace_titles',
+                title: 'Release 1',
+                body: 'Release 1 body',
+                versionLabel: '1.0.0',
+                publishedAt: '2025-01-01T00:00:00.000Z',
+                linkedRequests: [
+                  { id: 'req_1', title: '' },
+                  { id: 'req_2', title: '   \t  ' },
+                ],
+              },
+              {
+                id: 'ch_invalid_titles',
+                title: 'Release 2',
+                body: 'Release 2 body',
+                versionLabel: '1.0.1',
+                publishedAt: '2025-01-02T00:00:00.000Z',
+                linkedRequests: [
+                  { id: 'req_3', title: undefined as any },
+                  { id: 'req_4', title: null as any },
+                  { id: 'req_5', title: 12345 as any },
+                  { id: 'req_6', title: { name: 'request' } as any },
+                  null as any,
+                ],
+              },
+              {
+                id: 'ch_valid_trimmed_and_fallback_key',
+                title: 'Release 3',
+                body: 'Release 3 body',
+                versionLabel: '1.0.2',
+                publishedAt: '2025-01-03T00:00:00.000Z',
+                linkedRequests: [
+                  { id: 'req_7', title: '  Offline sync  ' },
+                  { id: '', title: 'Push notifications' },
+                  { id: '   ', title: '  Dark mode  ' },
+                ],
+              },
+              {
+                id: 'ch_no_linked_requests',
+                title: 'Release 4',
+                body: 'Release 4 body',
+                versionLabel: '1.0.3',
+                publishedAt: '2025-01-04T00:00:00.000Z',
+                linkedRequests: [],
+              },
+              {
+                id: 'ch_null_linked_requests',
+                title: 'Release 5',
+                body: 'Release 5 body',
+                versionLabel: '1.0.4',
+                publishedAt: '2025-01-05T00:00:00.000Z',
+                linkedRequests: null as any,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={makeClient()}>
+            <WhatsNewScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const allTexts = getAllTextStrings(renderer.root);
+      assert.ok(
+        !allTexts.some((t) => t.includes('undefined')),
+        'must never render "undefined" in badge label'
+      );
+      assert.ok(
+        !allTexts.some((t) => t.includes('null')),
+        'must never render "null" in badge label'
+      );
+      assert.ok(
+        !allTexts.includes('★'),
+        'must never render a solitary star badge without title text'
+      );
+
+      const isLinkedRequestsRow = (node: any) => {
+        if (node.type !== ViewStub) return false;
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some(
+          (s: any) => s?.marginBottom === 10 && s?.flexDirection === 'row' && s?.flexWrap === 'wrap'
+        );
+      };
+
+      const rows = renderer.root.findAll(isLinkedRequestsRow);
+      assert.equal(
+        rows.length,
+        1,
+        'only the single entry with valid linked requests should render a linkedRequestsRow container'
+      );
+
+      const badges = rows[0].findAllByType(Badge);
+      assert.equal(badges.length, 3, 'should render 3 valid badges');
+      assert.equal(badges[0].props.label, '★ Offline sync');
+      assert.equal(badges[1].props.label, '★ Push notifications');
+      assert.equal(badges[2].props.label, '★ Dark mode');
 
       renderer.unmount();
     } finally {
