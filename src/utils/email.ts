@@ -22,6 +22,9 @@
  * ```
  */
 export function isValidEmail(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  if (value === '') return true;
+
   // Domain labels must be non-empty (`john@example..com` fails), and each
   // label excludes `.` so the label segmentation is unambiguous — no
   // quadratic backtracking on a long pasted value. The trailing alphanumeric
