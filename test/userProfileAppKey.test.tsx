@@ -888,3 +888,106 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen: safely guards publicApps app.name against empty, whitespace, and non-string types (#330)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_app_name_guard',
+        displayName: 'App Name Guard Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [
+        {
+          id: 'app_valid',
+          name: '   Valid App Name   ',
+          description: 'A valid app description',
+        },
+        {
+          id: 'app_empty',
+          name: '',
+          description: null,
+        },
+        {
+          id: 'app_whitespace',
+          name: '   \t  \n  ',
+          description: null,
+        },
+        {
+          id: 'app_undefined',
+          name: undefined as any,
+          description: null,
+        },
+        {
+          id: 'app_null',
+          name: null as any,
+          description: null,
+        },
+        {
+          id: 'app_object',
+          name: { complex: 'object' } as any,
+          description: null,
+        },
+        {
+          id: 'app_bool',
+          name: true as any,
+          description: null,
+        },
+        {
+          id: 'app_number',
+          name: 12345 as any,
+          description: null,
+        },
+      ],
+      recentComments: [],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+
+      // Valid trimmed name must render
+      assert.ok(texts.includes('Valid App Name'), 'Valid App Name must be rendered trimmed');
+      assert.equal(
+        texts.includes('   Valid App Name   '),
+        false,
+        'untrimmed App Name must not be rendered'
+      );
+
+      // App description must render
+      assert.ok(texts.includes('A valid app description'), 'App description must render');
+
+      // Check all appName Text nodes to ensure non-string types safely rendered string children
+      const appNameTexts = renderer.root.findAll(
+        (node: any) =>
+          node.type === TextStub &&
+          Array.isArray(node.props?.style) &&
+          node.props.style.some(
+            (s: any) => s?.fontSize === 15 && s?.fontWeight === '600' && s?.marginBottom === 4
+          )
+      );
+
+      assert.equal(appNameTexts.length, 8, 'all 8 app cards must render an appName Text node');
+      assert.equal(appNameTexts[0].props.children, 'Valid App Name');
+      for (let i = 1; i < 8; i++) {
+        assert.equal(appNameTexts[i].props.children, '');
+      }
+
+      for (const node of appNameTexts) {
+        assert.equal(typeof node.props.children, 'string');
+      }
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
