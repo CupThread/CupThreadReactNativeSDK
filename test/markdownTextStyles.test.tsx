@@ -255,3 +255,20 @@ test(
     }
   }
 );
+
+test(
+  'MarkdownText: whitespace-only content returns null without mounting layout container or spacers (#340)',
+  renderTestOptions,
+  () => {
+    const whitespaceValues = ['   ', '\t', '\n\n\n', '  \t \n  \r\n  '];
+    for (const val of whitespaceValues) {
+      const renderer = renderMarkdown({ content: val });
+      assert.equal(
+        renderer.toJSON(),
+        null,
+        `MarkdownText should return null for whitespace-only content: ${JSON.stringify(val)}`
+      );
+      renderer.unmount();
+    }
+  }
+);

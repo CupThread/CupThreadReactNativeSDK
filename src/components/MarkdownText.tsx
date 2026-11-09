@@ -69,7 +69,7 @@ export function MarkdownText({ content, style, onLinkPress }: MarkdownTextProps)
     }
   };
 
-  if (typeof content !== 'string' || !content) return null;
+  if (typeof content !== 'string' || !content.trim()) return null;
 
   const lines = content.split('\n');
 
