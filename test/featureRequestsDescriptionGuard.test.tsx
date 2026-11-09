@@ -217,3 +217,108 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestsScreen: safely guards item.title against empty, whitespace, and non-string types (#329)',
+  renderTestOptions,
+  async () => {
+    const items: any[] = [
+      {
+        ...makeRequest('fr_valid_title', 'Valid Title'),
+        title: '  Valid Request Title  ',
+      },
+      {
+        ...makeRequest('fr_empty_title', 'Empty Title'),
+        title: '',
+      },
+      {
+        ...makeRequest('fr_whitespace_title', 'Whitespace Title'),
+        title: '   \t  \n  ',
+      },
+      {
+        ...makeRequest('fr_undefined_title', 'Undefined Title'),
+        title: undefined,
+      },
+      {
+        ...makeRequest('fr_null_title', 'Null Title'),
+        title: null,
+      },
+      {
+        ...makeRequest('fr_object_title', 'Object Title'),
+        title: { complex: 'object' },
+      },
+      {
+        ...makeRequest('fr_bool_title', 'Boolean Title'),
+        title: true,
+      },
+      {
+        ...makeRequest('fr_number_title', 'Number Title'),
+        title: 12345,
+      },
+    ];
+
+    const client = makeClient('app_test_fr_title');
+    client.fetchFeatureRequests = (async () => ({
+      requests: items,
+      total: items.length,
+      hasMore: false,
+    })) as any;
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <FeatureRequestsScreen />
+          </CupThreadProvider>
+        );
+      });
+
+      const isCard = (node: any) =>
+        node.type === 'TouchableOpacity' &&
+        Array.isArray(node.props?.style) &&
+        node.props.style[0]?.borderRadius === 12 &&
+        node.props.style[0]?.marginBottom === 12;
+
+      await waitForCondition(() => {
+        const cards = renderer!.root.findAll(isCard);
+        return cards.length === items.length;
+      });
+
+      const cards = renderer!.root.findAll(isCard);
+      assert.equal(cards.length, items.length, 'all request cards should be rendered');
+
+      const isCardTitle = (node: any) => {
+        if (node.type !== 'Text') return false;
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some(
+          (s: any) => s?.fontSize === 16 && s?.fontWeight === '600' && s?.lineHeight === 22
+        );
+      };
+
+      const titleNodes = cards.map((card: any) => card.find(isCardTitle));
+      assert.equal(
+        titleNodes.length,
+        items.length,
+        'every request card must render a title Text component'
+      );
+
+      assert.equal(titleNodes[0].props.children, 'Valid Request Title');
+      assert.equal(titleNodes[1].props.children, '');
+      assert.equal(titleNodes[2].props.children, '');
+      assert.equal(titleNodes[3].props.children, '');
+      assert.equal(titleNodes[4].props.children, '');
+      assert.equal(titleNodes[5].props.children, '');
+      assert.equal(titleNodes[6].props.children, '');
+      assert.equal(titleNodes[7].props.children, '');
+
+      for (const node of titleNodes) {
+        assert.equal(typeof node.props.children, 'string');
+      }
+    } finally {
+      renderer?.unmount();
+    }
+  }
+);
