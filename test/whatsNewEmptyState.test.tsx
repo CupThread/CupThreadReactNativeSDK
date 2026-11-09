@@ -588,3 +588,104 @@ test(
     }
   }
 );
+
+test(
+  'WhatsNewScreen conditionally renders publishedDate only when timestamp is valid and non-empty (#335)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_whats_new_date_test',
+            sdk: { features: { changelog: true } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (s.includes('/changelog')) {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: 'ch_null_published_at',
+                title: 'Release with null publishedAt',
+                body: 'Release 1 body',
+                versionLabel: '1.0.0',
+                publishedAt: null as any,
+                linkedRequests: [],
+              },
+              {
+                id: 'ch_empty_published_at',
+                title: 'Release with empty publishedAt',
+                body: 'Release 2 body',
+                versionLabel: '1.0.1',
+                publishedAt: '',
+                linkedRequests: [],
+              },
+              {
+                id: 'ch_whitespace_published_at',
+                title: 'Release with whitespace publishedAt',
+                body: 'Release 3 body',
+                versionLabel: '1.0.2',
+                publishedAt: '   ',
+                linkedRequests: [],
+              },
+              {
+                id: 'ch_valid_published_at',
+                title: 'Release with valid publishedAt',
+                body: 'Release 4 body',
+                versionLabel: '1.0.3',
+                publishedAt: '2025-01-01T00:00:00.000Z',
+                linkedRequests: [],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={makeClient()}>
+            <WhatsNewScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const isPublishedDateText = (node: any) => {
+        if (node.type !== 'Text') return false;
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some((s: any) => s?.fontSize === 12 && s?.marginBottom === 8);
+      };
+
+      const dateNodes = renderer.root.findAll(isPublishedDateText);
+      assert.equal(
+        dateNodes.length,
+        1,
+        'only the single entry with valid publishedAt should render a publishedDate Text node'
+      );
+      assert.ok(
+        typeof dateNodes[0].props.children === 'string' &&
+          dateNodes[0].props.children.trim().length > 0,
+        'the rendered date node must have non-empty text content'
+      );
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);

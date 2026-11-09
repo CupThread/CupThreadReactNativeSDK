@@ -336,62 +336,65 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         </Text>
       ) : (
         <View style={styles.list}>
-          {activeComments.map((item) => (
-            <View
-              key={item.id}
-              style={[
-                styles.commentCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.cardBorder,
-                  marginLeft: item.parentId ? 20 : 0,
-                },
-              ]}
-            >
-              <View style={styles.authorRow}>
-                <Avatar
-                  url={item.authorAvatarUrl}
-                  name={
-                    typeof item.authorName === 'string' && item.authorName.trim()
-                      ? item.authorName.trim()
-                      : undefined
-                  }
-                  size={28}
-                />
-                <View style={styles.authorMeta}>
-                  <Text style={[styles.authorName, { color: colors.textPrimary }]}>
-                    {typeof item.authorName === 'string' && item.authorName.trim()
-                      ? item.authorName.trim()
-                      : strings.common.anonymous}
-                  </Text>
-                  <Text style={[styles.timeText, { color: colors.textMuted }]}>
-                    {formatDate(item.createdAt, strings.common, locale)}
-                  </Text>
+          {activeComments.map((item) => {
+            const timeText = formatDate(item.createdAt, strings.common, locale);
+            return (
+              <View
+                key={item.id}
+                style={[
+                  styles.commentCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.cardBorder,
+                    marginLeft: item.parentId ? 20 : 0,
+                  },
+                ]}
+              >
+                <View style={styles.authorRow}>
+                  <Avatar
+                    url={item.authorAvatarUrl}
+                    name={
+                      typeof item.authorName === 'string' && item.authorName.trim()
+                        ? item.authorName.trim()
+                        : undefined
+                    }
+                    size={28}
+                  />
+                  <View style={styles.authorMeta}>
+                    <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+                      {typeof item.authorName === 'string' && item.authorName.trim()
+                        ? item.authorName.trim()
+                        : strings.common.anonymous}
+                    </Text>
+                    {timeText ? (
+                      <Text style={[styles.timeText, { color: colors.textMuted }]}>{timeText}</Text>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
 
-              {typeof item.replyToAuthorName === 'string' && item.replyToAuthorName.trim() ? (
-                <Text style={[styles.replyNotice, { color: colors.primary }]}>
-                  {strings.comments.replyingTo(item.replyToAuthorName.trim())}
-                </Text>
-              ) : null}
-
-              <MarkdownText content={item.body} style={{ fontSize: 13 }} />
-
-              {showComposer && (
-                <TouchableOpacity
-                  onPress={() => setReplyTo(item)}
-                  style={styles.replyButton}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                >
-                  <Text style={[styles.replyButtonText, { color: colors.primary }]}>
-                    {strings.comments.replyButton}
+                {typeof item.replyToAuthorName === 'string' && item.replyToAuthorName.trim() ? (
+                  <Text style={[styles.replyNotice, { color: colors.primary }]}>
+                    {strings.comments.replyingTo(item.replyToAuthorName.trim())}
                   </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+                ) : null}
+
+                <MarkdownText content={item.body} style={{ fontSize: 13 }} />
+
+                {showComposer && (
+                  <TouchableOpacity
+                    onPress={() => setReplyTo(item)}
+                    style={styles.replyButton}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.replyButtonText, { color: colors.primary }]}>
+                      {strings.comments.replyButton}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
 

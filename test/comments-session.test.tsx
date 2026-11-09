@@ -922,3 +922,43 @@ test(
     }
   }
 );
+
+test(
+  'CommentsSection conditionally renders timeText only when createdAt is non-empty and valid (#335)',
+  renderTestOptions,
+  async () => {
+    const comments: FeatureRequestComment[] = [
+      makeComment('c_null_created', { createdAt: null as any }),
+      makeComment('c_empty_created', { createdAt: '' }),
+      makeComment('c_whitespace_created', { createdAt: '   ' }),
+      makeComment('c_valid_created', { createdAt: '2026-10-01T00:00:00.000Z' }),
+    ];
+
+    const harness = await renderComments(undefined, comments);
+
+    try {
+      const isTimeText = (node: any) => {
+        if (node.type !== TextStub) return false;
+        const style = node.props?.style;
+        if (!style) return false;
+        const array = Array.isArray(style) ? style : [style];
+        return array.some((s: any) => s?.fontSize === 11);
+      };
+
+      const timeNodes = harness.renderer.root.findAll(isTimeText);
+      assert.equal(
+        timeNodes.length,
+        1,
+        'only comments with valid non-empty createdAt should render a timeText Text node'
+      );
+      assert.ok(
+        typeof timeNodes[0].props.children === 'string' &&
+          timeNodes[0].props.children.trim().length > 0,
+        'rendered timeText must have non-empty text content'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
