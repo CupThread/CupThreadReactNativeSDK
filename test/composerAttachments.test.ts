@@ -758,9 +758,51 @@ test('uploadInSessionChunks handles nullish batch and missing seams safely (#354
   // Omission of uploadBatch falls back to upload directly
   const uploadOnlyOutcomes = await uploadInSessionChunks(items, {
     chunkSize: 2,
-    upload: async (opt) => makeDescriptor(opt.filename.replace('.png', '')),
+    upload: async (opt: UploadAttachmentOptions) =>
+      makeDescriptor(opt.filename.replace('.png', '')),
   } as any);
   assert.equal(uploadOnlyOutcomes.length, 2);
   assert.ok(uploadOnlyOutcomes.every((o) => o.ok));
   assert.deepEqual(makeOutcomeNames(uploadOnlyOutcomes), ['item1.png', 'item2.png']);
+
+  // uploadBatch returns non-array in processPickedAttachments
+  const nonArrayBatchResult = await processPickedAttachments(
+    [makeUploadOptions('item1'), makeUploadOptions('item2')],
+    {
+      uploadBatch: (async () => 'not-an-array' as any) as any,
+    } as any
+  );
+  assert.equal(nonArrayBatchResult.failed.length, 2);
+  assert.equal(nonArrayBatchResult.succeeded.length, 0);
+
+  // uploadBatch returns non-array in uploadInSessionChunks
+  const nonArrayChunkOutcomes = await uploadInSessionChunks(items, {
+    chunkSize: 2,
+    uploadBatch: (async () => null as any) as any,
+  } as any);
+  assert.equal(nonArrayChunkOutcomes.length, 2);
+  assert.ok(nonArrayChunkOutcomes.every((o) => !o.ok));
+  assert.match(
+    (nonArrayChunkOutcomes[0] as { ok: false; error: Error }).error.message,
+    /Batch upload returned no result/
+  );
+
+  // Multi-item chunk where uploadBatch rejects and upload is absent
+  const batchRejection = new Error('batch network crash');
+  const rejectingBatchNoUploadOutcomes = await uploadInSessionChunks(items, {
+    chunkSize: 2,
+    uploadBatch: async () => {
+      throw batchRejection;
+    },
+  } as any);
+  assert.equal(rejectingBatchNoUploadOutcomes.length, 2);
+  assert.ok(rejectingBatchNoUploadOutcomes.every((o) => !o.ok));
+  assert.equal(
+    (rejectingBatchNoUploadOutcomes[0] as { ok: false; error: unknown }).error,
+    batchRejection
+  );
+  assert.equal(
+    (rejectingBatchNoUploadOutcomes[1] as { ok: false; error: unknown }).error,
+    batchRejection
+  );
 });
