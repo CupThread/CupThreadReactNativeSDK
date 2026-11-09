@@ -22,6 +22,9 @@
  * ```
  */
 export function isValidEmail(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  if (value === '') return true;
+
   // Domain labels must be non-empty (`john@example..com` fails), and each
   // label excludes `.` so the label segmentation is unambiguous — no
   // quadratic backtracking on a long pasted value. The trailing alphanumeric
@@ -37,7 +40,7 @@ export function isValidEmail(value: string): boolean {
   // local parts (RFC 5321 §4.1.2).
   return (
     // eslint-disable-next-line no-control-regex -- rejecting ASCII control characters in quoted email local parts per RFC 5321
-    /^(?:(?:"(?:[^"\\\x00-\x1f\x7f]|\\[^\x00-\x1f\x7f])*")|(?:[^.\s@"]+(?:\.[^.\s@"]+)*))@[^.\s@]+(?:\.[^.\s@]+)+$/.test(
+    /^(?:(?:"(?:[^"\\\x00-\x1f\x7f]|\\[^\x00-\x1f\x7f])*")|(?:[^.\s@"]+(?:\.[^.\s@"]+)*))@[^.,\s@]+(?:\.[^.,\s@]+)+$/.test(
       value
     ) && /[a-zA-Z0-9]$/.test(value)
   );
