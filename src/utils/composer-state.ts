@@ -14,6 +14,9 @@ export interface FeedbackComposerState {
   errorMessage: string | null;
 }
 
+/**
+ * Ensures an unknown input value is coerced to a string, falling back to empty string for non-string types.
+ */
 function safeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -24,12 +27,19 @@ function safeString(value: unknown): string {
 export function createFeedbackComposerState(
   initialDraft?: Partial<FeedbackDraft>
 ): FeedbackComposerState {
+  const rawAttachments = initialDraft?.attachments;
+  const attachments = Array.isArray(rawAttachments)
+    ? rawAttachments.filter(
+        (att): att is FeedbackAttachment => att !== null && typeof att === 'object'
+      )
+    : [];
+
   return {
     title: safeString(initialDraft?.title),
     description: safeString(initialDraft?.description),
     reporterName: safeString(initialDraft?.reporterName),
     reporterEmail: safeString(initialDraft?.reporterEmail),
-    attachments: Array.isArray(initialDraft?.attachments) ? [...initialDraft.attachments] : [],
+    attachments,
     isUploadingAttachment: false,
     isSubmitting: false,
     errorMessage: null,

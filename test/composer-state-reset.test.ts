@@ -437,6 +437,33 @@ test('createFeedbackComposerState guards non-string fields and non-array attachm
       `attachments of type ${typeof invalidAttachments} must return empty array`
     );
   }
+
+  // Filters out null, undefined, and non-object entries from array
+  const mixedAttachmentsDraft = {
+    attachments: [
+      null,
+      undefined,
+      123,
+      'invalid-string',
+      { key: 'att-valid-1', kind: 'image' as const, uploadId: 'up-1' },
+    ] as any,
+  };
+  const mixedState = createFeedbackComposerState(mixedAttachmentsDraft);
+  assert.equal(mixedState.attachments.length, 1);
+  assert.equal(mixedState.attachments[0].key, 'att-valid-1');
+
+  // Single-access for attachments getter
+  let readCount = 0;
+  const getterDraft = {
+    get attachments() {
+      readCount++;
+      return [{ key: 'att-getter', kind: 'image' as const }];
+    },
+  };
+  const getterState = createFeedbackComposerState(getterDraft as any);
+  assert.equal(readCount, 1, 'initialDraft.attachments should be read exactly once');
+  assert.equal(getterState.attachments.length, 1);
+  assert.equal(getterState.attachments[0].key, 'att-getter');
 });
 
 test('createFeatureRequestComposeState guards non-string fields against TypeErrors (#341)', () => {
