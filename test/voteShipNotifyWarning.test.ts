@@ -448,3 +448,34 @@ test('useToggleVote: malformed null server response or handler error does not le
     process.off('unhandledRejection', onUnhandled);
   }
 });
+
+test('useToggleVote: safely handles non-string truthy shipNotifyEmail without throwing TypeError (#317)', async () => {
+  const { client, calls } = makeStubClient({ voted: true, voteCount: 11 });
+  let stateItem = makeItem({ id: 'fr_truthy_email', voteCount: 10, hasVoted: false });
+  const applyChange = (_id: string, transform: (it: FeatureRequestItem) => FeatureRequestItem) => {
+    stateItem = transform(stateItem);
+  };
+
+  for (const invalidEmail of [123 as any, true as any, {} as any, '   ']) {
+    const harness = renderTestHook(() =>
+      useToggleVote(client, 'usr_token', applyChange, {
+        shipNotifyEmail: invalidEmail,
+      })
+    );
+
+    assert.doesNotThrow(() => {
+      harness.result.toggleVote(stateItem);
+    });
+
+    await flush();
+    harness.rerender();
+
+    const lastCall = calls[calls.length - 1];
+    assert.equal(
+      (lastCall?.options as any)?.shipNotifyEmail,
+      undefined,
+      'shipNotifyEmail must safely resolve to undefined when given non-string truthy value or whitespace'
+    );
+    harness.unmount();
+  }
+});

@@ -257,7 +257,10 @@ export function useToggleVote(
   const onVoteWarningRef = useRef(options?.onVoteWarning);
   onVoteWarningRef.current = options?.onVoteWarning;
 
-  const shipNotifyEmail = options?.shipNotifyEmail?.trim() || undefined;
+  const shipNotifyEmail =
+    typeof options?.shipNotifyEmail === 'string'
+      ? options.shipNotifyEmail.trim() || undefined
+      : undefined;
 
   const pendingIdsRef = useRef<Set<string>>(new Set());
   const [pendingIds, setPendingIds] = useState<string[]>([]);

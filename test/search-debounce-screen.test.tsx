@@ -50,6 +50,7 @@ if (supportsModuleMocks) {
 
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
 const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
+const { useFeatureRequests } = await import('../src/hooks/useFeatureRequests');
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -225,5 +226,58 @@ test(
     assert.equal(flatLists[0].props.data[0].id, 'fr_search_result');
 
     renderer.unmount();
+  }
+);
+
+test(
+  'useFeatureRequests: safely handles non-string truthy query without throwing TypeError (#317)',
+  renderTestOptions,
+  async () => {
+    let capturedQuery: string | undefined = 'initial';
+    const client = {
+      fetchFeatureRequests: async (opts: any) => {
+        capturedQuery = opts?.query;
+        return {
+          requests: [makeMockItem('fr_query_test')],
+          total: 1,
+        };
+      },
+    } as unknown as FeedbackClient;
+
+    function HookHarness({ query, hookRef }: { query: any; hookRef?: { current: any } }) {
+      const hookResult = useFeatureRequests({
+        client,
+        userToken: 'tok',
+        query,
+        debounceMs: 0,
+      });
+      if (hookRef) {
+        hookRef.current = hookResult;
+      }
+      return null;
+    }
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    for (const invalidQuery of [123 as any, true as any, {} as any, '   ']) {
+      const hookRef = { current: null as any };
+      await act(async () => {
+        renderer = TestRenderer.create(<HookHarness query={invalidQuery} hookRef={hookRef} />);
+      });
+      await flush();
+
+      assert.equal(
+        capturedQuery,
+        undefined,
+        'query param sent to client must be undefined when query is non-string or whitespace'
+      );
+
+      // Verify loadMore does not throw TypeError on non-string query
+      await act(async () => {
+        await hookRef.current?.loadMore();
+      });
+      await flush();
+
+      renderer!.unmount();
+    }
   }
 );

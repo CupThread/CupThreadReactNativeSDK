@@ -499,7 +499,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       // bumping the generation, so a settled success can never publish a
       // generation newer than its own.
       const generation = page0GenerationRef.current;
-      const trimmedQuery = query?.trim() || '';
+      const trimmedQuery = typeof query === 'string' ? query.trim() : '';
       const isSearch = trimmedQuery.length > 0;
       const limiter = searchLimiterRef.current!;
 
@@ -739,7 +739,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
 
-    const trimmedQuery = query?.trim() || '';
+    const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     const isSearch = trimmedQuery.length > 0;
     const limiter = searchLimiterRef.current!;
 
@@ -853,7 +853,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // cursors are exact over the mutable sort, closing the remaining #159 gap
     // the way the changelog endpoint already paginates.
 
-    const trimmedQuery = query?.trim() || '';
+    const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     const isSearch = trimmedQuery.length > 0;
     const limiter = searchLimiterRef.current!;
 
