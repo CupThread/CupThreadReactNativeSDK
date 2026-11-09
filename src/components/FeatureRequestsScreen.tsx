@@ -167,7 +167,9 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
       >
         <View style={styles.cardHeader}>
           <View style={styles.cardHeaderLeft}>
-            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+              {typeof item.title === 'string' ? item.title.trim() : ''}
+            </Text>
             <View style={styles.badgeRow}>
               {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
                 <Badge label={item.columnName.trim()} color={item.columnColor} />
