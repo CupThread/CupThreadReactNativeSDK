@@ -165,16 +165,18 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
                 {strings.userProfile.appsSection(data.publicApps.length)}
               </Text>
-              {data.publicApps.map((app) => (
+              {data.publicApps.map((app, index) => (
                 <View
-                  key={app.id}
+                  key={app?.id ? `app-id-${app.id}` : `app-idx-${index}`}
                   style={[
                     styles.appCard,
                     { backgroundColor: colors.card, borderColor: colors.cardBorder },
                   ]}
                 >
-                  <Text style={[styles.appName, { color: colors.textPrimary }]}>{app.name}</Text>
-                  {typeof app.description === 'string' && app.description.trim().length > 0 ? (
+                  <Text style={[styles.appName, { color: colors.textPrimary }]}>
+                    {typeof app?.name === 'string' ? app.name.trim() : ''}
+                  </Text>
+                  {typeof app?.description === 'string' && app.description.trim().length > 0 ? (
                     <Text
                       numberOfLines={2}
                       style={[styles.appDesc, { color: colors.textSecondary }]}
@@ -218,7 +220,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
 
                 return (
                   <View
-                    key={comment?.id || `comment-${index}`}
+                    key={comment?.id ? `comment-id-${comment.id}` : `comment-idx-${index}`}
                     style={[
                       styles.commentCard,
                       { backgroundColor: colors.card, borderColor: colors.cardBorder },

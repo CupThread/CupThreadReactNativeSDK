@@ -888,3 +888,190 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen: safely guards publicApps app.name against empty, whitespace, and non-string types (#330)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_app_name_guard',
+        displayName: 'App Name Guard Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [
+        {
+          id: 'app_valid',
+          name: '   Valid App Name   ',
+          description: 'A valid app description',
+        },
+        {
+          id: 'app_empty',
+          name: '',
+          description: null,
+        },
+        {
+          id: 'app_whitespace',
+          name: '   \t  \n  ',
+          description: null,
+        },
+        {
+          id: 'app_undefined',
+          name: undefined as any,
+          description: null,
+        },
+        {
+          id: 'app_null',
+          name: null as any,
+          description: null,
+        },
+        {
+          id: 'app_object',
+          name: { complex: 'object' } as any,
+          description: null,
+        },
+        {
+          id: 'app_bool',
+          name: true as any,
+          description: null,
+        },
+        {
+          id: 'app_number',
+          name: 12345 as any,
+          description: null,
+        },
+      ],
+      recentComments: [],
+    });
+    pressables.length = 0;
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+
+      // Valid trimmed name must render
+      assert.ok(texts.includes('Valid App Name'), 'Valid App Name must be rendered trimmed');
+      assert.equal(
+        texts.includes('   Valid App Name   '),
+        false,
+        'untrimmed App Name must not be rendered'
+      );
+
+      // App description must render
+      assert.ok(texts.includes('A valid app description'), 'App description must render');
+
+      // Check all appName Text nodes to ensure non-string types safely rendered string children
+      const appNameTexts = renderer.root.findAll(
+        (node: any) =>
+          node.type === TextStub &&
+          Array.isArray(node.props?.style) &&
+          node.props.style.some(
+            (s: any) => s?.fontSize === 15 && s?.fontWeight === '600' && s?.marginBottom === 4
+          )
+      );
+
+      assert.equal(appNameTexts.length, 8, 'all 8 app cards must render an appName Text node');
+      assert.equal(appNameTexts[0].props.children, 'Valid App Name');
+      for (let i = 1; i < 8; i++) {
+        assert.equal(appNameTexts[i].props.children, '');
+      }
+
+      for (const node of appNameTexts) {
+        assert.equal(typeof node.props.children, 'string');
+      }
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen: distinct key namespaces prevent collision between explicit IDs and index fallbacks',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_key_collision_guard',
+        displayName: 'Key Collision Guard Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [
+        {
+          id: '1',
+          name: 'App With Explicit ID 1',
+          description: null,
+        },
+        {
+          id: '' as any,
+          name: 'App At Index 1 Without ID',
+          description: null,
+        },
+        {
+          id: 'idx-1',
+          name: 'App With Explicit ID idx-1',
+          description: null,
+        },
+      ],
+      recentComments: [
+        {
+          id: '1',
+          featureRequestId: 'fr_1',
+          featureRequestTitle: 'Feature 1',
+          appName: 'App 1',
+          content: 'First comment with ID 1',
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
+        {
+          id: '' as any,
+          featureRequestId: 'fr_2',
+          featureRequestTitle: 'Feature 2',
+          appName: 'App 2',
+          content: 'Comment at index 1 without ID',
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    pressables.length = 0;
+
+    const originalError = console.error;
+    const errors: string[] = [];
+    console.error = (...args: unknown[]) => {
+      errors.push(args.map(String).join(' '));
+      originalError(...args);
+    };
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const duplicateKeyWarnings = errors.filter((msg) =>
+        msg.includes('Encountered two children with the same key')
+      );
+      assert.equal(
+        duplicateKeyWarnings.length,
+        0,
+        `Expected no duplicate key warnings, but saw: ${duplicateKeyWarnings.join('; ')}`
+      );
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(texts.includes('App With Explicit ID 1'));
+      assert.ok(texts.includes('App At Index 1 Without ID'));
+      assert.ok(texts.includes('App With Explicit ID idx-1'));
+
+      renderer.unmount();
+    } finally {
+      console.error = originalError;
+      fetchMock.restore();
+    }
+  }
+);
