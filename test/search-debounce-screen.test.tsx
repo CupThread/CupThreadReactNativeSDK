@@ -234,12 +234,14 @@ test(
   renderTestOptions,
   async () => {
     let capturedQuery: string | undefined = 'initial';
+    let fetchCount = 0;
     const client = {
       fetchFeatureRequests: async (opts: any) => {
+        fetchCount++;
         capturedQuery = opts?.query;
         return {
           requests: [makeMockItem('fr_query_test')],
-          total: 1,
+          total: 10,
         };
       },
     } as unknown as FeedbackClient;
@@ -260,11 +262,14 @@ test(
     let renderer: TestRenderer.ReactTestRenderer;
     for (const invalidQuery of [123 as any, true as any, {} as any, '   ']) {
       const hookRef = { current: null as any };
+      capturedQuery = 'dirty';
+      fetchCount = 0;
       await act(async () => {
         renderer = TestRenderer.create(<HookHarness query={invalidQuery} hookRef={hookRef} />);
       });
       await flush();
 
+      assert.equal(fetchCount, 1);
       assert.equal(
         capturedQuery,
         undefined,
@@ -272,10 +277,18 @@ test(
       );
 
       // Verify loadMore does not throw TypeError on non-string query
+      capturedQuery = 'dirty';
       await act(async () => {
         await hookRef.current?.loadMore();
       });
       await flush();
+
+      assert.equal(fetchCount, 2);
+      assert.equal(
+        capturedQuery,
+        undefined,
+        'query param sent to client on loadMore must be undefined when query is non-string or whitespace'
+      );
 
       renderer!.unmount();
     }
