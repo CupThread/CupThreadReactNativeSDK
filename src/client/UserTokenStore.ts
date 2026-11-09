@@ -382,7 +382,12 @@ export class UserTokenStore {
             // `.token` mint) still adopts the persisted token.
             if (this.identityLocked) return;
             if (resolved && typeof resolved === 'string' && resolved.trim().length > 0) {
-              this.cachedToken = resolved.trim();
+              const storedToken = resolved.trim();
+              const changed = this.cachedToken !== storedToken;
+              this.cachedToken = storedToken;
+              if (changed) {
+                this.emitChange();
+              }
             }
           })
           .catch(() => {});

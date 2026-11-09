@@ -428,6 +428,63 @@ test('UserTokenStore getToken notifies only on identity change', async () => {
   assert.equal(changes, 1, 'the late initial read must not double-notify');
 });
 
+test('UserTokenStore: initToken notifies subscribers when persistent token resolves from async storage (#349)', async () => {
+  const read = deferred<string | null>();
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read.promise : Promise.resolve(null)),
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+  // Synchronously access store.token to mint a temporary throwaway in-memory token
+  const temporaryToken = store.token;
+  assert.ok(temporaryToken);
+
+  let notifiedCount = 0;
+  let seenToken: string | null = null;
+  store.subscribe(() => {
+    notifiedCount++;
+    seenToken = store.token;
+  });
+
+  // Resolve the initial storage read with persisted token
+  read.resolve('  persisted-token-123  ');
+  await flushMicrotasks();
+
+  assert.equal(notifiedCount, 1, 'subscriber must be notified when persisted token resolves');
+  assert.equal(seenToken, 'persisted-token-123', 'subscriber sees the trimmed persisted token');
+  assert.equal(store.token, 'persisted-token-123');
+  assert.notEqual(store.token, temporaryToken);
+});
+
+test('UserTokenStore: initToken notifies subscribers when cache was empty and persistent token resolves (#349)', async () => {
+  const read = deferred<string | null>();
+  const adapter = {
+    getItem: (key: string) => (key === TOKEN_KEY ? read.promise : Promise.resolve(null)),
+    setItem: () => Promise.resolve(),
+  };
+
+  const store = new UserTokenStore(adapter);
+  // Do NOT access store.token beforehand (cache is null)
+  let notifiedCount = 0;
+  let seenToken: string | null = null;
+  store.subscribe(() => {
+    notifiedCount++;
+    seenToken = store.token;
+  });
+
+  read.resolve('persisted-token-empty-cache');
+  await flushMicrotasks();
+
+  assert.equal(
+    notifiedCount,
+    1,
+    'subscriber must be notified when empty cache adopts persisted token'
+  );
+  assert.equal(seenToken, 'persisted-token-empty-cache');
+  assert.equal(store.token, 'persisted-token-empty-cache');
+});
+
 test('UserTokenStore subscriber errors never break token resolution', async () => {
   const store = new UserTokenStore();
   store.subscribe(() => {
