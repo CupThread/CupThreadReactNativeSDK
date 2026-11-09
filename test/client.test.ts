@@ -2288,3 +2288,106 @@ test('FeedbackClient handles non-string optional inputs gracefully (#298)', asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchColumns, fetchVersions, and listChangelog safely handle nullish, non-array, and corrupted entries (#357)', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    let mockResponse: any = {};
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_123',
+    });
+
+    // 1. fetchColumns: nullish and non-array responses
+    mockResponse = { columns: null };
+    assert.deepEqual(await client.fetchColumns(), []);
+
+    mockResponse = { columns: {} };
+    assert.deepEqual(await client.fetchColumns(), []);
+
+    // Sparse/corrupted columns array with null, undefined, non-object elements, and non-numeric positions
+    mockResponse = {
+      columns: [
+        null,
+        undefined,
+        'invalid',
+        { id: 'c2', name: 'In Progress', position: 20 },
+        { id: 'c1', name: 'Backlog', position: 10 },
+        { id: 'c3', name: 'No Position' },
+      ],
+    };
+    const columns = await client.fetchColumns();
+    assert.equal(columns.length, 3);
+    assert.deepEqual(
+      columns.map((c) => c.id),
+      ['c3', 'c1', 'c2']
+    );
+
+    // 2. fetchVersions: nullish and non-array responses
+    mockResponse = { versions: null };
+    assert.deepEqual(await client.fetchVersions(), []);
+
+    mockResponse = { versions: 'invalid' };
+    assert.deepEqual(await client.fetchVersions(), []);
+
+    // Sparse/corrupted versions array
+    mockResponse = {
+      versions: [
+        null,
+        undefined,
+        42,
+        { id: 'v2', versionNumber: '2.0', position: 200 },
+        { id: 'v1', versionNumber: '1.0', position: 100 },
+        { id: 'v0', versionNumber: '0.1' },
+      ],
+    };
+    const versions = await client.fetchVersions();
+    assert.equal(versions.length, 3);
+    assert.deepEqual(
+      versions.map((v) => v.id),
+      ['v0', 'v1', 'v2']
+    );
+
+    // 3. listChangelog: nullish, non-array, and malformed dates
+    mockResponse = { entries: null, hasMore: false, nextCursor: null };
+    const emptyResult = await client.listChangelog();
+    assert.deepEqual(emptyResult.entries, []);
+
+    mockResponse = { entries: {}, hasMore: false, nextCursor: null };
+    const invalidResult = await client.listChangelog();
+    assert.deepEqual(invalidResult.entries, []);
+
+    // Sparse/corrupted entries array with nulls and invalid publishedAt
+    mockResponse = {
+      entries: [
+        null,
+        undefined,
+        { id: 'e_invalid', title: 'Invalid Date', publishedAt: 'not-a-date' },
+        { id: 'e_old', title: 'Old', publishedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'e_new', title: 'New', publishedAt: '2026-06-01T00:00:00.000Z' },
+        { id: 'e_nodate', title: 'No Date' },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    };
+    const changelogResult = await client.listChangelog();
+    assert.equal(changelogResult.entries.length, 4);
+    assert.equal(changelogResult.entries[0].id, 'e_new');
+    assert.equal(changelogResult.entries[1].id, 'e_old');
+
+    // 4. fetchChangelog also safely sorts with invalid dates
+    const allChangelog = await client.fetchChangelog();
+    assert.equal(allChangelog.length, 4);
+    assert.equal(allChangelog[0].id, 'e_new');
+    assert.equal(allChangelog[1].id, 'e_old');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

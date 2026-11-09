@@ -1370,7 +1370,14 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
-    return (res.columns || []).sort((a, b) => a.position - b.position);
+    const columns = Array.isArray(res.columns)
+      ? res.columns.filter((c): c is BoardColumn => c !== null && typeof c === 'object')
+      : [];
+    return [...columns].sort((a, b) => {
+      const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
+      const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;
+      return posA - posB;
+    });
   }
 
   /**
@@ -1391,7 +1398,14 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
-    return (res.versions || []).sort((a, b) => a.position - b.position);
+    const versions = Array.isArray(res.versions)
+      ? res.versions.filter((v): v is AppVersion => v !== null && typeof v === 'object')
+      : [];
+    return [...versions].sort((a, b) => {
+      const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
+      const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;
+      return posA - posB;
+    });
   }
 
   /**
@@ -2061,9 +2075,16 @@ export class FeedbackClient {
       timeoutMs: options?.timeoutMs,
     });
 
-    const entries = (res.entries || []).sort(
-      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-    );
+    const rawEntries = Array.isArray(res.entries)
+      ? res.entries.filter((e): e is ChangelogEntry => e !== null && typeof e === 'object')
+      : [];
+    const entries = [...rawEntries].sort((a, b) => {
+      const timeA = typeof a.publishedAt === 'string' ? new Date(a.publishedAt).getTime() : 0;
+      const timeB = typeof b.publishedAt === 'string' ? new Date(b.publishedAt).getTime() : 0;
+      const safeA = Number.isFinite(timeA) ? timeA : 0;
+      const safeB = Number.isFinite(timeB) ? timeB : 0;
+      return safeB - safeA;
+    });
     return {
       entries,
       hasMore: res.hasMore === true,
@@ -2105,9 +2126,13 @@ export class FeedbackClient {
       }
       cursor = res.nextCursor;
     }
-    return all.sort(
-      (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-    );
+    return all.sort((a, b) => {
+      const timeA = typeof a.publishedAt === 'string' ? new Date(a.publishedAt).getTime() : 0;
+      const timeB = typeof b.publishedAt === 'string' ? new Date(b.publishedAt).getTime() : 0;
+      const safeA = Number.isFinite(timeA) ? timeA : 0;
+      const safeB = Number.isFinite(timeB) ? timeB : 0;
+      return safeB - safeA;
+    });
   }
 
   /**
