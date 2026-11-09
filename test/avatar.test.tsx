@@ -313,6 +313,7 @@ test(
     // 1. Fallback view with name
     const namedFallback = renderAvatar({ name: 'Alex Morgan' });
     const viewNode1 = namedFallback.root.findByType('View' as any);
+    assert.equal(viewNode1.props.accessible, true);
     assert.equal(viewNode1.props.accessibilityRole, 'image');
     assert.equal(viewNode1.props.accessibilityLabel, "Alex Morgan's avatar");
     namedFallback.unmount();
@@ -320,6 +321,7 @@ test(
     // 2. Fallback view without name or with whitespace name
     const anonymousFallback = renderAvatar({ name: '   ' });
     const viewNode2 = anonymousFallback.root.findByType('View' as any);
+    assert.equal(viewNode2.props.accessible, true);
     assert.equal(viewNode2.props.accessibilityRole, 'image');
     assert.equal(viewNode2.props.accessibilityLabel, 'User avatar');
     anonymousFallback.unmount();
@@ -327,6 +329,7 @@ test(
     // 3. Fallback view with null name
     const nullFallback = renderAvatar({ name: null });
     const viewNode3 = nullFallback.root.findByType('View' as any);
+    assert.equal(viewNode3.props.accessible, true);
     assert.equal(viewNode3.props.accessibilityRole, 'image');
     assert.equal(viewNode3.props.accessibilityLabel, 'User avatar');
     nullFallback.unmount();
@@ -334,6 +337,7 @@ test(
     // 4. Image with name
     const namedImage = renderAvatar({ url: 'https://example.com/avatar.png', name: 'Jordan' });
     const imageNode1 = namedImage.root.findByType('Image' as any);
+    assert.equal(imageNode1.props.accessible, true);
     assert.equal(imageNode1.props.accessibilityRole, 'image');
     assert.equal(imageNode1.props.accessibilityLabel, "Jordan's avatar");
     namedImage.unmount();
@@ -341,6 +345,7 @@ test(
     // 5. Image without name
     const anonImage = renderAvatar({ url: 'https://example.com/avatar.png' });
     const imageNode2 = anonImage.root.findByType('Image' as any);
+    assert.equal(imageNode2.props.accessible, true);
     assert.equal(imageNode2.props.accessibilityRole, 'image');
     assert.equal(imageNode2.props.accessibilityLabel, 'User avatar');
     anonImage.unmount();
@@ -351,6 +356,7 @@ test(
       accessibilityLabel: 'Author avatar photo',
     });
     const viewNode4 = customFallback.root.findByType('View' as any);
+    assert.equal(viewNode4.props.accessible, true);
     assert.equal(viewNode4.props.accessibilityRole, 'image');
     assert.equal(viewNode4.props.accessibilityLabel, 'Author avatar photo');
     customFallback.unmount();
@@ -360,6 +366,7 @@ test(
       accessibilityLabel: 'Profile picture of Jordan',
     });
     const imageNode3 = customImage.root.findByType('Image' as any);
+    assert.equal(imageNode3.props.accessible, true);
     assert.equal(imageNode3.props.accessibilityRole, 'image');
     assert.equal(imageNode3.props.accessibilityLabel, 'Profile picture of Jordan');
     customImage.unmount();

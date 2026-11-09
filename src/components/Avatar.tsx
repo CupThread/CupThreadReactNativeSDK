@@ -87,6 +87,7 @@ export function Avatar({
     return (
       <Image
         source={{ uri: trimmedUrl }}
+        accessible={true}
         accessibilityRole="image"
         accessibilityLabel={resolvedAccessibilityLabel}
         style={{
@@ -101,6 +102,7 @@ export function Avatar({
 
   return (
     <View
+      accessible={true}
       accessibilityRole="image"
       accessibilityLabel={resolvedAccessibilityLabel}
       style={[
