@@ -690,3 +690,77 @@ test('uploadInSessionChunks fails a lone item from its session error without ret
   assert.equal(outcomes[0].ok, false);
   assert.equal(outcomes[0].ok ? null : outcomes[0].error, sessionRejection);
 });
+
+// ---------------------------------------------------------------------------
+// Issue #354 — non-array and missing inputs resilience
+// ---------------------------------------------------------------------------
+
+test('processPickedAttachments handles nullish, non-array, and missing options without throwing (#354)', async () => {
+  const dummyUpload = async () => makeDescriptor('dummy');
+
+  // Null items with valid options
+  const nullResult = await processPickedAttachments(null as any, { upload: dummyUpload });
+  assert.deepEqual(nullResult, { succeeded: [], failed: [], unsupported: [], rejected: [] });
+
+  // Undefined items with undefined options
+  const undefinedResult = await processPickedAttachments(undefined as any, undefined as any);
+  assert.deepEqual(undefinedResult, { succeeded: [], failed: [], unsupported: [], rejected: [] });
+
+  // Null items with null options
+  const nullNullResult = await processPickedAttachments(null as any, null as any);
+  assert.deepEqual(nullNullResult, { succeeded: [], failed: [], unsupported: [], rejected: [] });
+
+  // Single picked item passed directly as an object instead of wrapped in an array
+  const singleLegacyResult = await processPickedAttachments({ fileUri: 'file:///pic.png' } as any, {
+    upload: dummyUpload,
+  });
+  assert.equal(singleLegacyResult.succeeded.length, 1);
+  assert.equal(singleLegacyResult.failed.length, 0);
+
+  // Single pre-uploaded descriptor passed directly as an object
+  const singleUploadedResult = await processPickedAttachments(
+    makeDescriptor('already-uploaded') as any,
+    {
+      upload: dummyUpload,
+    }
+  );
+  assert.equal(singleUploadedResult.succeeded.length, 1);
+  assert.equal(singleUploadedResult.succeeded[0].key, 'key-already-uploaded');
+
+  // Missing upload functions reports pending items as failed instead of throwing
+  const noUploadFuncResult = await processPickedAttachments([makeUploadOptions('test')], {} as any);
+  assert.equal(noUploadFuncResult.failed.length, 1);
+  assert.match(
+    (noUploadFuncResult.failed[0].error as Error).message,
+    /No upload function provided/
+  );
+});
+
+test('uploadInSessionChunks handles nullish batch and missing seams safely (#354)', async () => {
+  // Null batch with valid seams
+  const nullBatchOutcomes = await uploadInSessionChunks(null as any, {
+    chunkSize: 5,
+    uploadBatch: async () => [],
+    upload: async () => makeDescriptor('dummy'),
+  });
+  assert.deepEqual(nullBatchOutcomes, []);
+
+  // Undefined batch with undefined seams
+  const undefOutcomes = await uploadInSessionChunks(undefined as any, undefined as any);
+  assert.deepEqual(undefOutcomes, []);
+
+  // Valid batch with null seams reports failures rather than throwing
+  const items = [makeUploadOptions('item1'), makeUploadOptions('item2')];
+  const nullSeamsOutcomes = await uploadInSessionChunks(items, null as any);
+  assert.equal(nullSeamsOutcomes.length, 2);
+  assert.ok(nullSeamsOutcomes.every((o) => !o.ok));
+
+  // Omission of uploadBatch falls back to upload directly
+  const uploadOnlyOutcomes = await uploadInSessionChunks(items, {
+    chunkSize: 2,
+    upload: async (opt) => makeDescriptor(opt.filename.replace('.png', '')),
+  } as any);
+  assert.equal(uploadOnlyOutcomes.length, 2);
+  assert.ok(uploadOnlyOutcomes.every((o) => o.ok));
+  assert.deepEqual(makeOutcomeNames(uploadOnlyOutcomes), ['item1.png', 'item2.png']);
+});
