@@ -1023,3 +1023,115 @@ test(
     }
   }
 );
+
+test(
+  'RoadmapBoardScreen: safely guards item.description against empty, whitespace, and non-string types (#319)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    const mockColumns = [makeColumn('col_progress', 'In Progress')];
+
+    const items: any[] = [
+      {
+        ...makeRequest('fr_valid', 'col_progress'),
+        description: '  Valid roadmap description  ',
+      },
+      {
+        ...makeRequest('fr_empty', 'col_progress'),
+        description: '',
+      },
+      {
+        ...makeRequest('fr_whitespace', 'col_progress'),
+        description: '   \t  \n  ',
+      },
+      {
+        ...makeRequest('fr_undefined', 'col_progress'),
+        description: undefined,
+      },
+      {
+        ...makeRequest('fr_null', 'col_progress'),
+        description: null,
+      },
+      {
+        ...makeRequest('fr_object', 'col_progress'),
+        description: { complex: 'object' },
+      },
+      {
+        ...makeRequest('fr_bool', 'col_progress'),
+        description: true,
+      },
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input);
+      if (url.includes('/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_test_roadmap',
+            sdk: { features: { roadmap: true } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/public/columns/')) {
+        return new Response(JSON.stringify({ columns: mockColumns }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/feature-requests')) {
+        return new Response(
+          JSON.stringify({
+            requests: items,
+            total: items.length,
+          }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_roadmap',
+    });
+
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="tok_ready">
+            <RoadmapBoardScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const descNodes = renderer!.root.findAll((node: any) => node.props?.numberOfLines === 3);
+
+      assert.equal(
+        descNodes.length,
+        1,
+        'only valid non-empty string description should be rendered'
+      );
+      assert.equal(
+        descNodes[0].props.children,
+        'Valid roadmap description',
+        'description text must be trimmed'
+      );
+
+      const texts = finalPassTexts();
+      assert.ok(
+        texts.includes('Valid roadmap description'),
+        'final pass texts must include trimmed description'
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
