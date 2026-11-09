@@ -28,12 +28,24 @@ export interface RoadmapColumnGrouping {
  * dropping it.
  */
 export function groupRoadmapRequests(
-  columns: BoardColumn[],
-  requests: FeatureRequestItem[]
+  columns?: readonly BoardColumn[] | null,
+  requests?: readonly FeatureRequestItem[] | null
 ): RoadmapColumnGrouping {
-  const visible = columns.filter((c) => c.isVisible);
-  const orphanRequests = requests.filter(
-    (r) => !visible.some((c) => r.columnId === c.id || (!r.columnId && r.status === c.slug))
+  const safeColumns = Array.isArray(columns)
+    ? columns.filter((c): c is BoardColumn => c !== null && typeof c === 'object')
+    : [];
+  const safeRequests = Array.isArray(requests)
+    ? requests.filter((r): r is FeatureRequestItem => r !== null && typeof r === 'object')
+    : [];
+
+  const visible = safeColumns.filter((c) => Boolean(c.isVisible));
+  const orphanRequests = safeRequests.filter(
+    (r) =>
+      !visible.some(
+        (c) =>
+          Boolean(r.columnId && c.id && r.columnId === c.id) ||
+          Boolean(!r.columnId && r.status && c.slug && r.status === c.slug)
+      )
   );
   return { columns: visible, orphanRequests };
 }
@@ -55,5 +67,7 @@ export const ROADMAP_OTHER_COLUMN_ID = '__cupthread_other__';
  * the exact count can be asserted.
  */
 export function formatColumnTabCount(count: number, hasMore: boolean): string {
-  return hasMore ? `${count}+` : `${count}`;
+  const safeCount =
+    typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  return hasMore ? `${safeCount}+` : `${safeCount}`;
 }

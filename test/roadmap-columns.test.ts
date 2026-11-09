@@ -137,3 +137,52 @@ test('otherColumn fallback copy exists in shipped locales', () => {
   assert.equal(enStrings.roadmap.otherColumn, 'Other');
   assert.equal(zhHansStrings.roadmap.otherColumn, '其他');
 });
+
+// ---------------------------------------------------------------------------
+// Issue #353 — non-array and invalid inputs resilience
+// ---------------------------------------------------------------------------
+
+test('groupRoadmapRequests handles nullish, non-array, and sparse arrays safely (#353)', () => {
+  assert.deepEqual(groupRoadmapRequests(null, null), { columns: [], orphanRequests: [] });
+  assert.deepEqual(groupRoadmapRequests(undefined, undefined), {
+    columns: [],
+    orphanRequests: [],
+  });
+  assert.deepEqual(groupRoadmapRequests('invalid' as any, 123 as any), {
+    columns: [],
+    orphanRequests: [],
+  });
+
+  // Sparse or corrupted arrays with null/undefined elements
+  const corruptColumns = [null as any, undefined as any, 'invalid' as any, visibleA];
+  const corruptRequests = [
+    null as any,
+    undefined as any,
+    'invalid' as any,
+    makeRequest({ id: 'r1', columnId: 'col_a' }),
+    makeRequest({ id: 'r2', columnId: 'col_missing' }),
+  ];
+
+  const { columns, orphanRequests } = groupRoadmapRequests(corruptColumns, corruptRequests);
+  assert.deepEqual(
+    columns.map((c) => c.id),
+    ['col_a']
+  );
+  assert.deepEqual(
+    orphanRequests.map((r) => r.id),
+    ['r2']
+  );
+});
+
+test('formatColumnTabCount clamps NaN, negative, non-integer, and invalid inputs (#353)', () => {
+  assert.equal(formatColumnTabCount(NaN, true), '0+');
+  assert.equal(formatColumnTabCount(NaN, false), '0');
+  assert.equal(formatColumnTabCount(-5, false), '0');
+  assert.equal(formatColumnTabCount(-5, true), '0+');
+  assert.equal(formatColumnTabCount(1.9, false), '1');
+  assert.equal(formatColumnTabCount(1.9, true), '1+');
+  assert.equal(formatColumnTabCount(Infinity, false), '0');
+  assert.equal(formatColumnTabCount(-Infinity, true), '0+');
+  assert.equal(formatColumnTabCount(undefined as any, false), '0');
+  assert.equal(formatColumnTabCount(null as any, true), '0+');
+});
