@@ -202,7 +202,9 @@ export function FeatureRequestDetail({
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.headerRow}>
             <View style={styles.titleArea}>
-              <Text style={[styles.title, { color: colors.textPrimary }]}>{item.title}</Text>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>
+                {typeof item.title === 'string' ? item.title : ''}
+              </Text>
               <View style={styles.badgesRow}>
                 {typeof item.columnName === 'string' && item.columnName.trim().length > 0 ? (
                   <Badge label={item.columnName.trim()} color={item.columnColor} />
