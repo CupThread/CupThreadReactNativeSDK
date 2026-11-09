@@ -235,11 +235,17 @@ export function FeatureRequestDetail({
           <View style={styles.authorRow}>
             <Avatar
               url={item.requesterAvatarUrl}
-              name={item.requesterName?.trim() || undefined}
+              name={
+                typeof item.requesterName === 'string' && item.requesterName.trim()
+                  ? item.requesterName.trim()
+                  : undefined
+              }
               size={24}
             />
             <Text style={[styles.authorName, { color: colors.textSecondary }]}>
-              {item.requesterName?.trim() || strings.common.anonymous}
+              {typeof item.requesterName === 'string' && item.requesterName.trim()
+                ? item.requesterName.trim()
+                : strings.common.anonymous}
             </Text>
             <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
             <Text style={[styles.dateText, { color: colors.textMuted }]}>
@@ -247,7 +253,7 @@ export function FeatureRequestDetail({
             </Text>
           </View>
 
-          {Boolean(item.description && item.description.trim()) && (
+          {typeof item.description === 'string' && item.description.trim().length > 0 && (
             <View
               style={[
                 styles.descCard,

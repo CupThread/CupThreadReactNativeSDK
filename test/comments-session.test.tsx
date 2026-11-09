@@ -817,3 +817,108 @@ test(
     }
   }
 );
+
+test(
+  'CommentsSection: safely handles non-string truthy authorName and replyToAuthorName without throwing TypeError (#299)',
+  renderTestOptions,
+  async () => {
+    const commentsWithMalformedFields: any[] = [
+      makeComment('c_num_author', {
+        authorName: 123 as any,
+        body: 'Comment with number authorName',
+      }),
+      makeComment('c_bool_author', {
+        authorName: true as any,
+        body: 'Comment with boolean authorName',
+      }),
+      makeComment('c_obj_author', {
+        authorName: {} as any,
+        body: 'Comment with object authorName',
+      }),
+      makeComment('c_ws_author', {
+        authorName: '   \t  ',
+        body: 'Comment with whitespace-only authorName',
+      }),
+      makeComment('c_num_reply', {
+        authorName: 'Alice',
+        replyToAuthorName: 456 as any,
+        body: 'Comment with number replyToAuthorName',
+      }),
+      makeComment('c_bool_reply', {
+        authorName: 'Bob',
+        replyToAuthorName: true as any,
+        body: 'Comment with boolean replyToAuthorName',
+      }),
+      makeComment('c_obj_reply', {
+        authorName: 'Charlie',
+        replyToAuthorName: {} as any,
+        body: 'Comment with object replyToAuthorName',
+      }),
+      makeComment('c_valid_reply', {
+        authorName: 'Dave',
+        replyToAuthorName: '   Eve   ',
+        body: 'Comment with valid trimmed replyToAuthorName',
+      }),
+    ];
+
+    const harness = await renderComments(() => 'jwt_session_valid', commentsWithMalformedFields);
+
+    try {
+      // 1. Rendering must succeed and not throw
+      const text = collectText(harness.renderer.root);
+      assert.ok(
+        text.includes('Anonymous'),
+        'fallback Anonymous must be rendered for non-string authorName'
+      );
+      assert.ok(text.includes('Eve'), 'replyingTo must render trimmed valid replyToAuthorName');
+      assert.ok(
+        !text.includes('Replying to [object Object]'),
+        'must not render raw object in reply notice'
+      );
+
+      // 2. Clicking reply on a comment with non-string authorName sets replyTo safely
+      const replyButtons = harness.renderer.root
+        .findAllByType(TouchableOpacityStub as any)
+        .filter((button) =>
+          button.findAllByType(TextStub as any).some((t) => t.props?.children === 'Reply')
+        );
+      assert.ok(replyButtons.length > 0, 'reply buttons must be rendered');
+
+      // Tap reply on c_num_author (first reply button)
+      await act(async () => {
+        replyButtons[0].props.onPress();
+      });
+      await flush();
+
+      // Check replying bar text
+      const replyingBarText = collectText(harness.renderer.root);
+      assert.ok(
+        replyingBarText.includes('Replying to @Anonymous'),
+        'reply bar must display Replying to @Anonymous when target comment has non-string authorName'
+      );
+
+      // 3. Post a comment while replying to the non-string author comment
+      const input = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('Reply to number author');
+      });
+      const postBtn = findButtonByText(harness.renderer.root, 'Post Comment');
+      assert.ok(postBtn, 'post button must exist');
+
+      await act(async () => {
+        postBtn!.props.onPress();
+      });
+      await flush();
+
+      assert.strictEqual(harness.client.postCalls.length, 1);
+      assert.strictEqual(
+        harness.client.postCalls[0].draft.replyToAuthorName,
+        undefined,
+        'draft replyToAuthorName must safely resolve to undefined when target authorName is not a string'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
