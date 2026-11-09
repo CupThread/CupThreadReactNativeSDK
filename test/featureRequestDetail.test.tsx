@@ -826,3 +826,92 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestDetail: safely handles non-string truthy requesterName, description, and title without throwing TypeError (#299)',
+  renderTestOptions,
+  async () => {
+    // 1. requesterName as number 123, description as number 12345, title as object
+    const malformedItem1 = makeItem({
+      id: 'fr_malformed_1',
+      title: { invalid: true } as any,
+      requesterName: 123 as any,
+      description: 12345 as any,
+    });
+    const harness1 = await renderDetail(malformedItem1, true);
+
+    try {
+      const text1 = collectText(harness1.renderer.root);
+      assert.ok(
+        text1.includes('Anonymous'),
+        'fallback Anonymous must be rendered for non-string requesterName'
+      );
+      const markdownNodes1 = harness1.renderer.root.findAllByType(MarkdownText);
+      assert.equal(
+        markdownNodes1.length,
+        0,
+        'MarkdownText must not render when description is a non-string'
+      );
+
+      // 2. requesterName as boolean true, description as boolean true, title as boolean true
+      const malformedItem2 = makeItem({
+        id: 'fr_malformed_2',
+        title: true as any,
+        requesterName: true as any,
+        description: true as any,
+      });
+      await harness1.update(malformedItem2, true);
+      const text2 = collectText(harness1.renderer.root);
+      assert.ok(
+        text2.includes('Anonymous'),
+        'fallback Anonymous must be rendered for boolean requesterName'
+      );
+      assert.equal(harness1.renderer.root.findAllByType(MarkdownText).length, 0);
+
+      // 3. requesterName as object {}, description as object {}
+      const malformedItem3 = makeItem({
+        id: 'fr_malformed_3',
+        requesterName: {} as any,
+        description: {} as any,
+      });
+      await harness1.update(malformedItem3, true);
+      const text3 = collectText(harness1.renderer.root);
+      assert.ok(
+        text3.includes('Anonymous'),
+        'fallback Anonymous must be rendered for object requesterName'
+      );
+      assert.equal(harness1.renderer.root.findAllByType(MarkdownText).length, 0);
+
+      // 4. requesterName as whitespace-only, description as whitespace-only
+      const malformedItem4 = makeItem({
+        id: 'fr_malformed_4',
+        requesterName: '   \t  ',
+        description: '   \n  ',
+      });
+      await harness1.update(malformedItem4, true);
+      const text4 = collectText(harness1.renderer.root);
+      assert.ok(
+        text4.includes('Anonymous'),
+        'fallback Anonymous must be rendered for whitespace requesterName'
+      );
+      assert.equal(harness1.renderer.root.findAllByType(MarkdownText).length, 0);
+
+      // 5. Valid requesterName, description, and title
+      const validItem = makeItem({
+        id: 'fr_valid',
+        title: 'Valid Feature Title',
+        requesterName: '   Sarah Connor   ',
+        description: '   Protect John Connor   ',
+      });
+      await harness1.update(validItem, true);
+      const text5 = collectText(harness1.renderer.root);
+      assert.ok(text5.includes('Valid Feature Title'), 'valid title must be rendered');
+      assert.ok(text5.includes('Sarah Connor'), 'trimmed requesterName must be rendered');
+      const markdownNodes5 = harness1.renderer.root.findAllByType(MarkdownText);
+      assert.equal(markdownNodes5.length, 1, 'MarkdownText must be rendered for valid description');
+    } finally {
+      harness1.restoreFetch();
+      harness1.renderer.unmount();
+    }
+  }
+);

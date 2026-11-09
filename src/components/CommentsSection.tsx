@@ -240,7 +240,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     if (!commentSessionProvider) return;
     try {
       const token = await commentSessionProvider();
-      if (token && token.trim()) {
+      if (typeof token === 'string' && token.trim()) {
         setRequiresSignIn(false);
       }
     } catch {
@@ -258,7 +258,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       setError(null);
 
       const sessionToken = await commentSessionProvider();
-      if (!sessionToken || !sessionToken.trim()) {
+      if (typeof sessionToken !== 'string' || !sessionToken.trim()) {
         setRequiresSignIn(true);
         return;
       }
@@ -268,7 +268,10 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         body: commentText.trim(),
         parentId: replyTo?.id || undefined,
         replyToClerkId: replyTo?.authorClerkId || undefined,
-        replyToAuthorName: replyTo?.authorName?.trim() || undefined,
+        replyToAuthorName:
+          typeof replyTo?.authorName === 'string' && replyTo.authorName.trim()
+            ? replyTo.authorName.trim()
+            : undefined,
       };
 
       const newComment = await client.postComment(featureRequestId, draft, effectiveToken, {
@@ -348,12 +351,18 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
               <View style={styles.authorRow}>
                 <Avatar
                   url={item.authorAvatarUrl}
-                  name={item.authorName?.trim() || undefined}
+                  name={
+                    typeof item.authorName === 'string' && item.authorName.trim()
+                      ? item.authorName.trim()
+                      : undefined
+                  }
                   size={28}
                 />
                 <View style={styles.authorMeta}>
                   <Text style={[styles.authorName, { color: colors.textPrimary }]}>
-                    {item.authorName?.trim() || strings.common.anonymous}
+                    {typeof item.authorName === 'string' && item.authorName.trim()
+                      ? item.authorName.trim()
+                      : strings.common.anonymous}
                   </Text>
                   <Text style={[styles.timeText, { color: colors.textMuted }]}>
                     {formatDate(item.createdAt, strings.common, locale)}
@@ -361,7 +370,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
                 </View>
               </View>
 
-              {item.replyToAuthorName && item.replyToAuthorName.trim() ? (
+              {typeof item.replyToAuthorName === 'string' && item.replyToAuthorName.trim() ? (
                 <Text style={[styles.replyNotice, { color: colors.primary }]}>
                   {strings.comments.replyingTo(item.replyToAuthorName.trim())}
                 </Text>
@@ -419,7 +428,9 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
             <View style={[styles.replyingBar, { backgroundColor: colors.chipBg }]}>
               <Text style={[styles.replyingText, { color: colors.textSecondary }]}>
                 {strings.comments.replyingTo(
-                  replyTo.authorName?.trim() || strings.common.anonymous
+                  typeof replyTo.authorName === 'string' && replyTo.authorName.trim()
+                    ? replyTo.authorName.trim()
+                    : strings.common.anonymous
                 )}
               </Text>
               <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
