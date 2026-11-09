@@ -365,7 +365,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
               >
                 <View style={styles.cardHeader}>
                   <Text style={[styles.entryTitle, { color: colors.textPrimary }]}>
-                    {item.title}
+                    {typeof item?.title === 'string' ? item.title.trim() : ''}
                   </Text>
                   {versionBadge ? <Badge label={versionBadge} variant="outline" /> : null}
                 </View>

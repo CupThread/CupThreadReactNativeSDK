@@ -310,3 +310,141 @@ test(
     }
   }
 );
+
+test(
+  'WhatsNewScreen safely guards changelog entry title against empty, whitespace, and non-string types (#333)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const s = url.toString();
+      if (s.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_whats_new_empty_test',
+            sdk: { features: { changelog: true } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (s.includes('/changelog')) {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: 'ch_valid',
+                title: '   Trimmed Release Title   ',
+                body: 'Valid entry body',
+                versionLabel: '1.0.0',
+                publishedAt: '2025-01-01T00:00:00.000Z',
+              },
+              {
+                id: 'ch_empty',
+                title: '',
+                body: 'Empty title body',
+                versionLabel: '1.0.1',
+                publishedAt: '2025-01-02T00:00:00.000Z',
+              },
+              {
+                id: 'ch_whitespace',
+                title: '   \t  \n  ',
+                body: 'Whitespace title body',
+                versionLabel: '1.0.2',
+                publishedAt: '2025-01-03T00:00:00.000Z',
+              },
+              {
+                id: 'ch_undefined',
+                title: undefined as any,
+                body: 'Undefined title body',
+                versionLabel: '1.0.3',
+                publishedAt: '2025-01-04T00:00:00.000Z',
+              },
+              {
+                id: 'ch_null',
+                title: null as any,
+                body: 'Null title body',
+                versionLabel: '1.0.4',
+                publishedAt: '2025-01-05T00:00:00.000Z',
+              },
+              {
+                id: 'ch_object',
+                title: { complex: 'object' } as any,
+                body: 'Object title body',
+                versionLabel: '1.0.5',
+                publishedAt: '2025-01-06T00:00:00.000Z',
+              },
+              {
+                id: 'ch_bool',
+                title: true as any,
+                body: 'Boolean title body',
+                versionLabel: '1.0.6',
+                publishedAt: '2025-01-07T00:00:00.000Z',
+              },
+              {
+                id: 'ch_number',
+                title: 12345 as any,
+                body: 'Number title body',
+                versionLabel: '1.0.7',
+                publishedAt: '2025-01-08T00:00:00.000Z',
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+      return new Response('{}', { status: 200 });
+    }) as any;
+
+    try {
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={makeClient()}>
+            <WhatsNewScreen />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      const texts = getAllTextStrings(renderer.root);
+      assert.ok(texts.includes('Trimmed Release Title'), 'Valid trimmed title must be rendered');
+      assert.equal(
+        texts.includes('   Trimmed Release Title   '),
+        false,
+        'Untrimmed title must not be rendered'
+      );
+
+      const entryTitleTexts = renderer.root.findAll(
+        (node: any) =>
+          node.type === TextStub &&
+          Array.isArray(node.props?.style) &&
+          node.props.style.some((s: any) => s?.fontSize === 17 && s?.fontWeight === '700')
+      );
+
+      assert.equal(
+        entryTitleTexts.length,
+        8,
+        'all 8 changelog cards must render an entryTitle node'
+      );
+      assert.ok(
+        entryTitleTexts.some((t: any) => t.props.children === 'Trimmed Release Title'),
+        'valid title must be present and trimmed'
+      );
+      assert.equal(
+        entryTitleTexts.filter((t: any) => t.props.children === '').length,
+        7,
+        'the other 7 cards with empty, whitespace, or non-string titles must render empty string'
+      );
+      for (const node of entryTitleTexts) {
+        assert.equal(typeof node.props.children, 'string');
+      }
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
