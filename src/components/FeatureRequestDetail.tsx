@@ -177,6 +177,7 @@ export function FeatureRequestDetail({
 
   const currentVoteError = getVoteError(item.id);
   const versionBadge = formatVersionLabel(item.versionLabel);
+  const formattedDate = formatDate(item.createdAt, strings.common, locale);
 
   return (
     <Modal
@@ -249,10 +250,12 @@ export function FeatureRequestDetail({
                 ? item.requesterName.trim()
                 : strings.common.anonymous}
             </Text>
-            <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
-            <Text style={[styles.dateText, { color: colors.textMuted }]}>
-              {formatDate(item.createdAt, strings.common, locale)}
-            </Text>
+            {formattedDate ? (
+              <>
+                <Text style={[styles.dot, { color: colors.textMuted }]}>•</Text>
+                <Text style={[styles.dateText, { color: colors.textMuted }]}>{formattedDate}</Text>
+              </>
+            ) : null}
           </View>
 
           {typeof item.description === 'string' && item.description.trim().length > 0 && (

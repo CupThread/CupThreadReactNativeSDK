@@ -915,3 +915,108 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestDetail: author row hides separator bullet dot and date text when createdAt is missing, empty, or invalid (#324)',
+  renderTestOptions,
+  async () => {
+    // 1. Item with empty string createdAt
+    const harness = await renderDetail(
+      makeItem({
+        id: 'fr_created_at_empty',
+        requesterName: 'Alice',
+        createdAt: '',
+      })
+    );
+
+    try {
+      const textEmpty = collectText(harness.renderer.root);
+      assert.ok(textEmpty.includes('Alice'), 'requesterName Alice must be rendered');
+      assert.ok(
+        !textEmpty.includes('•'),
+        'bullet dot must not be rendered when createdAt is empty string'
+      );
+
+      // 2. Item with undefined createdAt
+      await harness.update(
+        makeItem({
+          id: 'fr_created_at_undefined',
+          requesterName: 'Bob',
+          createdAt: undefined as any,
+        }),
+        true
+      );
+      const textUndefined = collectText(harness.renderer.root);
+      assert.ok(textUndefined.includes('Bob'), 'requesterName Bob must be rendered');
+      assert.ok(
+        !textUndefined.includes('•'),
+        'bullet dot must not be rendered when createdAt is undefined'
+      );
+
+      // 3. Item with null createdAt
+      await harness.update(
+        makeItem({
+          id: 'fr_created_at_null',
+          requesterName: 'Charlie',
+          createdAt: null as any,
+        }),
+        true
+      );
+      const textNull = collectText(harness.renderer.root);
+      assert.ok(textNull.includes('Charlie'), 'requesterName Charlie must be rendered');
+      assert.ok(!textNull.includes('•'), 'bullet dot must not be rendered when createdAt is null');
+
+      // 4. Item with whitespace-only createdAt
+      await harness.update(
+        makeItem({
+          id: 'fr_created_at_ws',
+          requesterName: 'Dave',
+          createdAt: '   \t  \n  ',
+        }),
+        true
+      );
+      const textWs = collectText(harness.renderer.root);
+      assert.ok(textWs.includes('Dave'), 'requesterName Dave must be rendered');
+      assert.ok(
+        !textWs.includes('•'),
+        'bullet dot must not be rendered when createdAt is whitespace-only'
+      );
+
+      // 5. Item with non-string createdAt
+      await harness.update(
+        makeItem({
+          id: 'fr_created_at_non_string',
+          requesterName: 'Eve',
+          createdAt: 123456 as any,
+        }),
+        true
+      );
+      const textNonString = collectText(harness.renderer.root);
+      assert.ok(textNonString.includes('Eve'), 'requesterName Eve must be rendered');
+      assert.ok(
+        !textNonString.includes('•'),
+        'bullet dot must not be rendered when createdAt is non-string'
+      );
+
+      // 6. Item with valid createdAt ISO timestamp
+      await harness.update(
+        makeItem({
+          id: 'fr_created_at_valid',
+          requesterName: 'Grace',
+          createdAt: '2026-08-10T14:00:00.000Z',
+        }),
+        true
+      );
+      const textValid = collectText(harness.renderer.root);
+      assert.ok(textValid.includes('Grace'), 'requesterName Grace must be rendered');
+      assert.ok(textValid.includes('•'), 'bullet dot must be rendered when createdAt is valid');
+      assert.ok(
+        textValid.includes('Aug 10'),
+        'formatted date must be rendered when createdAt is valid'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
