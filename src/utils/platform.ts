@@ -54,11 +54,17 @@ export function getRuntimePlatform(): FeedbackPlatform {
   return 'universal';
 }
 
+/**
+ * Detects whether the current runtime environment is development mode.
+ * Checks `__DEV__` global first, falling back to `process.env.NODE_ENV` when defined.
+ */
 function isDev(): boolean {
   if (typeof (globalThis as any).__DEV__ !== 'undefined') {
     return Boolean((globalThis as any).__DEV__);
   }
-  return process.env.NODE_ENV !== 'production';
+  return (
+    typeof process !== 'undefined' && Boolean(process.env) && process.env.NODE_ENV !== 'production'
+  );
 }
 
 /**
