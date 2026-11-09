@@ -991,3 +991,87 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen: distinct key namespaces prevent collision between explicit IDs and index fallbacks',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_key_collision_guard',
+        displayName: 'Key Collision Guard Dev',
+        avatarUrl: null,
+        bio: null,
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: [
+        {
+          id: '1',
+          name: 'App With Explicit ID 1',
+          description: null,
+        },
+        {
+          id: '' as any,
+          name: 'App At Index 1 Without ID',
+          description: null,
+        },
+        {
+          id: 'idx-1',
+          name: 'App With Explicit ID idx-1',
+          description: null,
+        },
+      ],
+      recentComments: [
+        {
+          id: '1',
+          featureRequestId: 'fr_1',
+          featureRequestTitle: 'Feature 1',
+          appName: 'App 1',
+          content: 'First comment with ID 1',
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
+        {
+          id: '' as any,
+          featureRequestId: 'fr_2',
+          featureRequestTitle: 'Feature 2',
+          appName: 'App 2',
+          content: 'Comment at index 1 without ID',
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    pressables.length = 0;
+
+    const originalError = console.error;
+    const errors: string[] = [];
+    console.error = (...args: unknown[]) => {
+      errors.push(args.map(String).join(' '));
+      originalError(...args);
+    };
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const duplicateKeyWarnings = errors.filter((msg) =>
+        msg.includes('Encountered two children with the same key')
+      );
+      assert.equal(
+        duplicateKeyWarnings.length,
+        0,
+        `Expected no duplicate key warnings, but saw: ${duplicateKeyWarnings.join('; ')}`
+      );
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(texts.includes('App With Explicit ID 1'));
+      assert.ok(texts.includes('App At Index 1 Without ID'));
+      assert.ok(texts.includes('App With Explicit ID idx-1'));
+
+      renderer.unmount();
+    } finally {
+      console.error = originalError;
+      fetchMock.restore();
+    }
+  }
+);

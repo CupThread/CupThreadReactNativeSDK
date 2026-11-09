@@ -167,7 +167,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
               </Text>
               {data.publicApps.map((app, index) => (
                 <View
-                  key={app?.id || `app-${index}`}
+                  key={app?.id ? `app-id-${app.id}` : `app-idx-${index}`}
                   style={[
                     styles.appCard,
                     { backgroundColor: colors.card, borderColor: colors.cardBorder },
@@ -220,7 +220,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
 
                 return (
                   <View
-                    key={comment?.id || `comment-${index}`}
+                    key={comment?.id ? `comment-id-${comment.id}` : `comment-idx-${index}`}
                     style={[
                       styles.commentCard,
                       { backgroundColor: colors.card, borderColor: colors.cardBorder },
