@@ -47,6 +47,10 @@ export function VoteButton({ voteCount, hasVoted, onPress, disabled, error }: Vo
   const strings = useCupThreadStrings();
 
   const hasError = Boolean(error);
+  const safeVoteCount =
+    typeof voteCount === 'number' && Number.isFinite(voteCount) && voteCount >= 0
+      ? Math.floor(voteCount)
+      : 0;
 
   return (
     <TouchableOpacity
@@ -99,7 +103,7 @@ export function VoteButton({ voteCount, hasVoted, onPress, disabled, error }: Vo
           },
         ]}
       >
-        {voteCount}
+        {safeVoteCount}
       </Text>
     </TouchableOpacity>
   );
