@@ -976,6 +976,12 @@ test('fetchFeatureRequests URL hygiene: token is omitted from query string and s
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     capturedUrl = url.toString();
     capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    if (capturedUrl.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -1022,6 +1028,12 @@ test('fetchFeatureRequests transition modes: tokenTransport config and per-call 
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     capturedUrl = url.toString();
     capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    if (capturedUrl.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -1081,6 +1093,12 @@ test('fetchFeatureRequests regression guard: query parameters (appKey, limit, of
 
   globalThis.fetch = (async (url: string | URL | Request) => {
     capturedUrl = url.toString();
+    if (capturedUrl.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -1121,6 +1139,12 @@ test('fetchFeatureRequests: absent or empty userToken does not serialize literal
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     capturedUrl = url.toString();
     capturedHeaders = (init?.headers || {}) as Record<string, string>;
+    if (capturedUrl.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -1163,6 +1187,12 @@ test('fetchFeatureRequests & request normalize whitespace userToken (#214)', asy
     headersBag.forEach((value: string, key: string) => {
       capturedHeaders[key.toLowerCase()] = value;
     });
+    if (capturedUrl.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     return new Response(JSON.stringify({ requests: [], total: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

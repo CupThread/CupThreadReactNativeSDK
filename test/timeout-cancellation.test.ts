@@ -576,6 +576,18 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
+    if (s.includes('/changelog/subscribe')) {
+      return new Response(JSON.stringify({ subscribed: true, alreadySubscribed: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (s.includes('/changelog/unsubscribe') || s.includes('/digest/unsubscribe')) {
+      return new Response(JSON.stringify({ unsubscribed: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     if (s.includes('/changelog')) {
       return new Response(
         JSON.stringify({

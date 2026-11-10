@@ -222,6 +222,26 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
+    if (url.toString().endsWith('/changelog/subscribe')) {
+      return new Response(
+        JSON.stringify({
+          subscribed: true,
+          alreadySubscribed: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (
+      url.toString().endsWith('/changelog/unsubscribe') ||
+      url.toString().endsWith('/digest/unsubscribe')
+    ) {
+      return new Response(
+        JSON.stringify({
+          unsubscribed: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -360,6 +380,26 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
         JSON.stringify({
           voted: true,
           voteCount: 1,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (url.toString().endsWith('/changelog/subscribe')) {
+      return new Response(
+        JSON.stringify({
+          subscribed: true,
+          alreadySubscribed: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (
+      url.toString().endsWith('/changelog/unsubscribe') ||
+      url.toString().endsWith('/digest/unsubscribe')
+    ) {
+      return new Response(
+        JSON.stringify({
+          unsubscribed: true,
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
@@ -3217,6 +3257,144 @@ test('FeedbackClient.castVote and removeVote reject malformed responses with Inv
     const removeResult = await client.removeVote('fr_123', 'usr_test_1');
     assert.equal(removeResult.voted, false);
     assert.equal(removeResult.voteCount, 14);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('subscribeToChangelog, unsubscribeFromChangelog, and unsubscribeFromDigest validate response against null, array, or missing boolean fields (#394)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies = [
+    null,
+    undefined,
+    'ok',
+    123,
+    true,
+    false,
+    [],
+    ['item'],
+    {},
+    { other: 'value' },
+  ];
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_sub_unsub_malformed_test',
+    });
+
+    // 1. subscribeToChangelog rejects on malformed response payloads
+    for (const body of [
+      ...malformedBodies,
+      { subscribed: 'true' },
+      { subscribed: null },
+      { subscribed: undefined },
+      { subscribed: 1 },
+      { alreadySubscribed: true }, // missing subscribed
+    ]) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      await assert.rejects(
+        () => client.subscribeToChangelog('user@example.com', 'usr_tok'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Changelog subscription returned no valid subscription confirmation/
+          );
+          return true;
+        }
+      );
+    }
+
+    // 2. unsubscribeFromChangelog rejects on malformed response payloads
+    for (const body of [
+      ...malformedBodies,
+      { unsubscribed: 'true' },
+      { unsubscribed: null },
+      { unsubscribed: undefined },
+      { unsubscribed: 1 },
+    ]) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      await assert.rejects(
+        () => client.unsubscribeFromChangelog('unsub.token.value'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Changelog unsubscribe returned no valid unsubscribe confirmation/
+          );
+          return true;
+        }
+      );
+    }
+
+    // 3. unsubscribeFromDigest rejects on malformed response payloads
+    for (const body of [
+      ...malformedBodies,
+      { unsubscribed: 'true' },
+      { unsubscribed: null },
+      { unsubscribed: undefined },
+      { unsubscribed: 1 },
+    ]) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      await assert.rejects(
+        () => client.unsubscribeFromDigest('digest.token.value'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Digest unsubscribe returned no valid unsubscribe confirmation/
+          );
+          return true;
+        }
+      );
+    }
+
+    // 4. Resolves successfully with valid payloads
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          subscribed: true,
+          alreadySubscribed: false,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as any;
+    const subRes = await client.subscribeToChangelog('user@example.com', 'usr_tok');
+    assert.equal(subRes.subscribed, true);
+    assert.equal(subRes.alreadySubscribed, false);
+
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          unsubscribed: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as any;
+    const unsubRes = await client.unsubscribeFromChangelog('unsub.token.value');
+    assert.equal(unsubRes.unsubscribed, true);
+
+    const digestRes = await client.unsubscribeFromDigest('digest.token.value');
+    assert.equal(digestRes.unsubscribed, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

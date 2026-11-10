@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
+  InvalidResponseException,
   MissingUnsubscribeTokenException,
   UnexpectedStatusException,
 } from '../src/client/FeedbackException';
@@ -215,4 +216,36 @@ test('unsubscribeFromChangelog forwards the caller abort signal', async () => {
 test('unsubscribeFromChangelog accepts a bare AbortSignal as its second argument', async () => {
   const { sawAbort } = await abortInFlight((controller) => controller.signal);
   assert.equal(sawAbort, true, 'aborting the caller must reach the in-flight request');
+});
+
+test('unsubscribeFromChangelog rejects with InvalidResponseException on invalid response payloads (#394)', async () => {
+  const invalidBodies = [
+    null,
+    [],
+    {},
+    'true',
+    1,
+    { unsubscribed: 'true' },
+    { unsubscribed: null },
+    { unsubscribed: undefined },
+  ];
+
+  for (const body of invalidBodies) {
+    const fetchMock = installFetch(200, body);
+    try {
+      await assert.rejects(
+        makeClient().unsubscribeFromChangelog('signed.unsub.token'),
+        (err: any) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            err.message,
+            /Changelog unsubscribe returned no valid unsubscribe confirmation/
+          );
+          return true;
+        }
+      );
+    } finally {
+      fetchMock.restore();
+    }
+  }
 });
