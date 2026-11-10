@@ -2598,6 +2598,7 @@ test('useFeatureRequests gracefully handles null, non-array, and malformed respo
   const harnessNull = renderTestHook(() =>
     useFeatureRequests({
       client: nullClient,
+      userToken: 'test_token',
       pageSize: 20,
     })
   );
@@ -2623,6 +2624,7 @@ test('useFeatureRequests gracefully handles null, non-array, and malformed respo
   const harnessNonArray = renderTestHook(() =>
     useFeatureRequests({
       client: nonArrayClient,
+      userToken: 'test_token',
       pageSize: 20,
     })
   );
@@ -2656,6 +2658,7 @@ test('useFeatureRequests gracefully handles null, non-array, and malformed respo
   const harnessPaging = renderTestHook(() =>
     useFeatureRequests({
       client: pagingClient,
+      userToken: 'test_token',
       pageSize: 1,
     })
   );
