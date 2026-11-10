@@ -1607,10 +1607,19 @@ export class FeedbackClient {
 
     const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
     const requests = Array.isArray(safeRes?.requests)
-      ? safeRes.requests.filter(
-          (item): item is FeatureRequestItem =>
-            item !== null && typeof item === 'object' && !Array.isArray(item)
-        )
+      ? safeRes.requests
+          .filter(
+            (item): item is FeatureRequestItem =>
+              item !== null &&
+              typeof item === 'object' &&
+              !Array.isArray(item) &&
+              typeof item.id === 'string' &&
+              item.id.trim().length > 0
+          )
+          .map((item) => ({
+            ...item,
+            id: item.id.trim(),
+          }))
       : [];
     const total =
       typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0

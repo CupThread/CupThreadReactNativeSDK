@@ -2649,6 +2649,51 @@ test('FeedbackClient.fetchFeatureRequests defensively normalizes nullish, empty,
   }
 });
 
+test('FeedbackClient.fetchFeatureRequests filters out items with missing, empty, or non-string IDs and trims whitespace (#405)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_filter_fr_ids',
+    });
+
+    mockPayload = {
+      requests: [
+        { id: '', title: 'Empty string id' },
+        { id: '   \t\n  ', title: 'Whitespace only id' },
+        { id: null, title: 'Null id' },
+        { id: undefined, title: 'Undefined id' },
+        { id: 123, title: 'Numeric id' },
+        { id: [], title: 'Array id' },
+        { id: {}, title: 'Object id' },
+        { title: 'Missing id property' },
+        { id: '  fr_padded_1  ', title: 'Padded ID 1' },
+        { id: 'fr_clean_2', title: 'Clean ID 2' },
+      ],
+      total: 10,
+    };
+
+    const res = await client.fetchFeatureRequests();
+    assert.equal(res.requests.length, 2);
+    assert.equal(res.requests[0].id, 'fr_padded_1');
+    assert.equal(res.requests[0].title, 'Padded ID 1');
+    assert.equal(res.requests[1].id, 'fr_clean_2');
+    assert.equal(res.requests[1].title, 'Clean ID 2');
+    assert.equal(res.total, 10);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fetchColumns and fetchVersions safely handle null, non-object, and direct array responses (#375)', async () => {
   const originalFetch = globalThis.fetch;
   let mockPayload: any = null;
