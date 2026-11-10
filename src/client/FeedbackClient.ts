@@ -37,6 +37,7 @@ import {
   AuthenticationRequiredException,
   InactiveSubscriptionException,
   InsecureBaseUrlException,
+  InvalidConfigPayloadException,
   InvalidResponseException,
   MissingUnsubscribeTokenException,
   PaymentRequiredException,
@@ -1361,7 +1362,9 @@ export class FeedbackClient {
       timeoutMs: extractTimeoutMs(options),
     });
     if (!res || typeof res !== 'object' || Array.isArray(res)) {
-      throw new InvalidResponseException('Server returned an invalid app config response payload');
+      throw new InvalidConfigPayloadException(
+        'Server returned an invalid app config response payload'
+      );
     }
     return res;
   }
@@ -2268,7 +2271,7 @@ export class FeedbackClient {
     try {
       config = await this.fetchAppConfig({ signal, timeoutMs });
     } catch (err: unknown) {
-      if (err instanceof InvalidResponseException) {
+      if (err instanceof InvalidConfigPayloadException) {
         return null;
       }
       throw err;

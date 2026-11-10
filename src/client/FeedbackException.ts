@@ -154,6 +154,21 @@ export class InvalidResponseException extends FeedbackException {
 }
 
 /**
+ * Thrown when the server returns an invalid app config payload (null, primitive, or array).
+ */
+export class InvalidConfigPayloadException extends InvalidResponseException {
+  readonly code = 'invalid_config_payload';
+
+  constructor(
+    message: string = 'Server returned an invalid app config response payload',
+    cause?: unknown
+  ) {
+    super(message, cause);
+    this.name = 'InvalidConfigPayloadException';
+  }
+}
+
+/**
  * Thrown when an attachment upload succeeds at HTTP level but returns unreadable payload.
  */
 export class UnreadableUploadResponseException extends FeedbackException {

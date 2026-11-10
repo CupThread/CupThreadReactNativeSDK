@@ -384,34 +384,39 @@ test(
 );
 
 test(
-  'CupThreadProvider: treats null or array config payload as error and surfaces InvalidResponseException (#389)',
+  'CupThreadProvider: treats null and array config payloads as errors and surfaces InvalidResponseException (#389)',
   renderTestOptions,
   async () => {
-    globalThis.fetch = (async () => {
-      return new Response(JSON.stringify(null), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
+    for (const invalidPayload of [null, []]) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(invalidPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      let latestContext: ProbeContext | undefined;
+      let renderer: TestRenderer.ReactTestRenderer;
+
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={makeClient()} _retryDelayMs={5}>
+            <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+          </CupThreadProvider>
+        );
       });
-    }) as any;
+      await flush(16);
 
-    let latestContext: ProbeContext | undefined;
-    let renderer: TestRenderer.ReactTestRenderer;
-
-    await act(async () => {
-      renderer = TestRenderer.create(
-        <CupThreadProvider client={makeClient()} _retryDelayMs={5}>
-          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
-        </CupThreadProvider>
+      assert.ok(latestContext);
+      assert.equal(latestContext.isLoadingConfig, false);
+      assert.equal(latestContext.appConfig, null);
+      assert.ok(
+        latestContext.configError !== null,
+        `configError must be set on ${JSON.stringify(invalidPayload)} response body`
       );
-    });
-    await flush(16);
+      assert.match(latestContext.configError.name, /Invalid(Response|ConfigPayload)Exception/);
 
-    assert.ok(latestContext);
-    assert.equal(latestContext.isLoadingConfig, false);
-    assert.equal(latestContext.appConfig, null);
-    assert.ok(latestContext.configError !== null, 'configError must be set on null response body');
-    assert.match(latestContext.configError.name, /InvalidResponseException/);
-
-    renderer!.unmount();
+      renderer!.unmount();
+    }
   }
 );

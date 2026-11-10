@@ -4,6 +4,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import { UserTokenStore } from '../src/client/UserTokenStore';
 import {
   InsecureBaseUrlException,
+  InvalidConfigPayloadException,
   InvalidResponseException,
   UnreadableUploadResponseException,
 } from '../src/client/FeedbackException';
@@ -2708,6 +2709,23 @@ test('prepareChangelogOverlay safely handles null, non-object, and missing sdk r
     const resValidSdk = await client.prepareChangelogOverlay();
     assert.ok(resValidSdk);
     assert.equal(resValidSdk.appearance.theme, 'dark');
+
+    // 5. Network transport failures propagate as InvalidResponseException instead of swallowing as null
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as any;
+
+    await assert.rejects(
+      () => client.prepareChangelogOverlay(),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidResponseException);
+        assert.ok(
+          !(err instanceof InvalidConfigPayloadException),
+          'network transport failure must not be an InvalidConfigPayloadException'
+        );
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
