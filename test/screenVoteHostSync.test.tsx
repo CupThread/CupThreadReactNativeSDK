@@ -640,3 +640,158 @@ test(
     }
   }
 );
+
+test(
+  'detail vote with NaN initial count synchronizes finite count to host on optimistic update and server settlement (#362)',
+  renderTestOptions,
+  async () => {
+    const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+    const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
+    const { VoteButton } = await import('../src/components/VoteButton');
+
+    flatListProps.length = 0;
+    const routes = {
+      page0: ok({
+        requests: [makeItem({ id: 'fr_nan_success', title: 'NaN success title', voteCount: NaN })],
+        total: 1,
+      }),
+    };
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_vote_sync_nan',
+    });
+    let resolveVote!: (result: VoteResult) => void;
+    client.toggleVote = () =>
+      new Promise<VoteResult>((resolve) => {
+        resolveVote = resolve;
+      });
+
+    const restoreFetch = installFetch(routes);
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_nan',
+          children: React.createElement(FeatureRequestsScreen),
+        })
+      );
+    });
+
+    try {
+      await waitForText(renderer, (text) => text === 'NaN success title');
+
+      const card = findCard(renderer, 'NaN success title');
+      assert.ok(card, 'row must open the detail view');
+      await act(async () => {
+        card.props.onPress();
+      });
+      await settle();
+
+      const voteButtons = renderer.root.findAllByType(VoteButton as any);
+      const detailVoteButton = voteButtons[voteButtons.length - 1];
+      await act(async () => {
+        detailVoteButton.props.onPress();
+      });
+      await settle();
+
+      // Optimistic update on host row must be a finite number (1), not NaN
+      const optimisticRow = flatListProps[flatListProps.length - 1].data[0];
+      assert.equal(Number.isFinite(optimisticRow.voteCount), true);
+      assert.equal(optimisticRow.voteCount, 1);
+      assert.equal(optimisticRow.hasVoted, true);
+
+      // Settle with server returning NaN count as well
+      await act(async () => {
+        resolveVote({ voted: true, voteCount: NaN });
+      });
+      await settle();
+
+      const settledRow = flatListProps[flatListProps.length - 1].data[0];
+      assert.equal(Number.isFinite(settledRow.voteCount), true);
+      assert.equal(settledRow.voteCount, 1);
+      assert.equal(settledRow.hasVoted, true);
+    } finally {
+      restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'detail vote with NaN initial count restores finite clamped count to host on rejection (#362)',
+  renderTestOptions,
+  async () => {
+    const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+    const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
+    const { VoteButton } = await import('../src/components/VoteButton');
+
+    flatListProps.length = 0;
+    const routes = {
+      page0: ok({
+        requests: [makeItem({ id: 'fr_nan_fail', title: 'NaN failure title', voteCount: NaN })],
+        total: 1,
+      }),
+    };
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_vote_sync_nan_fail',
+    });
+    let rejectVote!: (err: Error) => void;
+    client.toggleVote = () =>
+      new Promise<VoteResult>((_, reject) => {
+        rejectVote = reject;
+      });
+
+    const restoreFetch = installFetch(routes);
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_nan_fail',
+          children: React.createElement(FeatureRequestsScreen),
+        })
+      );
+    });
+
+    try {
+      await waitForText(renderer, (text) => text === 'NaN failure title');
+
+      const card = findCard(renderer, 'NaN failure title');
+      assert.ok(card, 'row must open the detail view');
+      await act(async () => {
+        card.props.onPress();
+      });
+      await settle();
+
+      const voteButtons = renderer.root.findAllByType(VoteButton as any);
+      const detailVoteButton = voteButtons[voteButtons.length - 1];
+      await act(async () => {
+        detailVoteButton.props.onPress();
+      });
+      await settle();
+
+      // Optimistic update
+      const optimisticRow = flatListProps[flatListProps.length - 1].data[0];
+      assert.equal(Number.isFinite(optimisticRow.voteCount), true);
+      assert.equal(optimisticRow.voteCount, 1);
+
+      // Rejection / failure
+      await act(async () => {
+        rejectVote(new Error('Network error'));
+      });
+      await settle();
+
+      const rolledBackRow = flatListProps[flatListProps.length - 1].data[0];
+      assert.equal(Number.isFinite(rolledBackRow.voteCount), true);
+      assert.equal(rolledBackRow.voteCount, 0);
+      assert.equal(rolledBackRow.hasVoted, false);
+    } finally {
+      restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
