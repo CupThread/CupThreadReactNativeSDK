@@ -1185,3 +1185,104 @@ test('UserTokenStore: parseSeenChangelogs trims JSON array entries and filters b
     '4.0.0',
   ]);
 });
+
+test('UserTokenStore.isDevMode() falls back to false in runtimes where __DEV__ and process are undefined (#346)', () => {
+  const originalDev = (globalThis as any).__DEV__;
+  const originalEnv = process.env.NODE_ENV;
+  const originalProcess = (globalThis as any).process;
+
+  try {
+    // 1. Explicit __DEV__ takes highest priority
+    (globalThis as any).__DEV__ = true;
+    assert.equal(UserTokenStore.isDevMode(), true);
+
+    (globalThis as any).__DEV__ = false;
+    assert.equal(UserTokenStore.isDevMode(), false);
+
+    // 2. Fall back to process.env.NODE_ENV when __DEV__ is undefined
+    delete (globalThis as any).__DEV__;
+
+    process.env.NODE_ENV = 'production';
+    assert.equal(UserTokenStore.isDevMode(), false);
+
+    process.env.NODE_ENV = 'development';
+    assert.equal(UserTokenStore.isDevMode(), true);
+
+    process.env.NODE_ENV = 'test';
+    assert.equal(UserTokenStore.isDevMode(), true);
+
+    // 3. Fall back safely to false when process and __DEV__ are undefined (browser ESM / worker)
+    try {
+      (globalThis as any).process = undefined;
+      assert.equal(UserTokenStore.isDevMode(), false);
+    } finally {
+      (globalThis as any).process = originalProcess;
+    }
+  } finally {
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    } else {
+      delete (globalThis as any).__DEV__;
+    }
+    if (originalEnv !== undefined) {
+      process.env.NODE_ENV = originalEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});
+
+test('UserTokenStore.warnUnpersistedChangelogSeen suppresses warning when process and __DEV__ are undefined or production (#346)', () => {
+  const originalDev = (globalThis as any).__DEV__;
+  const originalEnv = process.env.NODE_ENV;
+  const originalProcess = (globalThis as any).process;
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+
+  try {
+    const store = new UserTokenStore(null, { appKey: 'app_warn_test' });
+
+    // In production mode, no warning is emitted
+    delete (globalThis as any).__DEV__;
+    process.env.NODE_ENV = 'production';
+    store.warnUnpersistedChangelogSeen();
+    assert.equal(warnings.length, 0, 'must not warn in production');
+
+    // In browser/worker runtime without process or __DEV__, no warning is emitted
+    try {
+      (globalThis as any).process = undefined;
+      store.resetWarningForTests();
+      store.warnUnpersistedChangelogSeen();
+      assert.equal(warnings.length, 0, 'must not warn when process and __DEV__ are undefined');
+    } finally {
+      (globalThis as any).process = originalProcess;
+    }
+
+    // In development mode, warning is emitted once
+    (globalThis as any).__DEV__ = true;
+    store.resetWarningForTests();
+    store.warnUnpersistedChangelogSeen();
+    assert.equal(warnings.length, 1, 'must warn in development mode');
+    assert.ok(warnings[0].includes('Changelog seen-status will not survive app restarts'));
+
+    // Second call is deduplicated
+    store.warnUnpersistedChangelogSeen();
+    assert.equal(warnings.length, 1, 'warning must be deduplicated');
+  } finally {
+    console.warn = originalWarn;
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    } else {
+      delete (globalThis as any).__DEV__;
+    }
+    if (originalEnv !== undefined) {
+      process.env.NODE_ENV = originalEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});
