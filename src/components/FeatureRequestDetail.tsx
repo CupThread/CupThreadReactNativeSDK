@@ -42,7 +42,7 @@ export interface FeatureRequestDetailProps {
   /**
    * The feature request item data model to render.
    */
-  item: FeatureRequestItem;
+  item?: FeatureRequestItem | null;
 
   /**
    * Whether the full-screen modal sheet is visible.
@@ -104,7 +104,16 @@ export function FeatureRequestDetail({
   const strings = useCupThreadStrings();
   const locale = useCupThreadLocale();
 
-  const [item, setItem] = useState<FeatureRequestItem>(initialItem);
+  const safeItem =
+    initialItem &&
+    typeof initialItem === 'object' &&
+    typeof initialItem.id === 'string' &&
+    initialItem.id.trim().length > 0
+      ? initialItem
+      : null;
+  const safeItemId = safeItem ? safeItem.id.trim() : '';
+
+  const [item, setItem] = useState<FeatureRequestItem | null>(safeItem);
 
   // The documented host pattern keeps this component mounted and swaps the
   // `item` prop (<Modal> hides children without unmounting them), so internal
@@ -112,10 +121,10 @@ export function FeatureRequestDetail({
   // adjustment, same semantics as key={item.id}: a different id resets the
   // whole screen, while a same-id prop refresh (fresh object from host data)
   // keeps the current state, including optimistic vote changes.
-  const lastInitialIdRef = useRef(initialItem.id);
-  if (lastInitialIdRef.current !== initialItem.id) {
-    lastInitialIdRef.current = initialItem.id;
-    setItem(initialItem);
+  const [lastInitialId, setLastInitialId] = useState<string>(safeItemId);
+  if (lastInitialId !== safeItemId) {
+    setLastInitialId(safeItemId);
+    setItem(safeItem);
   }
 
   // Latest snapshot per request id. A vote settlement can arrive after this
@@ -131,7 +140,9 @@ export function FeatureRequestDetail({
   }, [onVoteChange]);
 
   useEffect(() => {
-    knownItemsRef.current.set(item.id, item);
+    if (item && typeof item.id === 'string' && item.id.trim().length > 0) {
+      knownItemsRef.current.set(item.id, item);
+    }
   }, [item]);
 
   useEffect(() => {
@@ -161,7 +172,7 @@ export function FeatureRequestDetail({
     // settlement and this update: local state must keep the newly shown item
     // untouched even though the host was just notified for the old one.
     if (mountedRef.current) {
-      setItem((prev) => (prev.id === itemId ? transform(prev) : prev));
+      setItem((prev) => (prev && prev.id === itemId ? transform(prev) : prev));
     }
   }, []);
   const {
@@ -173,7 +184,11 @@ export function FeatureRequestDetail({
 
   useEffect(() => {
     clearVoteError();
-  }, [initialItem.id, clearVoteError]);
+  }, [safeItemId, clearVoteError]);
+
+  if (!visible || !safeItem || !item) {
+    return null;
+  }
 
   const currentVoteError = getVoteError(item.id);
   const versionBadge = formatVersionLabel(item.versionLabel);
