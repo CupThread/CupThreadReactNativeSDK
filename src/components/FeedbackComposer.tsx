@@ -657,7 +657,7 @@ export function FeedbackComposer({
                 },
               ]}
               accessibilityRole="button"
-              accessibilityState={{ disabled: isUploadingAttachment }}
+              accessibilityState={{ disabled: Boolean(isUploadingAttachment || isSubmitting) }}
             >
               {isUploadingAttachment ? (
                 <View style={styles.uploadingRow}>
@@ -715,6 +715,7 @@ export function FeedbackComposer({
                       ? `${strings.feedbackComposer.removeAttachment}: ${att.filename}`
                       : strings.feedbackComposer.removeAttachment
                   }
+                  accessibilityState={{ disabled: Boolean(isSubmitting) }}
                 >
                   <Text style={{ color: colors.textMuted, fontSize: 16 }}>✕</Text>
                 </TouchableOpacity>
