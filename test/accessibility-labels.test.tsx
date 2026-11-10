@@ -98,6 +98,7 @@ const { ErrorState } = await import('../src/components/ErrorState');
 const { MarkdownText } = await import('../src/components/MarkdownText');
 const { CommentsSection } = await import('../src/components/CommentsSection');
 const { VoteButton } = await import('../src/components/VoteButton');
+const { enStrings } = await import('../src/i18n');
 
 const renderTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -451,6 +452,14 @@ test(
         assert.equal(p.props.accessibilityRole, 'button');
       }
 
+      const removeButtons = crossButtons.filter(
+        (p) => p.props.accessibilityLabel && p.props.accessibilityLabel !== 'Close'
+      );
+      assert.ok(removeButtons.length > 0);
+      for (const p of removeButtons) {
+        assert.deepEqual(p.props.accessibilityState, { disabled: false });
+      }
+
       const submit = findPressable('Submit Feedback');
       assert.equal(submit.props.accessibilityRole, 'button');
       assert.equal(submit.props.accessibilityLabel, 'Submit Feedback');
@@ -689,6 +698,140 @@ test(
       globalThis.fetch = originalFetch;
       composerRenderer?.unmount();
       sheetRenderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeedbackComposer: attachment pick and remove buttons reflect accessibilityState.disabled during submission and upload (#258)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    modalProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let resolveFeedback!: (res: Response) => void;
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          sdk: { features: { feedback: true } },
+        });
+      }
+      if (target.includes('/api/v1/feedback')) {
+        return new Promise<Response>((resolve) => {
+          resolveFeedback = resolve;
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let resolvePick: (value: any) => void = () => {};
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(FeedbackComposer, {
+          isModal: false,
+          initialDraft: {
+            title: 'Bug report',
+            description: 'Something crashed',
+            attachments: ATTACHMENTS,
+          },
+          onPickAttachment: () =>
+            new Promise((resolve) => {
+              resolvePick = resolve;
+            }),
+        })
+      );
+
+      // 1. Idle state:
+      // Add attachment button is enabled
+      const idleAddBtn = pressables.find(
+        (p) => p.text === `+ ${enStrings.feedbackComposer.addAttachment}`
+      );
+      assert.ok(idleAddBtn, 'Add attachment button must be rendered');
+      assert.deepEqual(idleAddBtn.props.accessibilityState, { disabled: false });
+
+      // Remove attachment buttons are enabled
+      const idleRemoveBtns = pressables.filter(
+        (p) =>
+          p.text === '✕' &&
+          p.props.accessibilityLabel &&
+          p.props.accessibilityLabel.startsWith(enStrings.feedbackComposer.removeAttachment)
+      );
+      assert.ok(idleRemoveBtns.length > 0, 'Remove buttons rendered in idle state');
+      for (const btn of idleRemoveBtns) {
+        assert.deepEqual(btn.props.accessibilityState, { disabled: false });
+      }
+
+      // 2. In-flight upload state:
+      await act(async () => {
+        idleAddBtn.props.onPress();
+      });
+      await flush(2);
+
+      const uploadingAddBtns = pressables.filter(
+        (p) => p.text === enStrings.feedbackComposer.uploadingAttachment
+      );
+      assert.ok(uploadingAddBtns.length > 0, 'Uploading button must be rendered');
+      const latestUploadingAddBtn = uploadingAddBtns[uploadingAddBtns.length - 1];
+      assert.deepEqual(latestUploadingAddBtn.props.accessibilityState, { disabled: true });
+
+      // Settle upload (return null so no new file is added)
+      await act(async () => {
+        resolvePick(null);
+      });
+      await flush(2);
+
+      // 3. In-flight submission state:
+      const submitBtn = findPressable(enStrings.feedbackComposer.submitButton);
+      assert.ok(submitBtn, 'Submit button must be rendered');
+
+      await act(async () => {
+        submitBtn.props.onPress();
+      });
+      await flush(2);
+
+      // Add attachment button disabled during submission
+      const submittingAddBtns = pressables.filter(
+        (p) => p.text === `+ ${enStrings.feedbackComposer.addAttachment}`
+      );
+      assert.ok(submittingAddBtns.length > 0, 'Add attachment button rendered during submit');
+      const latestSubmittingAddBtn = submittingAddBtns[submittingAddBtns.length - 1];
+      assert.deepEqual(latestSubmittingAddBtn.props.accessibilityState, { disabled: true });
+
+      // Remove attachment buttons disabled during submission
+      const submittingRemoveBtns = pressables.filter(
+        (p) =>
+          p.text === '✕' &&
+          p.props.accessibilityLabel &&
+          p.props.accessibilityLabel.startsWith(enStrings.feedbackComposer.removeAttachment)
+      );
+      const latestNamedRemove = submittingRemoveBtns
+        .filter(
+          (p) =>
+            p.props.accessibilityLabel ===
+            `${enStrings.feedbackComposer.removeAttachment}: screenshot.png`
+        )
+        .pop();
+      const latestUnnamedRemove = submittingRemoveBtns
+        .filter((p) => p.props.accessibilityLabel === enStrings.feedbackComposer.removeAttachment)
+        .pop();
+      assert.ok(latestNamedRemove, 'Named remove button rendered during submit');
+      assert.deepEqual(latestNamedRemove.props.accessibilityState, { disabled: true });
+      assert.ok(latestUnnamedRemove, 'Unnamed remove button rendered during submit');
+      assert.deepEqual(latestUnnamedRemove.props.accessibilityState, { disabled: true });
+
+      // Settle feedback submission
+      await act(async () => {
+        resolveFeedback(jsonResponse({ success: true }));
+      });
+      await flush(4);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
     }
   }
 );
