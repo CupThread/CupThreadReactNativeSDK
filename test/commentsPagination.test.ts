@@ -272,6 +272,40 @@ test('listComments safely handles malformed comments, invalid total, and whitesp
   }
 });
 
+test('listComments filters comment items with empty/invalid IDs and trims padded IDs (#406)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      'cur_start',
+      {
+        status: 200,
+        body: {
+          comments: [
+            { id: '', body: 'Empty' },
+            { id: '   ', body: 'Spaces' },
+            { id: null, body: 'Null' },
+            { id: 456, body: 'Number' },
+            { id: '  c_trimmed_page  ', body: 'Trimmed Page' },
+          ],
+          total: 5,
+          hasMore: true,
+          nextCursor: 'cur_page_2',
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installCommentsFetch(pages);
+  try {
+    const result = await makeClient().listComments('fr_1', { cursor: 'cur_start' });
+    assert.equal(result.comments.length, 1);
+    assert.equal(result.comments[0].id, 'c_trimmed_page');
+    assert.equal(result.comments[0].body, 'Trimmed Page');
+    assert.equal(result.hasMore, true);
+    assert.equal(result.nextCursor, 'cur_page_2');
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Client: fetchComments auto-pagination (deprecated wrapper)
 // ---------------------------------------------------------------------------
