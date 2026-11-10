@@ -43,7 +43,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
   const [reloadKey, setReloadKey] = useState<number>(0);
 
   const profile =
-    data?.profile && typeof data.profile === 'object'
+    data?.profile && typeof data.profile === 'object' && !Array.isArray(data.profile)
       ? (data.profile as PublicUserProfileResult['profile'])
       : null;
 

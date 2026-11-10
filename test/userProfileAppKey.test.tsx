@@ -1133,6 +1133,61 @@ test(
 );
 
 test(
+  'UserProfileScreen renders not-found copy when profile is an array (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: [] as any,
+      publicApps: [],
+      recentComments: [],
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'array-valued profile must render localized not-found copy'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen renders not-found copy when profile is omitted or undefined in successful response (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      publicApps: [],
+      recentComments: [],
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'omitted profile must render localized not-found copy'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
   'UserProfileScreen renders safely when publicApps and recentComments are null or malformed non-arrays (#361)',
   screenTestOptions,
   async () => {
