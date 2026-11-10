@@ -859,7 +859,12 @@ test('FeedbackClient resolveTurnstileToken defensively handles non-string explic
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedBodies.push(init?.body ? JSON.parse(String(init.body)) : undefined);
     return new Response(
-      JSON.stringify({ featureRequestId: 'fr_turnstile_test', id: 'fb_1', pending: false }),
+      JSON.stringify({
+        featureRequestId: 'fr_turnstile_test',
+        submissionId: 'sub_1',
+        id: 'fb_1',
+        pending: false,
+      }),
       {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -1007,10 +1012,17 @@ test('FeedbackClient.submit trims whitespace from draft title and description in
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
-    return new Response(JSON.stringify({ feedbackId: 'fb_test_trim', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_test_trim',
+        feedbackId: 'fb_test_trim',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1040,10 +1052,17 @@ test('FeedbackClient.submit validates reporterEmail and defensively handles opti
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     networkCalls++;
     capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
-    return new Response(JSON.stringify({ feedbackId: 'fb_test_email', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_test_email',
+        feedbackId: 'fb_test_email',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1187,10 +1206,17 @@ test('FeedbackClient.submit with attachments falls back to UserTokenStore when u
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedHeaders = new Headers(init?.headers);
-    return new Response(JSON.stringify({ feedbackId: 'fb_test_store', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_test_store',
+        feedbackId: 'fb_test_store',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1230,10 +1256,17 @@ test('FeedbackClient.submit trims whitespace from userToken in X-User-Token head
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedHeaders = new Headers(init?.headers);
-    return new Response(JSON.stringify({ feedbackId: 'fb_test_padded', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_test_padded',
+        feedbackId: 'fb_test_padded',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1263,10 +1296,17 @@ test('FeedbackClient.submit without attachments omits X-User-Token header when u
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedHeaders = new Headers(init?.headers);
-    return new Response(JSON.stringify({ feedbackId: 'fb_test_empty_token', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_test_empty_token',
+        feedbackId: 'fb_test_empty_token',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1296,10 +1336,17 @@ test('FeedbackClient.submit: safely handles non-array attachments without throwi
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedBody = JSON.parse(init?.body as string);
-    return new Response(JSON.stringify({ feedbackId: 'fb_non_array_test', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_non_array_test',
+        feedbackId: 'fb_non_array_test',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1344,10 +1391,17 @@ test('FeedbackClient.submit: safely handles null/undefined/primitive elements in
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedBody = JSON.parse(init?.body as string);
-    return new Response(JSON.stringify({ feedbackId: 'fb_null_att_test', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_null_att_test',
+        feedbackId: 'fb_null_att_test',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -1383,10 +1437,17 @@ test('FeedbackClient.submit: extracts valid uploadIds from mixed attachments and
 
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     capturedBody = JSON.parse(init?.body as string);
-    return new Response(JSON.stringify({ feedbackId: 'fb_mixed_att_test', status: 'created' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        submissionId: 'sub_mixed_att_test',
+        feedbackId: 'fb_mixed_att_test',
+        status: 'created',
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }) as any;
 
   try {
@@ -2846,5 +2907,158 @@ test('FeedbackClient.submit suppresses legacy attachment warning in production (
     } else {
       delete process.env.NODE_ENV;
     }
+  }
+});
+
+test('FeedbackClient.submit rejects malformed responses with InvalidResponseException (#392)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies: unknown[] = [
+    null,
+    [],
+    ['invalid'],
+    123,
+    true,
+    'ok',
+    {},
+    { submissionId: null },
+    { submissionId: 123 },
+    { submissionId: '' },
+    { submissionId: '   ' },
+  ];
+  let next = 0;
+
+  globalThis.fetch = (async () => {
+    const item = malformedBodies[next++];
+    return new Response(JSON.stringify(item), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_malformed_test',
+    });
+
+    for (let i = 0; i < malformedBodies.length; i++) {
+      await assert.rejects(
+        () => client.submit({ title: 'Bug report', description: 'Something broke' }, 'usr_test_1'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Feedback submission returned no valid submission record/
+          );
+          return true;
+        }
+      );
+    }
+
+    // Resolves successfully with valid payload
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          submissionId: 'sub_valid_123',
+          forwardedToGithub: true,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as any;
+
+    const result = await client.submit(
+      { title: 'Bug report', description: 'Something broke' },
+      'usr_test_1'
+    );
+    assert.equal(result.submissionId, 'sub_valid_123');
+    assert.equal(result.forwardedToGithub, true);
+
+    // Also via submitFeedback alias
+    const aliasResult = await client.submitFeedback(
+      { title: 'Bug report', description: 'Something broke' },
+      'usr_test_1'
+    );
+    assert.equal(aliasResult.submissionId, 'sub_valid_123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.submitFeatureRequest rejects malformed responses with InvalidResponseException (#392)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies: unknown[] = [
+    null,
+    [],
+    ['invalid'],
+    123,
+    true,
+    'ok',
+    {},
+    { featureRequestId: 'fr_1' }, // missing pending
+    { featureRequestId: 'fr_1', pending: 'false' }, // non-boolean pending
+    { featureRequestId: 'fr_1', pending: null }, // non-boolean pending
+    { featureRequestId: '', pending: false }, // empty featureRequestId
+    { featureRequestId: '   ', pending: true }, // whitespace featureRequestId
+    { featureRequestId: 123, pending: false }, // non-string featureRequestId
+  ];
+  let next = 0;
+
+  globalThis.fetch = (async () => {
+    const item = malformedBodies[next++];
+    return new Response(JSON.stringify(item), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_submit_fr_malformed_test',
+    });
+
+    for (let i = 0; i < malformedBodies.length; i++) {
+      await assert.rejects(
+        () =>
+          client.submitFeatureRequest(
+            { title: 'Feature idea', description: 'Make it faster' },
+            'usr_test_1'
+          ),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Feature request submission returned no valid submission record/
+          );
+          return true;
+        }
+      );
+    }
+
+    // Resolves successfully with valid payload (200 or 201)
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          featureRequestId: 'fr_valid_123',
+          pending: true,
+        }),
+        {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as any;
+
+    const result = await client.submitFeatureRequest(
+      { title: 'Feature idea', description: 'Make it faster' },
+      'usr_test_1'
+    );
+    assert.equal(result.featureRequestId, 'fr_valid_123');
+    assert.equal(result.pending, true);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

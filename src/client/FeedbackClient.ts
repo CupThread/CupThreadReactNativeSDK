@@ -742,7 +742,7 @@ export class FeedbackClient {
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link UnexpectedStatusException} If the server returns a non-2xx status code.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
-   * @throws {@link InvalidResponseException} If a network failure occurs or JSON parsing fails.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing submissionId), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -856,7 +856,7 @@ export class FeedbackClient {
       ...(turnstileToken ? { turnstileToken } : {}),
     };
 
-    return this.request<FeedbackSubmissionResult>({
+    const res = await this.request<FeedbackSubmissionResult>({
       method: 'POST',
       path: '/api/v1/feedback',
       body: payload,
@@ -869,6 +869,16 @@ export class FeedbackClient {
       signal: extractSignal(resolvedOptions),
       timeoutMs: extractTimeoutMs(resolvedOptions),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.submissionId !== 'string' ||
+      res.submissionId.trim().length === 0
+    ) {
+      throw new InvalidResponseException('Feedback submission returned no valid submission record');
+    }
+    return res;
   }
 
   /**
@@ -1706,6 +1716,7 @@ export class FeedbackClient {
    * @throws {@link InactiveSubscriptionException} If the workspace subscription is inactive or canceled (402).
    * @throws {@link PaymentRequiredException} If the intake endpoint responds with HTTP 402 Payment Required.
    * @throws {@link TurnstileRequiredException} If the intake endpoint demands Cloudflare Turnstile verification and no valid `turnstileToken` was supplied.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing featureRequestId/pending).
    *
    * @example
    * ```ts
@@ -1738,7 +1749,7 @@ export class FeedbackClient {
     const requesterName =
       typeof draft.requesterName === 'string' ? draft.requesterName.trim() || undefined : undefined;
     const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
-    return this.request<FeatureRequestSubmissionResult>({
+    const res = await this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
       path: '/api/v1/feature-requests',
       body: {
@@ -1753,6 +1764,19 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.featureRequestId !== 'string' ||
+      res.featureRequestId.trim().length === 0 ||
+      typeof res.pending !== 'boolean'
+    ) {
+      throw new InvalidResponseException(
+        'Feature request submission returned no valid submission record'
+      );
+    }
+    return res;
   }
 
   /**
