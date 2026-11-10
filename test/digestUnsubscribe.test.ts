@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
+  InvalidResponseException,
   MissingUnsubscribeTokenException,
   RateLimitedException,
   UnexpectedStatusException,
@@ -232,4 +233,36 @@ test('unsubscribeFromDigest forwards the caller abort signal', async () => {
 test('unsubscribeFromDigest accepts a bare AbortSignal as its second argument', async () => {
   const { sawAbort } = await abortInFlight((controller) => controller.signal);
   assert.equal(sawAbort, true, 'aborting the caller must reach the in-flight request');
+});
+
+test('unsubscribeFromDigest rejects with InvalidResponseException on invalid response payloads (#394)', async () => {
+  const invalidBodies = [
+    null,
+    [],
+    {},
+    'true',
+    1,
+    { unsubscribed: 'true' },
+    { unsubscribed: null },
+    { unsubscribed: undefined },
+  ];
+
+  for (const body of invalidBodies) {
+    const fetchMock = installFetch(200, body);
+    try {
+      await assert.rejects(
+        makeClient().unsubscribeFromDigest('signed.digest.token'),
+        (err: any) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            err.message,
+            /Digest unsubscribe returned no valid unsubscribe confirmation/
+          );
+          return true;
+        }
+      );
+    } finally {
+      fetchMock.restore();
+    }
+  }
 });

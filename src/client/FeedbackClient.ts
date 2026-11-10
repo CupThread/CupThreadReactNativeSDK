@@ -2381,6 +2381,7 @@ export class FeedbackClient {
    * @param options - Optional request options (`signal`, `timeoutMs`).
    * @returns Subscription status confirmation.
    * @throws {@link TypeError} If `email` is empty, whitespace-only, not a string, or not a valid email address.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing boolean fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -2400,7 +2401,7 @@ export class FeedbackClient {
       throw new TypeError('Expected a valid email address');
     }
     const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
-    return this.request<ChangelogSubscriptionResult>({
+    const res = await this.request<ChangelogSubscriptionResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/changelog/subscribe`,
       body: { email: trimmedEmail },
@@ -2409,6 +2410,17 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.subscribed !== 'boolean'
+    ) {
+      throw new InvalidResponseException(
+        'Changelog subscription returned no valid subscription confirmation'
+      );
+    }
+    return res;
   }
 
   /**
@@ -2431,6 +2443,7 @@ export class FeedbackClient {
    * @param token - Signed unsubscribe token from the email footer.
    * @returns Confirmation result.
    * @throws {@link MissingUnsubscribeTokenException} If `token` is blank.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing boolean fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -2447,7 +2460,7 @@ export class FeedbackClient {
       throw new MissingUnsubscribeTokenException();
     }
 
-    return this.request<ChangelogUnsubscribeResult>({
+    const res = await this.request<ChangelogUnsubscribeResult>({
       method: 'POST',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/changelog/unsubscribe`,
       body: { token: trimmed },
@@ -2456,6 +2469,17 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.unsubscribed !== 'boolean'
+    ) {
+      throw new InvalidResponseException(
+        'Changelog unsubscribe returned no valid unsubscribe confirmation'
+      );
+    }
+    return res;
   }
 
   /**
@@ -2485,6 +2509,7 @@ export class FeedbackClient {
    * @throws {@link MissingUnsubscribeTokenException} If `token` is blank.
    * @throws {@link UnexpectedStatusException} If the token is missing, invalid, or expired (HTTP 400).
    * @throws {@link RateLimitedException} If the per-IP unsubscribe budget is spent (HTTP 429).
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing boolean fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -2501,7 +2526,7 @@ export class FeedbackClient {
       throw new MissingUnsubscribeTokenException();
     }
 
-    return this.request<DigestUnsubscribeResult>({
+    const res = await this.request<DigestUnsubscribeResult>({
       method: 'POST',
       path: '/api/v1/public/digest/unsubscribe',
       body: { token: trimmed },
@@ -2510,6 +2535,17 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.unsubscribed !== 'boolean'
+    ) {
+      throw new InvalidResponseException(
+        'Digest unsubscribe returned no valid unsubscribe confirmation'
+      );
+    }
+    return res;
   }
 
   /**
