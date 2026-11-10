@@ -2145,7 +2145,7 @@ export class FeedbackClient {
     const trimmedCursor = typeof options?.cursor === 'string' ? options.cursor.trim() : '';
     if (trimmedCursor) params.append('cursor', trimmedCursor);
 
-    const res = await this.request<Partial<ListPublicChangelogResult>>({
+    const res = await this.request<Partial<ListPublicChangelogResult> | ChangelogEntry[]>({
       method: 'GET',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(
         this.config.appKey,
@@ -2155,20 +2155,34 @@ export class FeedbackClient {
       timeoutMs: options?.timeoutMs,
     });
 
-    const rawEntries = Array.isArray(res.entries)
-      ? res.entries.filter((e): e is ChangelogEntry => e !== null && typeof e === 'object')
-      : [];
-    const entries = [...rawEntries].sort((a, b) => {
-      const timeA = typeof a.publishedAt === 'string' ? new Date(a.publishedAt).getTime() : 0;
-      const timeB = typeof b.publishedAt === 'string' ? new Date(b.publishedAt).getTime() : 0;
-      const safeA = Number.isFinite(timeA) ? timeA : 0;
-      const safeB = Number.isFinite(timeB) ? timeB : 0;
-      return safeB - safeA;
-    });
+    const safeRes = res && typeof res === 'object' ? res : null;
+    const rawList = Array.isArray(safeRes)
+      ? safeRes
+      : Array.isArray((safeRes as { entries?: ChangelogEntry[] })?.entries)
+        ? (safeRes as { entries: ChangelogEntry[] }).entries
+        : [];
+    const entries = rawList
+      .filter((e): e is ChangelogEntry => e !== null && typeof e === 'object' && !Array.isArray(e))
+      .sort((a, b) => {
+        const timeA = typeof a.publishedAt === 'string' ? new Date(a.publishedAt).getTime() : 0;
+        const timeB = typeof b.publishedAt === 'string' ? new Date(b.publishedAt).getTime() : 0;
+        const safeA = Number.isFinite(timeA) ? timeA : 0;
+        const safeB = Number.isFinite(timeB) ? timeB : 0;
+        return safeB - safeA;
+      });
+    const hasMore = safeRes !== null && !Array.isArray(safeRes) && safeRes.hasMore === true;
+    const nextCursor =
+      safeRes !== null &&
+      !Array.isArray(safeRes) &&
+      typeof safeRes.nextCursor === 'string' &&
+      safeRes.nextCursor.trim().length > 0
+        ? safeRes.nextCursor.trim()
+        : null;
+
     return {
       entries,
-      hasMore: res.hasMore === true,
-      nextCursor: typeof res.nextCursor === 'string' ? res.nextCursor : null,
+      hasMore,
+      nextCursor,
     };
   }
 

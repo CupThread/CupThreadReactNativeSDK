@@ -172,6 +172,36 @@ test('listChangelog normalizes a malformed pagination payload', async () => {
   }
 });
 
+test('listChangelog normalizes null responses and handles direct array payloads (#379)', async () => {
+  const e1 = makeEntry('e1', '2026-02-01T00:00:00.000Z');
+  const e2 = makeEntry('e2', '2026-03-01T00:00:00.000Z');
+
+  // 1. null response
+  const nullPages = new Map([[null, { status: 200, body: null }]]);
+  const nullMock = installChangelogFetch(nullPages);
+  try {
+    const result = await makeClient().listChangelog();
+    assert.deepEqual(result, { entries: [], hasMore: false, nextCursor: null });
+  } finally {
+    nullMock.restore();
+  }
+
+  // 2. direct array response
+  const arrayPages = new Map([[null, { status: 200, body: [e1, e2] }]]);
+  const arrayMock = installChangelogFetch(arrayPages);
+  try {
+    const result = await makeClient().listChangelog();
+    assert.equal(result.hasMore, false);
+    assert.equal(result.nextCursor, null);
+    assert.deepEqual(
+      result.entries.map((e) => e.id),
+      ['e2', 'e1']
+    );
+  } finally {
+    arrayMock.restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Client: fetchChangelog auto-pagination
 // ---------------------------------------------------------------------------

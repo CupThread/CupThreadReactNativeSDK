@@ -2531,3 +2531,78 @@ test('fetchColumns and fetchVersions safely handle null, non-object, and direct 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('listChangelog safely handles null, non-object, and direct array responses (#379)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_changelog_guard',
+    });
+
+    // 1. null, empty object, or non-object bodies
+    for (const body of [null, {}, 'null', '""', '123', true]) {
+      mockPayload = body;
+      const res = await client.listChangelog();
+      assert.deepEqual(res, { entries: [], hasMore: false, nextCursor: null });
+    }
+
+    // 2. Direct array response with corrupted elements and publishedAt sorting
+    mockPayload = [
+      null,
+      undefined,
+      'invalid',
+      [],
+      { id: 'chg_old', title: 'Old Release', publishedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'chg_new', title: 'New Release', publishedAt: '2026-06-01T00:00:00.000Z' },
+      { id: 'chg_nodate', title: 'No Date' },
+    ];
+    const directResult = await client.listChangelog();
+    assert.equal(directResult.hasMore, false);
+    assert.equal(directResult.nextCursor, null);
+    assert.equal(directResult.entries.length, 3);
+    assert.deepEqual(
+      directResult.entries.map((e) => e.id),
+      ['chg_new', 'chg_old', 'chg_nodate']
+    );
+
+    // 3. fetchChangelog also works with direct array payload
+    const fetched = await client.fetchChangelog();
+    assert.equal(fetched.length, 3);
+    assert.deepEqual(
+      fetched.map((e) => e.id),
+      ['chg_new', 'chg_old', 'chg_nodate']
+    );
+
+    // 4. Whitespace nextCursor normalizes to null
+    mockPayload = {
+      entries: [{ id: 'chg_1', title: 'Release 1' }],
+      hasMore: true,
+      nextCursor: '   \t  \n  ',
+    };
+    const whitespaceCursorResult = await client.listChangelog();
+    assert.equal(whitespaceCursorResult.nextCursor, null);
+    assert.equal(whitespaceCursorResult.hasMore, true);
+
+    // 5. Valid trimmed nextCursor preserved
+    mockPayload = {
+      entries: [{ id: 'chg_1', title: 'Release 1' }],
+      hasMore: true,
+      nextCursor: '  cursor_123  ',
+    };
+    const validCursorResult = await client.listChangelog();
+    assert.equal(validCursorResult.nextCursor, 'cursor_123');
+    assert.equal(validCursorResult.hasMore, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
