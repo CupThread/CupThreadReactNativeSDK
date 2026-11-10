@@ -388,12 +388,10 @@ export function FeedbackComposer({
         );
       }
       if (unsupported.length > 0) {
-        if (typeof __DEV__ === 'undefined' || __DEV__) {
-          console.warn(
-            `[CupThread] ${unsupported.length} picked attachment(s) matched no known shape and were skipped:`,
-            unsupported
-          );
-        }
+        warnInDev(
+          `[CupThread] ${unsupported.length} picked attachment(s) matched no known shape and were skipped:`,
+          unsupported
+        );
         notices.push(strings.feedbackComposer.unsupportedAttachment(unsupported.length));
       }
       if (notices.length > 0) {

@@ -2674,3 +2674,121 @@ test('prepareChangelogOverlay safely handles null, non-object, and missing sdk r
     globalThis.fetch = originalFetch;
   }
 });
+
+test('FeedbackClient.isDevelopment() respects process.env.NODE_ENV and __DEV__ (#383)', () => {
+  const originalDev = (globalThis as any).__DEV__;
+  const originalEnv = process.env.NODE_ENV;
+
+  try {
+    // 1. Explicit __DEV__ flag takes precedence over NODE_ENV
+    (globalThis as any).__DEV__ = true;
+    process.env.NODE_ENV = 'production';
+    assert.equal((FeedbackClient as any).isDevelopment(), true);
+
+    (globalThis as any).__DEV__ = false;
+    process.env.NODE_ENV = 'development';
+    assert.equal((FeedbackClient as any).isDevelopment(), false);
+
+    // 2. When __DEV__ is undefined, process.env.NODE_ENV determines development mode
+    delete (globalThis as any).__DEV__;
+
+    process.env.NODE_ENV = 'production';
+    assert.equal((FeedbackClient as any).isDevelopment(), false);
+
+    process.env.NODE_ENV = 'development';
+    assert.equal((FeedbackClient as any).isDevelopment(), true);
+
+    process.env.NODE_ENV = 'test';
+    assert.equal((FeedbackClient as any).isDevelopment(), true);
+
+    delete process.env.NODE_ENV;
+    assert.equal((FeedbackClient as any).isDevelopment(), true);
+
+    // 3. When neither __DEV__ nor process is available, falls back safely to false
+    const originalProcess = (globalThis as any).process;
+    try {
+      (globalThis as any).process = undefined;
+      assert.equal((FeedbackClient as any).isDevelopment(), false);
+    } finally {
+      (globalThis as any).process = originalProcess;
+    }
+  } finally {
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    } else {
+      delete (globalThis as any).__DEV__;
+    }
+    if (originalEnv !== undefined) {
+      process.env.NODE_ENV = originalEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});
+
+test('FeedbackClient.submit suppresses legacy attachment warning in production (#383)', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalDev = (globalThis as any).__DEV__;
+  const originalEnv = process.env.NODE_ENV;
+  const warnings: string[] = [];
+
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ submissionId: 'sub_prod_1', forwardedToGithub: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_legacy_suppress',
+    });
+
+    delete (globalThis as any).__DEV__;
+    process.env.NODE_ENV = 'production';
+
+    await client.submit({
+      title: 'Legacy attachment in production',
+      description: 'Should not emit console warnings in production',
+      platform: 'ios',
+      attachments: [{ kind: 'r2', key: 'legacy-key', url: 'https://cdn.example/legacy.log' }],
+    });
+
+    assert.equal(
+      warnings.filter((w) => w.includes('without an uploadId')).length,
+      0,
+      'no warning should be logged in production'
+    );
+
+    // In development mode, the warning is emitted
+    process.env.NODE_ENV = 'development';
+    await client.submit({
+      title: 'Legacy attachment in development',
+      description: 'Should emit console warnings in development',
+      platform: 'ios',
+      attachments: [{ kind: 'r2', key: 'legacy-key', url: 'https://cdn.example/legacy.log' }],
+    });
+
+    assert.ok(
+      warnings.some((w) => w.includes('without an uploadId')),
+      'expected dev warning when NODE_ENV is development'
+    );
+  } finally {
+    console.warn = originalWarn;
+    globalThis.fetch = originalFetch;
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    } else {
+      delete (globalThis as any).__DEV__;
+    }
+    if (originalEnv !== undefined) {
+      process.env.NODE_ENV = originalEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});
