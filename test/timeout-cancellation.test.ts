@@ -620,6 +620,26 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+    if (s.includes('/feedback') && init?.method === 'POST') {
+      return new Response(
+        JSON.stringify({ submissionId: 'sub_signal', forwardedToGithub: false }),
+        {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+    if (
+      s.includes('/feature-requests') &&
+      init?.method === 'POST' &&
+      !s.includes('/comments') &&
+      !s.includes('/vote')
+    ) {
+      return new Response(JSON.stringify({ featureRequestId: 'fr_signal', pending: false }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     if (s.includes('/user')) {
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
