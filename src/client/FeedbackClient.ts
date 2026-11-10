@@ -1364,15 +1364,21 @@ export class FeedbackClient {
    * ```
    */
   public async fetchColumns(options?: RequestOptions | AbortSignal): Promise<BoardColumn[]> {
-    const res = await this.request<{ columns: BoardColumn[] }>({
+    const res = await this.request<{ columns?: BoardColumn[] } | BoardColumn[]>({
       method: 'GET',
       path: `/api/v1/public/columns/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
-    const columns = Array.isArray(res.columns)
-      ? res.columns.filter((c): c is BoardColumn => c !== null && typeof c === 'object')
-      : [];
+    const safeRes = res && typeof res === 'object' ? res : null;
+    const rawList = Array.isArray(safeRes)
+      ? safeRes
+      : Array.isArray((safeRes as { columns?: BoardColumn[] })?.columns)
+        ? (safeRes as { columns: BoardColumn[] }).columns
+        : [];
+    const columns = rawList.filter(
+      (c): c is BoardColumn => c !== null && typeof c === 'object' && !Array.isArray(c)
+    );
     return [...columns].sort((a, b) => {
       const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
       const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;
@@ -1392,15 +1398,21 @@ export class FeedbackClient {
    * ```
    */
   public async fetchVersions(options?: RequestOptions | AbortSignal): Promise<AppVersion[]> {
-    const res = await this.request<{ versions: AppVersion[] }>({
+    const res = await this.request<{ versions?: AppVersion[] } | AppVersion[]>({
       method: 'GET',
       path: `/api/v1/public/versions/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
-    const versions = Array.isArray(res.versions)
-      ? res.versions.filter((v): v is AppVersion => v !== null && typeof v === 'object')
-      : [];
+    const safeRes = res && typeof res === 'object' ? res : null;
+    const rawList = Array.isArray(safeRes)
+      ? safeRes
+      : Array.isArray((safeRes as { versions?: AppVersion[] })?.versions)
+        ? (safeRes as { versions: AppVersion[] }).versions
+        : [];
+    const versions = rawList.filter(
+      (v): v is AppVersion => v !== null && typeof v === 'object' && !Array.isArray(v)
+    );
     return [...versions].sort((a, b) => {
       const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
       const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;

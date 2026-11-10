@@ -2462,3 +2462,72 @@ test('FeedbackClient.fetchFeatureRequests defensively normalizes nullish, empty,
     globalThis.fetch = originalFetch;
   }
 });
+
+test('fetchColumns and fetchVersions safely handle null, non-object, and direct array responses (#375)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_col_ver_guard',
+    });
+
+    // 1. fetchColumns: null, empty object, or non-object bodies
+    for (const body of [null, {}, 'null', '""', '123', true]) {
+      mockPayload = body;
+      const res = await client.fetchColumns();
+      assert.deepEqual(res, []);
+    }
+
+    // 2. fetchColumns: direct array responses
+    mockPayload = [
+      null,
+      undefined,
+      'invalid',
+      [],
+      { id: 'col_2', name: 'In Progress', position: 20 },
+      { id: 'col_1', name: 'Planned', position: 10 },
+      { id: 'col_0', name: 'Backlog' },
+    ];
+    const directColumns = await client.fetchColumns();
+    assert.equal(directColumns.length, 3);
+    assert.deepEqual(
+      directColumns.map((c) => c.id),
+      ['col_0', 'col_1', 'col_2']
+    );
+
+    // 3. fetchVersions: null, empty object, or non-object bodies
+    for (const body of [null, {}, 'null', '""', '123', true]) {
+      mockPayload = body;
+      const res = await client.fetchVersions();
+      assert.deepEqual(res, []);
+    }
+
+    // 4. fetchVersions: direct array responses
+    mockPayload = [
+      null,
+      undefined,
+      'invalid',
+      [],
+      { id: 'ver_2', versionNumber: '2.0.0', position: 200 },
+      { id: 'ver_1', versionNumber: '1.0.0', position: 100 },
+      { id: 'ver_0', versionNumber: '0.9.0' },
+    ];
+    const directVersions = await client.fetchVersions();
+    assert.equal(directVersions.length, 3);
+    assert.deepEqual(
+      directVersions.map((v) => v.id),
+      ['ver_0', 'ver_1', 'ver_2']
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
