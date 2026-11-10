@@ -1,5 +1,8 @@
 import {
+  InactiveSubscriptionException,
   InvalidResponseException,
+  PaymentRequiredException,
+  QuotaExceededException,
   RequestTimeoutException,
   TurnstileRequiredException,
   UploadRejectedException,
@@ -13,7 +16,10 @@ import type { CommonStrings, FeedbackComposerStrings } from '../i18n/types';
  *
  * Transport-level exceptions embed technical detail in their `message`
  * (timeouts, URLs, parse failures) and are replaced by localized `common`
- * strings. Every other error — including `UnexpectedStatusException`, which
+ * strings. Quota and subscription exceptions (`QuotaExceededException`,
+ * `InactiveSubscriptionException`) map to localized quota and subscription
+ * copy, and `PaymentRequiredException` preserves actionable server messaging.
+ * Every other error — including `UnexpectedStatusException`, which
  * no longer carries the raw response body in its `message` — falls back to
  * the caller's surface-specific localized string (e.g.
  * `strings.comments.postFailed`), so raw server payloads and English-only
@@ -38,6 +44,25 @@ export function userFacingErrorMessage(
   if (err instanceof TurnstileRequiredException) {
     return typeof safeCommon?.verificationRequired === 'string'
       ? safeCommon.verificationRequired
+      : safeFallback;
+  }
+  if (err instanceof QuotaExceededException) {
+    return typeof safeCommon?.quotaExceeded === 'string'
+      ? safeCommon.quotaExceeded
+      : typeof (err as Error)?.message === 'string' && (err as Error).message
+        ? (err as Error).message
+        : safeFallback;
+  }
+  if (err instanceof InactiveSubscriptionException) {
+    return typeof safeCommon?.subscriptionInactive === 'string'
+      ? safeCommon.subscriptionInactive
+      : typeof (err as Error)?.message === 'string' && (err as Error).message
+        ? (err as Error).message
+        : safeFallback;
+  }
+  if (err instanceof PaymentRequiredException) {
+    return typeof (err as Error)?.message === 'string' && (err as Error).message
+      ? (err as Error).message
       : safeFallback;
   }
   if (err instanceof RequestTimeoutException) {
