@@ -240,3 +240,74 @@ test(
     );
   }
 );
+
+test(
+  'FeedbackComposer suppresses console warning for unsupported attachments in production (#383)',
+  renderTestOptions,
+  async () => {
+    const originalWarn = console.warn;
+    const originalDev = (globalThis as any).__DEV__;
+    const originalEnv = process.env.NODE_ENV;
+    const warnings: string[] = [];
+
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(' '));
+    };
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_chunking',
+    });
+    client.fetchAppConfig = async () => makeAppConfig();
+
+    try {
+      delete (globalThis as any).__DEV__;
+      process.env.NODE_ENV = 'production';
+
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={client} userToken="usr_test">
+            <FeedbackComposer onPickAttachment={async () => [null as any]} />
+          </CupThreadProvider>
+        );
+      });
+      await flush();
+
+      await act(async () => {
+        await findButtonByText(renderer, enStrings.feedbackComposer.addAttachment).props.onPress();
+      });
+      await flush();
+
+      assert.equal(
+        warnings.filter((w) => w.includes('matched no known shape')).length,
+        0,
+        'unsupported attachment warning should not be emitted in production'
+      );
+
+      // Verify it is emitted in development
+      process.env.NODE_ENV = 'development';
+      await act(async () => {
+        await findButtonByText(renderer, enStrings.feedbackComposer.addAttachment).props.onPress();
+      });
+      await flush();
+
+      assert.ok(
+        warnings.some((w) => w.includes('matched no known shape')),
+        'unsupported attachment warning should be emitted in development'
+      );
+    } finally {
+      console.warn = originalWarn;
+      if (originalDev !== undefined) {
+        (globalThis as any).__DEV__ = originalDev;
+      } else {
+        delete (globalThis as any).__DEV__;
+      }
+      if (originalEnv !== undefined) {
+        process.env.NODE_ENV = originalEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+    }
+  }
+);

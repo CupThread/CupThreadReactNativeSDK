@@ -1144,3 +1144,54 @@ test('submit warns in development when legacy descriptors are omitted', async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+test('submit suppresses legacy attachment warning in production (#383)', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalDev = (globalThis as any).__DEV__;
+  const originalEnv = process.env.NODE_ENV;
+  const warnings: string[] = [];
+
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ submissionId: 'sub_prod_1', forwardedToGithub: false }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as any;
+
+  try {
+    delete (globalThis as any).__DEV__;
+    process.env.NODE_ENV = 'production';
+
+    await makeClient().submit(
+      {
+        title: 'Legacy attachment',
+        description: 'References a pre-session storage key',
+        platform: 'ios',
+        attachments: [{ kind: 'r2', key: 'legacy-key', url: 'https://cdn.example/legacy.log' }],
+      },
+      USER_TOKEN
+    );
+
+    assert.equal(
+      warnings.filter((w) => w.includes('without an uploadId')).length,
+      0,
+      'no warning should be logged in production'
+    );
+  } finally {
+    console.warn = originalWarn;
+    globalThis.fetch = originalFetch;
+    if (originalDev !== undefined) {
+      (globalThis as any).__DEV__ = originalDev;
+    } else {
+      delete (globalThis as any).__DEV__;
+    }
+    if (originalEnv !== undefined) {
+      process.env.NODE_ENV = originalEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});

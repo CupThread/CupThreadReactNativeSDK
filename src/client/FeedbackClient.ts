@@ -639,16 +639,25 @@ export class FeedbackClient {
 
   /**
    * Whether diagnostics should reach the console. React Native sets `__DEV__`;
-   * outside a dev bundle (tests, web previews) it is undefined and the SDK
-   * follows the composer's convention of treating that as development.
+   * outside a dev bundle (tests, web previews, SSR) it falls back to checking
+   * `process.env.NODE_ENV !== 'production'`.
    */
   private static isDevelopment(): boolean {
     try {
-      const flag = (globalThis as { __DEV__?: unknown }).__DEV__;
-      return typeof flag === 'undefined' || Boolean(flag);
+      if (typeof (globalThis as any).__DEV__ !== 'undefined') {
+        return Boolean((globalThis as any).__DEV__);
+      }
     } catch {
-      return true;
+      // ignore
     }
+    try {
+      if (typeof process !== 'undefined' && Boolean(process.env)) {
+        return process.env.NODE_ENV !== 'production';
+      }
+    } catch {
+      // ignore
+    }
+    return false;
   }
 
   /**
