@@ -2606,3 +2606,71 @@ test('listChangelog safely handles null, non-object, and direct array responses 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('prepareChangelogOverlay safely handles null, non-object, and missing sdk responses (#380)', async () => {
+  const originalFetch = globalThis.fetch;
+  let configPayload: any = null;
+  const changelogPayload: any = {
+    entries: [
+      {
+        id: 'chg_1',
+        versionLabel: '1.0.0',
+        title: 'First Release',
+        publishedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  };
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const s = url.toString();
+    if (s.includes('/api/v1/public/config/')) {
+      return new Response(JSON.stringify(configPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (s.includes('/changelog')) {
+      return new Response(JSON.stringify(changelogPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response('{}', { status: 200 });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_overlay_guard',
+    });
+
+    // 1. null, primitives, and array config bodies safely return null without throwing TypeError
+    for (const body of [null, 'null', '""', 123, true, []]) {
+      configPayload = body;
+      const res = await client.prepareChangelogOverlay();
+      assert.equal(res, null, `expected null when config is ${JSON.stringify(body)}`);
+    }
+
+    // 2. Empty object or object with missing sdk property safely falls back to appearance: {}
+    configPayload = {};
+    const resNoSdk = await client.prepareChangelogOverlay();
+    assert.ok(resNoSdk, 'expected overlay payload when config is empty object');
+    assert.deepEqual(resNoSdk.appearance, {});
+    assert.equal(resNoSdk.latestKey, '1.0.0');
+    assert.equal(resNoSdk.entries.length, 1);
+
+    // 3. Object with non-object sdk property also safely falls back to appearance: {}
+    configPayload = { sdk: 'invalid' };
+    const resInvalidSdk = await client.prepareChangelogOverlay();
+    assert.ok(resInvalidSdk, 'expected overlay payload when sdk is a primitive');
+    assert.deepEqual(resInvalidSdk.appearance, {});
+
+    // 4. Object with valid sdk appearance preserves appearance object
+    configPayload = { sdk: { theme: 'dark', changelogOverlay: { entryCount: 5 } } };
+    const resValidSdk = await client.prepareChangelogOverlay();
+    assert.ok(resValidSdk);
+    assert.equal(resValidSdk.appearance.theme, 'dark');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
