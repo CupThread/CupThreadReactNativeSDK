@@ -235,3 +235,35 @@ test(
     renderer!.unmount();
   }
 );
+
+test(
+  'provider safely handles null, non-string, or whitespace locale props without throwing (#365)',
+  renderTestOptions,
+  async () => {
+    deviceLocale.tag = 'de-DE';
+
+    // null locale
+    const nullObs: LocaleObservation[] = [];
+    const nullRenderer = await renderProvider(nullObs, { locale: null as any });
+    const nullLast = lastObservation(nullObs);
+    assert.equal(nullLast.locale, 'de-DE');
+    assert.equal(nullLast.screenTitle, 'Feature-Anfragen');
+    nullRenderer.unmount();
+
+    // whitespace-only locale
+    const wsObs: LocaleObservation[] = [];
+    const wsRenderer = await renderProvider(wsObs, { locale: '   ' as any });
+    const wsLast = lastObservation(wsObs);
+    assert.equal(wsLast.locale, 'de-DE');
+    assert.equal(wsLast.screenTitle, 'Feature-Anfragen');
+    wsRenderer.unmount();
+
+    // non-string locale
+    const numObs: LocaleObservation[] = [];
+    const numRenderer = await renderProvider(numObs, { locale: 123 as any });
+    const numLast = lastObservation(numObs);
+    assert.equal(numLast.locale, 'de-DE');
+    assert.equal(numLast.screenTitle, 'Feature-Anfragen');
+    numRenderer.unmount();
+  }
+);

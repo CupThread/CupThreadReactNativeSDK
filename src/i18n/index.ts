@@ -74,8 +74,9 @@ function mergeDeep<T extends Record<string, any>>(target: T, source?: Record<str
  * already handles regional variants like `pt-BR`, `zh-Hans-CN`, or `nb-NO`.
  */
 export function resolveLocale(locale?: string | 'auto'): string {
-  if (locale && locale !== 'auto') {
-    return locale;
+  const trimmed = typeof locale === 'string' ? locale.trim() : '';
+  if (trimmed && trimmed !== 'auto') {
+    return trimmed;
   }
   return getDeviceLocale() ?? 'en';
 }
@@ -98,7 +99,8 @@ export function getLocaleStrings(
   locale: string = 'en',
   customOverrides?: DeepPartial<CupThreadStrings>
 ): CupThreadStrings {
-  const norm = locale.toLowerCase().replace(/_/g, '-');
+  const safeLocale = typeof locale === 'string' && locale.trim() ? locale.trim() : 'en';
+  const norm = safeLocale.toLowerCase().replace(/_/g, '-');
   const base =
     norm.startsWith('zh-hant') ||
     norm.startsWith('zh-tw') ||
@@ -130,7 +132,7 @@ export function getLocaleStrings(
                             : norm.startsWith('vi')
                               ? viStrings
                               : enStrings;
-  if (!customOverrides) {
+  if (!customOverrides || typeof customOverrides !== 'object') {
     return base;
   }
   return mergeDeep(base, customOverrides);
