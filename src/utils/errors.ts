@@ -30,12 +30,23 @@ import type { CommonStrings, FeedbackComposerStrings } from '../i18n/types';
 export function userFacingErrorMessage(
   err: unknown,
   fallback: string,
-  common: CommonStrings
+  common?: CommonStrings | null
 ): string {
-  if (err instanceof TurnstileRequiredException) return common.verificationRequired;
-  if (err instanceof RequestTimeoutException) return common.timeoutError;
-  if (err instanceof InvalidResponseException) return common.networkError;
-  return fallback;
+  const safeFallback = typeof fallback === 'string' ? fallback : 'An unexpected error occurred';
+  const safeCommon = common && typeof common === 'object' ? common : null;
+
+  if (err instanceof TurnstileRequiredException) {
+    return typeof safeCommon?.verificationRequired === 'string'
+      ? safeCommon.verificationRequired
+      : safeFallback;
+  }
+  if (err instanceof RequestTimeoutException) {
+    return typeof safeCommon?.timeoutError === 'string' ? safeCommon.timeoutError : safeFallback;
+  }
+  if (err instanceof InvalidResponseException) {
+    return typeof safeCommon?.networkError === 'string' ? safeCommon.networkError : safeFallback;
+  }
+  return safeFallback;
 }
 
 /**
@@ -54,18 +65,32 @@ export function userFacingErrorMessage(
  */
 export function uploadErrorMessage(
   err: unknown,
-  strings: FeedbackComposerStrings,
-  common: CommonStrings
+  strings?: FeedbackComposerStrings | null,
+  common?: CommonStrings | null
 ): string {
+  const safeStrings = strings && typeof strings === 'object' ? strings : null;
+  const fallbackUploadFailed =
+    typeof safeStrings?.uploadFailed === 'string' ? safeStrings.uploadFailed : 'Upload failed';
+
   if (err instanceof UploadValidationException) {
-    if (err.code === 'file_size_required') return strings.uploadSizeMissing;
-    return strings.uploadFailed;
+    if (err.code === 'file_size_required') {
+      return typeof safeStrings?.uploadSizeMissing === 'string'
+        ? safeStrings.uploadSizeMissing
+        : fallbackUploadFailed;
+    }
+    return fallbackUploadFailed;
   }
   if (err instanceof UploadRejectedException) {
-    if (err.status === 413 || err.code === 'file_too_large') return strings.uploadTooLarge;
+    if (err.status === 413 || err.code === 'file_too_large') {
+      return typeof safeStrings?.uploadTooLarge === 'string'
+        ? safeStrings.uploadTooLarge
+        : fallbackUploadFailed;
+    }
     if (err.code === 'unsupported_mime_type' || err.code === 'executable_extension_prohibited') {
-      return strings.uploadUnsupportedType;
+      return typeof safeStrings?.uploadUnsupportedType === 'string'
+        ? safeStrings.uploadUnsupportedType
+        : fallbackUploadFailed;
     }
   }
-  return userFacingErrorMessage(err, strings.uploadFailed, common);
+  return userFacingErrorMessage(err, fallbackUploadFailed, common);
 }
