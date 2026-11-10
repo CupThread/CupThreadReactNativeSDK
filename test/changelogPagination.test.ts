@@ -202,6 +202,43 @@ test('listChangelog normalizes null responses and handles direct array payloads 
   }
 });
 
+test('listChangelog filters changelog entries with empty/invalid IDs and trims padded IDs (#409)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      'cur_start',
+      {
+        status: 200,
+        body: {
+          entries: [
+            { id: '', title: 'Empty', publishedAt: '2026-04-01T00:00:00.000Z' },
+            { id: '   ', title: 'Spaces', publishedAt: '2026-04-02T00:00:00.000Z' },
+            { id: null, title: 'Null', publishedAt: '2026-04-03T00:00:00.000Z' },
+            { id: 456, title: 'Number', publishedAt: '2026-04-04T00:00:00.000Z' },
+            {
+              id: '  chg_trimmed_page  ',
+              title: 'Trimmed Page',
+              publishedAt: '2026-04-05T00:00:00.000Z',
+            },
+          ],
+          hasMore: true,
+          nextCursor: 'cur_page_2',
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+  try {
+    const result = await makeClient().listChangelog({ cursor: 'cur_start' });
+    assert.equal(result.entries.length, 1);
+    assert.equal(result.entries[0].id, 'chg_trimmed_page');
+    assert.equal(result.entries[0].title, 'Trimmed Page');
+    assert.equal(result.hasMore, true);
+    assert.equal(result.nextCursor, 'cur_page_2');
+  } finally {
+    fetchMock.restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Client: fetchChangelog auto-pagination
 // ---------------------------------------------------------------------------

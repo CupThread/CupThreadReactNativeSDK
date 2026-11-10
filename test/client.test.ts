@@ -2739,6 +2739,53 @@ test('FeedbackClient.listComments filters out comment items with missing, empty,
   }
 });
 
+test('FeedbackClient.listChangelog filters out changelog entries with missing, empty, or non-string IDs and trims whitespace (#409)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_filter_changelog_ids',
+    });
+
+    mockPayload = {
+      entries: [
+        { id: '', title: 'Empty string id', publishedAt: '2026-03-01T00:00:00.000Z' },
+        { id: '   \t\n  ', title: 'Whitespace only id', publishedAt: '2026-03-02T00:00:00.000Z' },
+        { id: null, title: 'Null id', publishedAt: '2026-03-03T00:00:00.000Z' },
+        { id: undefined, title: 'Undefined id', publishedAt: '2026-03-04T00:00:00.000Z' },
+        { id: 123, title: 'Numeric id', publishedAt: '2026-03-05T00:00:00.000Z' },
+        { id: [], title: 'Array id', publishedAt: '2026-03-06T00:00:00.000Z' },
+        { id: {}, title: 'Object id', publishedAt: '2026-03-07T00:00:00.000Z' },
+        { title: 'Missing id property', publishedAt: '2026-03-08T00:00:00.000Z' },
+        { id: '  chg_padded_1  ', title: 'Padded ID 1', publishedAt: '2026-03-09T00:00:00.000Z' },
+        { id: 'chg_clean_2', title: 'Clean ID 2', publishedAt: '2026-03-10T00:00:00.000Z' },
+      ],
+      hasMore: true,
+      nextCursor: 'cur_next',
+    };
+
+    const res = await client.listChangelog();
+    assert.equal(res.entries.length, 2);
+    assert.equal(res.entries[0].id, 'chg_clean_2');
+    assert.equal(res.entries[0].title, 'Clean ID 2');
+    assert.equal(res.entries[1].id, 'chg_padded_1');
+    assert.equal(res.entries[1].title, 'Padded ID 1');
+    assert.equal(res.hasMore, true);
+    assert.equal(res.nextCursor, 'cur_next');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fetchColumns and fetchVersions safely handle null, non-object, and direct array responses (#375)', async () => {
   const originalFetch = globalThis.fetch;
   let mockPayload: any = null;

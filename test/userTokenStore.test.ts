@@ -679,8 +679,8 @@ test('prepareChangelogOverlay with onlyIfUnseen suppresses seen release when bac
     activeVersion = '   ';
     const result5 = await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store });
     assert.ok(result5);
-    assert.equal(result5?.latestKey, 'entry_   ');
-    await store.markChangelogSeen('entry_   ');
+    assert.equal(result5?.latestKey, 'entry_');
+    await store.markChangelogSeen('entry_');
     assert.equal(
       await client.prepareChangelogOverlay({ onlyIfUnseen: true, tokenStore: store }),
       null

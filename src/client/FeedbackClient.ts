@@ -2279,7 +2279,18 @@ export class FeedbackClient {
         ? (safeRes as { entries: ChangelogEntry[] }).entries
         : [];
     const entries = rawList
-      .filter((e): e is ChangelogEntry => e !== null && typeof e === 'object' && !Array.isArray(e))
+      .filter(
+        (e): e is ChangelogEntry =>
+          e !== null &&
+          typeof e === 'object' &&
+          !Array.isArray(e) &&
+          typeof e.id === 'string' &&
+          e.id.trim().length > 0
+      )
+      .map((e) => ({
+        ...e,
+        id: e.id.trim(),
+      }))
       .sort((a, b) => {
         const timeA = typeof a.publishedAt === 'string' ? new Date(a.publishedAt).getTime() : 0;
         const timeB = typeof b.publishedAt === 'string' ? new Date(b.publishedAt).getTime() : 0;
