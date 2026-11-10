@@ -4,6 +4,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
+import { InvalidResponseException } from '../src/client/FeedbackException';
 import type { FeatureRequestItem } from '../src/types';
 
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
@@ -957,3 +958,73 @@ test(
     renderer.unmount();
   }
 );
+
+test('useToggleVote rolls back optimistic vote and surfaces voteError when FeedbackClient.castVote rejects with InvalidResponseException (#391)', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    // Malformed empty object triggers InvalidResponseException from castVote
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_invalid_response_test',
+    });
+
+    let stateItem = makeItem({ id: 'fr_malformed_1', voteCount: 10, hasVoted: false });
+    const applyChange = (
+      _id: string,
+      transform: (it: FeatureRequestItem) => FeatureRequestItem
+    ) => {
+      stateItem = transform(stateItem);
+    };
+
+    const observedErrors: { error: unknown; item: FeatureRequestItem }[] = [];
+    const harness = renderTestHook(() =>
+      useToggleVote(client, 'usr_token_valid', applyChange, {
+        onVoteError: (error, item) => observedErrors.push({ error, item }),
+      })
+    );
+
+    // Initial state
+    assert.equal(harness.result.voteError, null);
+    assert.equal(harness.result.getVoteError('fr_malformed_1'), null);
+
+    // Trigger toggle (casting vote)
+    harness.result.toggleVote(stateItem);
+
+    // Optimistically updated
+    assert.equal(stateItem.hasVoted, true);
+    assert.equal(stateItem.voteCount, 11);
+    assert.equal(harness.result.isVoting('fr_malformed_1'), true);
+
+    // Allow fetch & async dispatchVoteRequest to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Optimistic vote rolled back
+    assert.equal(stateItem.hasVoted, false);
+    assert.equal(stateItem.voteCount, 10);
+    assert.equal(harness.result.isVoting('fr_malformed_1'), false);
+
+    // Error is InvalidResponseException
+    assert.ok((harness.result.voteError as any) instanceof InvalidResponseException);
+    assert.ok(
+      (harness.result.getVoteError('fr_malformed_1') as any) instanceof InvalidResponseException
+    );
+    assert.match(
+      (harness.result.voteError as unknown as Error).message,
+      /Vote operation for fr_malformed_1 returned invalid response payload/
+    );
+
+    // onVoteError callback invoked with the exception
+    assert.equal(observedErrors.length, 1);
+    assert.ok(observedErrors[0].error instanceof InvalidResponseException);
+    assert.equal(observedErrors[0].item.id, 'fr_malformed_1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
