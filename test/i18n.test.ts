@@ -445,3 +445,44 @@ test('setDeviceLocaleProvider overrides built-in detection until cleared', () =>
   resetDeviceLocaleCache();
   assert.equal(getDeviceLocale(), null, 'clearing the provider restores built-in detection');
 });
+
+test('resolveLocale and getLocaleStrings safely guard against null, non-string, or whitespace inputs (#365)', () => {
+  // getLocaleStrings safe fallbacks
+  assert.equal(getLocaleStrings(null as any), enStrings);
+  assert.equal(getLocaleStrings(undefined as any), enStrings);
+  assert.equal(getLocaleStrings(''), enStrings);
+  assert.equal(getLocaleStrings('   '), enStrings);
+  assert.equal(getLocaleStrings(123 as any), enStrings);
+  assert.equal(getLocaleStrings({} as any), enStrings);
+  assert.equal(getLocaleStrings(true as any), enStrings);
+
+  // getLocaleStrings trims input tags
+  assert.equal(getLocaleStrings('  ja  '), jaStrings);
+  assert.equal(getLocaleStrings('  zh-Hant  '), zhHantStrings);
+
+  // getLocaleStrings guards customOverrides
+  assert.equal(getLocaleStrings('zh-Hans', null as any), zhHansStrings);
+  assert.equal(getLocaleStrings('zh-Hans', 'not an object' as any), zhHansStrings);
+  assert.equal(getLocaleStrings('zh-Hans', 42 as any), zhHansStrings);
+
+  // resolveLocale safe fallbacks when nothing is detectable
+  resetDeviceLocaleCache();
+  assert.equal(resolveLocale(null as any), 'en');
+  assert.equal(resolveLocale('   '), 'en');
+  assert.equal(resolveLocale(123 as any), 'en');
+  assert.equal(resolveLocale({} as any), 'en');
+  assert.equal(resolveLocale(true as any), 'en');
+  assert.equal(resolveLocale('  ja  '), 'ja');
+  assert.equal(resolveLocale('  auto  '), 'en');
+
+  // resolveLocale delegates to device locale provider for invalid/empty/auto inputs
+  setDeviceLocaleProvider(() => 'fr');
+  assert.equal(resolveLocale(null as any), 'fr');
+  assert.equal(resolveLocale('   '), 'fr');
+  assert.equal(resolveLocale(123 as any), 'fr');
+  assert.equal(resolveLocale('auto'), 'fr');
+  assert.equal(resolveLocale('  auto  '), 'fr');
+  assert.equal(resolveLocale('  de  '), 'de');
+  setDeviceLocaleProvider(null);
+  resetDeviceLocaleCache();
+});
