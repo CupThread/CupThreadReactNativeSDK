@@ -1345,6 +1345,7 @@ export class FeedbackClient {
    * @param options - Optional request options or an AbortSignal.
    * @returns Application metadata and visual theme configuration.
    * @throws {@link UnexpectedStatusException} If the app key is invalid, private/unpublished (HTTP 404), or the server returns an unexpected status code.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, primitive, or array).
    *
    * @example
    * ```ts
@@ -1353,12 +1354,16 @@ export class FeedbackClient {
    * ```
    */
   public async fetchAppConfig(options?: RequestOptions | AbortSignal): Promise<PublicAppConfig> {
-    return this.request<PublicAppConfig>({
+    const res = await this.request<PublicAppConfig>({
       method: 'GET',
       path: `/api/v1/public/config/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}`,
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (!res || typeof res !== 'object' || Array.isArray(res)) {
+      throw new InvalidResponseException('Server returned an invalid app config response payload');
+    }
+    return res;
   }
 
   /**
@@ -2259,7 +2264,15 @@ export class FeedbackClient {
   } | null> {
     const signal = options?.signal;
     const timeoutMs = options?.timeoutMs;
-    const config = await this.fetchAppConfig({ signal, timeoutMs });
+    let config: PublicAppConfig;
+    try {
+      config = await this.fetchAppConfig({ signal, timeoutMs });
+    } catch (err: unknown) {
+      if (err instanceof InvalidResponseException) {
+        return null;
+      }
+      throw err;
+    }
     if (
       !config ||
       typeof config !== 'object' ||
