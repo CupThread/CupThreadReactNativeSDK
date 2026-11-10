@@ -1075,3 +1075,148 @@ test(
     }
   }
 );
+
+test(
+  'UserProfileScreen renders not-found copy when profile is null without throwing TypeError (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: null,
+      publicApps: [],
+      recentComments: [],
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'missing or null profile must render localized not-found copy'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen renders not-found copy when profile is undefined or non-object (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: 'invalid-primitive' as any,
+      publicApps: null,
+      recentComments: null,
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'non-object profile must render localized not-found copy without crashing'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen renders not-found copy when profile is an array (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: [] as any,
+      publicApps: [],
+      recentComments: [],
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'array-valued profile must render localized not-found copy'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen renders not-found copy when profile is omitted or undefined in successful response (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      publicApps: [],
+      recentComments: [],
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(
+        texts.includes(enStrings.userProfile.notFound),
+        'omitted profile must render localized not-found copy'
+      );
+      assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
+
+test(
+  'UserProfileScreen renders safely when publicApps and recentComments are null or malformed non-arrays (#361)',
+  screenTestOptions,
+  async () => {
+    const fetchMock = installFetch(200, {
+      profile: {
+        clerkUserId: 'user_safe',
+        displayName: 'Safe Developer',
+        avatarUrl: null,
+        bio: 'Coding safely',
+        websiteUrl: null,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      },
+      publicApps: null as any,
+      recentComments: { length: 2 } as any, // non-array object
+    } as any);
+
+    try {
+      const renderer = renderProfileScreen();
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(texts.includes('Safe Developer'));
+      assert.ok(texts.includes('Coding safely'));
+      assert.ok(texts.includes(enStrings.userProfile.activityTitle));
+      assert.ok(texts.includes(enStrings.userProfile.noActivity));
+
+      renderer.unmount();
+    } finally {
+      fetchMock.restore();
+    }
+  }
+);
