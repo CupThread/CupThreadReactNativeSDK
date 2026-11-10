@@ -121,9 +121,9 @@ export function FeatureRequestDetail({
   // adjustment, same semantics as key={item.id}: a different id resets the
   // whole screen, while a same-id prop refresh (fresh object from host data)
   // keeps the current state, including optimistic vote changes.
-  const lastInitialIdRef = useRef<string>(safeItemId);
-  if (lastInitialIdRef.current !== safeItemId) {
-    lastInitialIdRef.current = safeItemId;
+  const [lastInitialId, setLastInitialId] = useState<string>(safeItemId);
+  if (lastInitialId !== safeItemId) {
+    setLastInitialId(safeItemId);
     setItem(safeItem);
   }
 
@@ -141,7 +141,7 @@ export function FeatureRequestDetail({
 
   useEffect(() => {
     if (item && typeof item.id === 'string' && item.id.trim().length > 0) {
-      knownItemsRef.current.set(item.id.trim(), item);
+      knownItemsRef.current.set(item.id, item);
     }
   }, [item]);
 
