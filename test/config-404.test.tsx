@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { FeedbackClient } from '../src/client/FeedbackClient';
-import { FeedbackException, UnexpectedStatusException } from '../src/client/FeedbackException';
+import {
+  FeedbackException,
+  InvalidResponseException,
+  UnexpectedStatusException,
+} from '../src/client/FeedbackException';
 import type { PublicAppConfig } from '../src/types';
 
 // Mock react-native for Node test environment if module mocks are supported
@@ -225,3 +229,93 @@ test(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// 3. FeedbackClient.fetchAppConfig() Payload Validation (#389)
+// ---------------------------------------------------------------------------
+
+test('fetchAppConfig rejects null response with InvalidResponseException (#389)', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(null), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_pub_key',
+    });
+
+    await assert.rejects(
+      () => client.fetchAppConfig(),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidResponseException);
+        assert.match((err as Error).message, /invalid app config response payload/);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchAppConfig rejects primitive response with InvalidResponseException (#389)', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_pub_key',
+    });
+
+    for (const primitive of ['"ok"', '123', 'true']) {
+      globalThis.fetch = (async () => {
+        return new Response(primitive, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      await assert.rejects(
+        () => client.fetchAppConfig(),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match((err as Error).message, /invalid app config response payload/);
+          return true;
+        }
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetchAppConfig rejects array response with InvalidResponseException (#389)', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_pub_key',
+    });
+
+    await assert.rejects(
+      () => client.fetchAppConfig(),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidResponseException);
+        assert.match((err as Error).message, /invalid app config response payload/);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

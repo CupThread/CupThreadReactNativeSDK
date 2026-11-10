@@ -382,3 +382,41 @@ test(
     assert.equal(latestContext?.configError, null);
   }
 );
+
+test(
+  'CupThreadProvider: treats null and array config payloads as errors and surfaces InvalidResponseException (#389)',
+  renderTestOptions,
+  async () => {
+    for (const invalidPayload of [null, []]) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(invalidPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      let latestContext: ProbeContext | undefined;
+      let renderer: TestRenderer.ReactTestRenderer;
+
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <CupThreadProvider client={makeClient()} _retryDelayMs={5}>
+            <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+          </CupThreadProvider>
+        );
+      });
+      await flush(16);
+
+      assert.ok(latestContext);
+      assert.equal(latestContext.isLoadingConfig, false);
+      assert.equal(latestContext.appConfig, null);
+      assert.ok(
+        latestContext.configError !== null,
+        `configError must be set on ${JSON.stringify(invalidPayload)} response body`
+      );
+      assert.match(latestContext.configError.name, /Invalid(Response|ConfigPayload)Exception/);
+
+      renderer!.unmount();
+    }
+  }
+);

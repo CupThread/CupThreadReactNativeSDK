@@ -4,6 +4,7 @@ import { FeedbackClient } from '../src/client/FeedbackClient';
 import { UserTokenStore } from '../src/client/UserTokenStore';
 import {
   InsecureBaseUrlException,
+  InvalidConfigPayloadException,
   InvalidResponseException,
   UnreadableUploadResponseException,
 } from '../src/client/FeedbackException';
@@ -1830,6 +1831,44 @@ test('FeedbackClient.postComment rejects malformed create responses with Invalid
   }
 });
 
+test('FeedbackClient.fetchAppConfig rejects malformed config responses with InvalidResponseException (#389)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies: unknown[] = [null, [], ['invalid'], 123, true, 'ok'];
+  let next = 0;
+
+  globalThis.fetch = (async () => {
+    const item = malformedBodies[next++];
+    return new Response(JSON.stringify(item), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_config_validation_test',
+    });
+
+    for (let i = 0; i < malformedBodies.length; i++) {
+      await assert.rejects(
+        () => client.fetchAppConfig(),
+        (err: unknown) => {
+          assert.ok(
+            err instanceof InvalidResponseException,
+            `expected InvalidResponseException for malformed item index ${i}`
+          );
+          assert.match((err as Error).message, /invalid app config response payload/);
+          return true;
+        }
+      );
+    }
+    assert.equal(next, malformedBodies.length, 'every malformed body must be exercised');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('FeedbackClient constructor rejects empty, whitespace-only, or missing appKey', () => {
   assert.throws(
     () => new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: '' }),
@@ -2670,6 +2709,23 @@ test('prepareChangelogOverlay safely handles null, non-object, and missing sdk r
     const resValidSdk = await client.prepareChangelogOverlay();
     assert.ok(resValidSdk);
     assert.equal(resValidSdk.appearance.theme, 'dark');
+
+    // 5. Network transport failures propagate as InvalidResponseException instead of swallowing as null
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as any;
+
+    await assert.rejects(
+      () => client.prepareChangelogOverlay(),
+      (err: unknown) => {
+        assert.ok(err instanceof InvalidResponseException);
+        assert.ok(
+          !(err instanceof InvalidConfigPayloadException),
+          'network transport failure must not be an InvalidConfigPayloadException'
+        );
+        return true;
+      }
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
