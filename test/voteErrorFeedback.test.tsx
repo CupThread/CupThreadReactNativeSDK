@@ -50,7 +50,8 @@ if (supportsModuleMocks) {
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { useToggleVote } = await import('../src/hooks/useToggleVote');
+const { useToggleVote, withOptimisticVote, withServerVote, withVoteRollback } =
+  await import('../src/hooks/useToggleVote');
 const { VoteButton } = await import('../src/components/VoteButton');
 const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
 const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
@@ -822,3 +823,137 @@ test('acceptance (#236): whitespace-only userToken safely no-ops without optimis
     globalThis.fetch = originalFetch;
   }
 });
+
+test('withOptimisticVote: normalizes NaN, negative, or non-finite voteCount safely (#362)', () => {
+  const nanItem = makeItem({ voteCount: NaN, hasVoted: false });
+  const nanVoted = withOptimisticVote(nanItem);
+  assert.equal(Number.isFinite(nanVoted.voteCount), true);
+  assert.equal(nanVoted.voteCount, 1);
+  assert.equal(nanVoted.hasVoted, true);
+
+  const nanUnvote = withOptimisticVote({ ...nanItem, hasVoted: true });
+  assert.equal(Number.isFinite(nanUnvote.voteCount), true);
+  assert.equal(nanUnvote.voteCount, 0);
+  assert.equal(nanUnvote.hasVoted, false);
+
+  const negativeItem = makeItem({ voteCount: -5, hasVoted: false });
+  const negativeVoted = withOptimisticVote(negativeItem);
+  assert.equal(negativeVoted.voteCount, 1);
+  assert.equal(negativeVoted.hasVoted, true);
+
+  const undefinedCountItem = makeItem({ voteCount: undefined as any, hasVoted: false });
+  const undefinedCountVoted = withOptimisticVote(undefinedCountItem);
+  assert.equal(undefinedCountVoted.voteCount, 1);
+  assert.equal(undefinedCountVoted.hasVoted, true);
+
+  const normalItem = makeItem({ voteCount: 4, hasVoted: false });
+  const normalVoted = withOptimisticVote(normalItem);
+  assert.equal(normalVoted.voteCount, 5);
+  assert.equal(normalVoted.hasVoted, true);
+});
+
+test('withServerVote & withVoteRollback: normalize invalid server or snapshot voteCount (#362)', () => {
+  const item = makeItem({ voteCount: 3, hasVoted: true });
+
+  const nanResult = withServerVote(item, { voted: true, voteCount: NaN });
+  assert.equal(Number.isFinite(nanResult.voteCount), true);
+  assert.equal(nanResult.voteCount, 3);
+  assert.equal(nanResult.hasVoted, true);
+
+  const negativeResult = withServerVote(item, { voted: true, voteCount: -10 });
+  assert.equal(negativeResult.voteCount, 0);
+
+  const validResult = withServerVote(item, { voted: false, voteCount: 15 });
+  assert.equal(validResult.voteCount, 15);
+  assert.equal(validResult.hasVoted, false);
+
+  const rollbackNan = withVoteRollback(item, { hasVoted: false, voteCount: NaN });
+  assert.equal(Number.isFinite(rollbackNan.voteCount), true);
+  assert.equal(rollbackNan.voteCount, 3);
+
+  const rollbackNegative = withVoteRollback(item, { hasVoted: false, voteCount: -5 });
+  assert.equal(rollbackNegative.voteCount, 0);
+
+  const rollbackValid = withVoteRollback(item, { hasVoted: false, voteCount: 2 });
+  assert.equal(rollbackValid.voteCount, 2);
+  assert.equal(rollbackValid.hasVoted, false);
+});
+
+test(
+  'VoteButton: renders 0 instead of NaN, negative, or undefined counts (#362)',
+  renderTestOptions,
+  () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_vote_button_nan',
+    });
+
+    const getRenderedCountText = (root: TestRenderer.ReactTestInstance) => {
+      const textNodes = root.findAllByType(TextStub as any);
+      return String(textNodes[1]?.props?.children);
+    };
+
+    // NaN voteCount
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          children: React.createElement(VoteButton, {
+            voteCount: NaN,
+            hasVoted: false,
+            onPress: () => {},
+          }),
+        })
+      );
+    });
+    assert.equal(getRenderedCountText(renderer.root), '0');
+
+    // Negative voteCount
+    act(() => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client,
+          children: React.createElement(VoteButton, {
+            voteCount: -12,
+            hasVoted: false,
+            onPress: () => {},
+          }),
+        })
+      );
+    });
+    assert.equal(getRenderedCountText(renderer.root), '0');
+
+    // Undefined / non-numeric voteCount
+    act(() => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client,
+          children: React.createElement(VoteButton, {
+            voteCount: undefined as any,
+            hasVoted: false,
+            onPress: () => {},
+          }),
+        })
+      );
+    });
+    assert.equal(getRenderedCountText(renderer.root), '0');
+
+    // Fractional voteCount
+    act(() => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client,
+          children: React.createElement(VoteButton, {
+            voteCount: 42.7,
+            hasVoted: true,
+            onPress: () => {},
+          }),
+        })
+      );
+    });
+    assert.equal(getRenderedCountText(renderer.root), '42');
+
+    renderer.unmount();
+  }
+);

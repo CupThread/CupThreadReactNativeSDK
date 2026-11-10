@@ -67,8 +67,12 @@ function dispatchVoteRequest(
  * other field (including `importedVotes`) is carried over untouched.
  */
 export function withOptimisticVote(item: FeatureRequestItem): FeatureRequestItem {
-  const nextVoted = !item.hasVoted;
-  const nextCount = item.voteCount + (nextVoted ? 1 : -1);
+  const currentCount =
+    typeof item?.voteCount === 'number' && Number.isFinite(item.voteCount)
+      ? Math.max(0, item.voteCount)
+      : 0;
+  const nextVoted = !item?.hasVoted;
+  const nextCount = currentCount + (nextVoted ? 1 : -1);
   return { ...item, hasVoted: nextVoted, voteCount: Math.max(0, nextCount) };
 }
 
@@ -80,7 +84,13 @@ export function withOptimisticVote(item: FeatureRequestItem): FeatureRequestItem
  * imported portion stays visible because the item's other fields are preserved.
  */
 export function withServerVote(item: FeatureRequestItem, result: VoteResult): FeatureRequestItem {
-  return { ...item, hasVoted: result.voted, voteCount: result.voteCount };
+  const safeCount =
+    result && typeof result.voteCount === 'number' && Number.isFinite(result.voteCount)
+      ? Math.max(0, result.voteCount)
+      : typeof item?.voteCount === 'number' && Number.isFinite(item.voteCount)
+        ? Math.max(0, item.voteCount)
+        : 0;
+  return { ...item, hasVoted: Boolean(result?.voted), voteCount: safeCount };
 }
 
 /**
@@ -97,10 +107,18 @@ export function withVoteRollback(
   item: FeatureRequestItem,
   preVoteSnapshot: VoteStateSnapshot
 ): FeatureRequestItem {
+  const safeCount =
+    preVoteSnapshot &&
+    typeof preVoteSnapshot.voteCount === 'number' &&
+    Number.isFinite(preVoteSnapshot.voteCount)
+      ? Math.max(0, preVoteSnapshot.voteCount)
+      : typeof item?.voteCount === 'number' && Number.isFinite(item.voteCount)
+        ? Math.max(0, item.voteCount)
+        : 0;
   return {
     ...item,
-    hasVoted: preVoteSnapshot.hasVoted,
-    voteCount: preVoteSnapshot.voteCount,
+    hasVoted: Boolean(preVoteSnapshot?.hasVoted),
+    voteCount: safeCount,
   };
 }
 
@@ -312,8 +330,11 @@ export function useToggleVote(
       setPendingIds(Array.from(pendingIdsRef.current));
 
       const preVoteSnapshot: VoteStateSnapshot = {
-        hasVoted: item.hasVoted,
-        voteCount: item.voteCount,
+        hasVoted: Boolean(item?.hasVoted),
+        voteCount:
+          typeof item?.voteCount === 'number' && Number.isFinite(item.voteCount)
+            ? Math.max(0, item.voteCount)
+            : 0,
       };
       try {
         applyChangeRef.current(item.id, withOptimisticVote);
