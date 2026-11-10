@@ -1244,7 +1244,7 @@ test('UserTokenStore.warnUnpersistedChangelogSeen suppresses warning when proces
   };
 
   try {
-    const store = new UserTokenStore(null, { appKey: 'app_warn_test' });
+    const store = new UserTokenStore(undefined, { appKey: 'app_warn_test' });
 
     // In production mode, no warning is emitted
     delete (globalThis as any).__DEV__;
