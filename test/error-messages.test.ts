@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FeedbackException,
+  InactiveSubscriptionException,
   InvalidResponseException,
+  PaymentRequiredException,
+  QuotaExceededException,
   RequestTimeoutException,
   TurnstileRequiredException,
   UnexpectedStatusException,
@@ -54,6 +57,63 @@ test('TurnstileRequiredException maps to the localized verification-required str
   assert.equal(msg, enStrings.common.verificationRequired);
 });
 
+test('QuotaExceededException maps to the localized quota-exceeded string across locales (#386)', () => {
+  const err = new QuotaExceededException();
+  assert.equal(
+    userFacingErrorMessage(err, enStrings.comments.postFailed, enStrings.common),
+    enStrings.common.quotaExceeded
+  );
+  assert.equal(
+    userFacingErrorMessage(err, '提交失败', zhHansStrings.common),
+    zhHansStrings.common.quotaExceeded
+  );
+  assert.equal(
+    userFacingErrorMessage(err, '投稿失敗', jaStrings.common),
+    jaStrings.common.quotaExceeded
+  );
+
+  // When localized string is not provided, falls back to err.message or fallback
+  const customErr = new QuotaExceededException('Custom quota message');
+  assert.equal(userFacingErrorMessage(customErr, 'Fallback', {} as any), 'Custom quota message');
+
+  const emptyErr = new QuotaExceededException('');
+  assert.equal(userFacingErrorMessage(emptyErr, 'Fallback', {} as any), 'Fallback');
+});
+
+test('InactiveSubscriptionException maps to the localized subscription-inactive string across locales (#386)', () => {
+  const err = new InactiveSubscriptionException();
+  assert.equal(
+    userFacingErrorMessage(err, enStrings.comments.postFailed, enStrings.common),
+    enStrings.common.subscriptionInactive
+  );
+  assert.equal(
+    userFacingErrorMessage(err, '提交失败', zhHansStrings.common),
+    zhHansStrings.common.subscriptionInactive
+  );
+  assert.equal(
+    userFacingErrorMessage(err, '投稿失敗', jaStrings.common),
+    jaStrings.common.subscriptionInactive
+  );
+
+  // When localized string is not provided, falls back to err.message or fallback
+  const customErr = new InactiveSubscriptionException('Subscription canceled');
+  assert.equal(userFacingErrorMessage(customErr, 'Fallback', {} as any), 'Subscription canceled');
+
+  const emptyErr = new InactiveSubscriptionException('');
+  assert.equal(userFacingErrorMessage(emptyErr, 'Fallback', {} as any), 'Fallback');
+});
+
+test('PaymentRequiredException maps to its message or fallback (#386)', () => {
+  const customErr = new PaymentRequiredException('Payment required for this feature.');
+  assert.equal(
+    userFacingErrorMessage(customErr, 'Fallback', enStrings.common),
+    'Payment required for this feature.'
+  );
+
+  const emptyErr = new PaymentRequiredException('');
+  assert.equal(userFacingErrorMessage(emptyErr, 'Fallback', enStrings.common), 'Fallback');
+});
+
 test('InvalidResponseException maps to the localized network-error string', () => {
   const err = new InvalidResponseException(
     'Network request failed for https://api.cupthread.com/api/v1/feedback'
@@ -99,6 +159,18 @@ test('userFacingErrorMessage safely handles null, undefined, or malformed common
       'Fallback',
       'not-an-object' as any
     ),
+    'Fallback'
+  );
+  assert.equal(
+    userFacingErrorMessage(new QuotaExceededException(''), 'Fallback', null as any),
+    'Fallback'
+  );
+  assert.equal(
+    userFacingErrorMessage(new InactiveSubscriptionException(''), 'Fallback', undefined as any),
+    'Fallback'
+  );
+  assert.equal(
+    userFacingErrorMessage(new PaymentRequiredException(''), 'Fallback', null as any),
     'Fallback'
   );
   assert.equal(userFacingErrorMessage(new Error('boom'), '', null as any), '');

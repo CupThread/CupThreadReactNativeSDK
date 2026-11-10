@@ -19,12 +19,6 @@ import {
   useCupThreadStrings,
   useCupThreadAppConfig,
 } from '../theme/CupThreadThemeProvider';
-import {
-  InactiveSubscriptionException,
-  PaymentRequiredException,
-  QuotaExceededException,
-  TurnstileRequiredException,
-} from '../client/FeedbackException';
 import type {
   FeatureRequestDraft,
   FeatureRequestSubmissionResult,
@@ -323,21 +317,9 @@ export function FeatureRequestComposeSheet({
       }
     } catch (err: any) {
       if (submitId === submitSeqRef.current) {
-        if (err instanceof TurnstileRequiredException) {
-          // The draft stays intact so the user can retry after the host's
-          // verification flow resolves a fresh token.
-          setErrorMessage(strings.common.verificationRequired);
-        } else if (err instanceof QuotaExceededException) {
-          setErrorMessage(strings.common.quotaExceeded || err.message);
-        } else if (err instanceof InactiveSubscriptionException) {
-          setErrorMessage(strings.common.subscriptionInactive || err.message);
-        } else if (err instanceof PaymentRequiredException) {
-          setErrorMessage(err.message || strings.featureRequestCompose.submitFailed);
-        } else {
-          setErrorMessage(
-            userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
-          );
-        }
+        setErrorMessage(
+          userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
+        );
       }
       // A superseded failure leaves the newer submission in charge of the form
       // state; its own outcome will surface.
