@@ -2694,6 +2694,51 @@ test('FeedbackClient.fetchFeatureRequests filters out items with missing, empty,
   }
 });
 
+test('FeedbackClient.listComments filters out comment items with missing, empty, or non-string IDs and trims whitespace (#406)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_filter_comment_ids',
+    });
+
+    mockPayload = {
+      comments: [
+        { id: '', body: 'Empty string id' },
+        { id: '   \t\n  ', body: 'Whitespace only id' },
+        { id: null, body: 'Null id' },
+        { id: undefined, body: 'Undefined id' },
+        { id: 123, body: 'Numeric id' },
+        { id: [], body: 'Array id' },
+        { id: {}, body: 'Object id' },
+        { body: 'Missing id property' },
+        { id: '  c_padded_1  ', body: 'Padded ID 1' },
+        { id: 'c_clean_2', body: 'Clean ID 2' },
+      ],
+      total: 10,
+    };
+
+    const res = await client.listComments('fr_1');
+    assert.equal(res.comments.length, 2);
+    assert.equal(res.comments[0].id, 'c_padded_1');
+    assert.equal(res.comments[0].body, 'Padded ID 1');
+    assert.equal(res.comments[1].id, 'c_clean_2');
+    assert.equal(res.comments[1].body, 'Clean ID 2');
+    assert.equal(res.total, 10);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fetchColumns and fetchVersions safely handle null, non-object, and direct array responses (#375)', async () => {
   const originalFetch = globalThis.fetch;
   let mockPayload: any = null;

@@ -2025,10 +2025,19 @@ export class FeedbackClient {
 
     const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
     const comments = Array.isArray(safeRes?.comments)
-      ? safeRes.comments.filter(
-          (c): c is FeatureRequestComment =>
-            c !== null && typeof c === 'object' && !Array.isArray(c)
-        )
+      ? safeRes.comments
+          .filter(
+            (c): c is FeatureRequestComment =>
+              c !== null &&
+              typeof c === 'object' &&
+              !Array.isArray(c) &&
+              typeof c.id === 'string' &&
+              c.id.trim().length > 0
+          )
+          .map((c) => ({
+            ...c,
+            id: c.id.trim(),
+          }))
       : [];
     const total =
       typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0
