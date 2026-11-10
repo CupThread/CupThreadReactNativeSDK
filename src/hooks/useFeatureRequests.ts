@@ -555,8 +555,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         });
 
         if (signal?.aborted) return;
-        const fetchedItems = res.requests || [];
-        const reportedTotal = typeof res.total === 'number' ? res.total : fetchedItems.length;
+        const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
+        const fetchedItems = Array.isArray(safeRes?.requests)
+          ? safeRes.requests.filter(
+              (item): item is FeatureRequestItem =>
+                item !== null && typeof item === 'object' && !Array.isArray(item)
+            )
+          : [];
+        const reportedTotal =
+          typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0
+            ? safeRes.total
+            : fetchedItems.length;
 
         // Monotonic local revision guard: if local mutations occurred (e.g. optimistic
         // votes applied while fetch was in flight), merge the pending state on top of
@@ -666,15 +675,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // `hasMore` only counts when a cursor exists to follow — mirroring
         // useChangelogEntries, a page that reports more entries but hands back
         // no cursor could never actually fetch them.
-        const isCursorResponse = typeof res.hasMore === 'boolean';
+        const isCursorResponse = typeof safeRes?.hasMore === 'boolean';
         const nextCursor =
-          isCursorResponse && typeof res.nextCursor === 'string' && res.nextCursor.length > 0
-            ? res.nextCursor
+          isCursorResponse &&
+          typeof safeRes?.nextCursor === 'string' &&
+          safeRes.nextCursor.trim().length > 0
+            ? safeRes.nextCursor.trim()
             : null;
         const serverHasMore =
           isCursorResponse &&
           nextCursor !== null &&
-          res.hasMore === true &&
+          safeRes?.hasMore === true &&
           fetchedItems.length > 0;
         nextCursorRef.current = nextCursor;
         cursorHasMoreRef.current = isCursorResponse ? serverHasMore : null;
@@ -888,7 +899,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
 
       if (controller.signal.aborted) return;
 
-      const newItems = res.requests || [];
+      const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
+      const newItems = Array.isArray(safeRes?.requests)
+        ? safeRes.requests.filter(
+            (item): item is FeatureRequestItem =>
+              item !== null && typeof item === 'object' && !Array.isArray(item)
+          )
+        : [];
 
       if (currentCursor !== null) {
         // Keyset cursors only move forward. If a refresh rewound the cursor
@@ -896,10 +913,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         // instead of splicing it into the fresh list (mirrors
         // useChangelogEntries).
         if (nextCursorRef.current !== currentCursor) return;
-        const isCursorResponse = typeof res.hasMore === 'boolean';
+        const isCursorResponse = typeof safeRes?.hasMore === 'boolean';
         let nextCursor =
-          isCursorResponse && typeof res.nextCursor === 'string' && res.nextCursor.length > 0
-            ? res.nextCursor
+          isCursorResponse &&
+          typeof safeRes?.nextCursor === 'string' &&
+          safeRes.nextCursor.trim().length > 0
+            ? safeRes.nextCursor.trim()
             : null;
         // A cursor that does not advance can never finish the walk: the
         // contract defines `nextCursor` as the following page's cursor, so an
@@ -913,13 +932,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
           !stalledCursor &&
           isCursorResponse &&
           nextCursor !== null &&
-          res.hasMore === true &&
+          safeRes?.hasMore === true &&
           newItems.length > 0;
         nextCursorRef.current = nextCursor;
         cursorHasMoreRef.current = serverHasMore;
         setCursorHasMore(serverHasMore);
-        if (typeof res.total === 'number') {
-          setTotal(res.total);
+        if (
+          typeof safeRes?.total === 'number' &&
+          Number.isFinite(safeRes.total) &&
+          safeRes.total >= 0
+        ) {
+          setTotal(safeRes.total);
         }
         setItems((prev) => {
           const ids = new Set(prev.map((i) => i.id));
@@ -939,7 +962,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         return;
       }
 
-      let nextTotal = typeof res.total === 'number' ? res.total : totalRef.current;
+      let nextTotal =
+        typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0
+          ? safeRes.total
+          : totalRef.current;
       const currentOffset = nextOffsetRef.current;
 
       // Compute the deduped append count from itemsRef instead of inside a

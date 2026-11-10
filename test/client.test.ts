@@ -2391,3 +2391,74 @@ test('fetchColumns, fetchVersions, and listChangelog safely handle nullish, non-
     globalThis.fetch = originalFetch;
   }
 });
+
+test('FeedbackClient.fetchFeatureRequests defensively normalizes nullish, empty, and malformed responses (#376)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(
+      typeof mockPayload === 'string' ? mockPayload : JSON.stringify(mockPayload),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_normalize_fr',
+    });
+
+    // 1. null or non-object bodies
+    for (const body of [null, {}, 'null', '""', '[]', '123']) {
+      mockPayload = body;
+      const res = await client.fetchFeatureRequests();
+      assert.deepEqual(res, {
+        requests: [],
+        total: 0,
+        hasMore: false,
+        nextCursor: null,
+      });
+    }
+
+    // 2. filtering null, undefined, primitives, arrays from requests
+    mockPayload = {
+      requests: [
+        null,
+        undefined,
+        'string-entry',
+        123,
+        [],
+        { id: 'fr_valid_1', title: 'Valid 1' },
+        { id: 'fr_valid_2', title: 'Valid 2' },
+      ],
+      total: -10,
+      nextCursor: '   ',
+    };
+    const filteredRes = await client.fetchFeatureRequests();
+    assert.equal(filteredRes.requests.length, 2);
+    assert.equal(filteredRes.requests[0].id, 'fr_valid_1');
+    assert.equal(filteredRes.requests[1].id, 'fr_valid_2');
+    assert.equal(filteredRes.total, 2, 'negative total falls back to filtered requests length');
+    assert.equal(filteredRes.hasMore, false);
+    assert.equal(filteredRes.nextCursor, null, 'whitespace nextCursor normalizes to null');
+
+    // 3. NaN total and whitespace trimmed cursor with hasMore
+    mockPayload = {
+      requests: [{ id: 'fr_1', title: 'Request 1' }],
+      total: NaN,
+      hasMore: true,
+      nextCursor: '   cur_next_123   ',
+    };
+    const cursorRes = await client.fetchFeatureRequests();
+    assert.equal(cursorRes.requests.length, 1);
+    assert.equal(cursorRes.total, 1, 'NaN total falls back to requests length');
+    assert.equal(cursorRes.hasMore, true);
+    assert.equal(cursorRes.nextCursor, 'cur_next_123', 'padded nextCursor is trimmed');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

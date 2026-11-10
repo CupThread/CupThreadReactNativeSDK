@@ -1447,56 +1447,59 @@ export class FeedbackClient {
    * } while (cursor);
    * ```
    */
-  public async fetchFeatureRequests(options: {
-    /**
-     * Unique user token to evaluate `hasVoted` and `isOwnRequest` states.
-     *
-     * Optional: when omitted, `undefined`, or empty, the request is sent
-     * without an identity token and the response reflects anonymous state.
-     */
-    userToken?: string;
-    /**
-     * Maximum number of items to return per page (default: 50, clamped to 1–100).
-     */
-    limit?: number;
-    /**
-     * Page offset index (default: 0, clamped to >= 0).
-     */
-    offset?: number;
-    /**
-     * Opaque keyset cursor from a previous response's `nextCursor`. When
-     * provided, the server resolves the page from the cursor and ignores
-     * `offset` entirely; this method then serializes only the cursor and
-     * omits `offset` from the query string. Responses from cursor-capable
-     * servers carry `hasMore` and `nextCursor` alongside the page.
-     */
-    cursor?: string;
-    /**
-     * Optional version ID filter.
-     */
-    versionId?: string;
-    /**
-     * Optional search query string.
-     */
-    query?: string;
-    /**
-     * Optional abort signal to cancel the request.
-     */
-    signal?: AbortSignal;
-    /**
-     * Optional timeout in milliseconds for this request.
-     */
-    timeoutMs?: number;
-    /**
-     * Optional token transport override for this call (`'header' | 'both' | 'query'`).
-     * Defaults to the client configuration's `tokenTransport` (or `'header'`).
-     */
-    tokenTransport?: 'query' | 'header' | 'both';
-  }): Promise<ListFeatureRequestsResult> {
-    const transport = options.tokenTransport ?? this.config.tokenTransport ?? 'header';
+  public async fetchFeatureRequests(
+    options: {
+      /**
+       * Unique user token to evaluate `hasVoted` and `isOwnRequest` states.
+       *
+       * Optional: when omitted, `undefined`, or empty, the request is sent
+       * without an identity token and the response reflects anonymous state.
+       */
+      userToken?: string;
+      /**
+       * Maximum number of items to return per page (default: 50, clamped to 1–100).
+       */
+      limit?: number;
+      /**
+       * Page offset index (default: 0, clamped to >= 0).
+       */
+      offset?: number;
+      /**
+       * Opaque keyset cursor from a previous response's `nextCursor`. When
+       * provided, the server resolves the page from the cursor and ignores
+       * `offset` entirely; this method then serializes only the cursor and
+       * omits `offset` from the query string. Responses from cursor-capable
+       * servers carry `hasMore` and `nextCursor` alongside the page.
+       */
+      cursor?: string;
+      /**
+       * Optional version ID filter.
+       */
+      versionId?: string;
+      /**
+       * Optional search query string.
+       */
+      query?: string;
+      /**
+       * Optional abort signal to cancel the request.
+       */
+      signal?: AbortSignal;
+      /**
+       * Optional timeout in milliseconds for this request.
+       */
+      timeoutMs?: number;
+      /**
+       * Optional token transport override for this call (`'header' | 'both' | 'query'`).
+       * Defaults to the client configuration's `tokenTransport` (or `'header'`).
+       */
+      tokenTransport?: 'query' | 'header' | 'both';
+    } = {}
+  ): Promise<ListFeatureRequestsResult> {
+    const safeOptions = options && typeof options === 'object' ? options : {};
+    const transport = safeOptions.tokenTransport ?? this.config.tokenTransport ?? 'header';
     const rawLimit =
-      typeof options.limit === 'number' && Number.isFinite(options.limit)
-        ? options.limit
+      typeof safeOptions.limit === 'number' && Number.isFinite(safeOptions.limit)
+        ? safeOptions.limit
         : DEFAULT_FEATURE_REQUESTS_PAGE_SIZE;
     const limit = Math.min(Math.max(Math.floor(rawLimit), 1), 100);
 
@@ -1507,17 +1510,20 @@ export class FeedbackClient {
 
     // The API resolves a cursor request from the keyset and ignores `offset`
     // entirely, so a cursor request must not carry an offset parameter.
-    const trimmedCursor = typeof options.cursor === 'string' ? options.cursor.trim() : '';
+    const trimmedCursor = typeof safeOptions.cursor === 'string' ? safeOptions.cursor.trim() : '';
     if (trimmedCursor) {
       params.append('cursor', trimmedCursor);
     } else {
       const rawOffset =
-        typeof options.offset === 'number' && Number.isFinite(options.offset) ? options.offset : 0;
+        typeof safeOptions.offset === 'number' && Number.isFinite(safeOptions.offset)
+          ? safeOptions.offset
+          : 0;
       const offset = Math.max(Math.floor(rawOffset), 0);
       params.append('offset', String(offset));
     }
 
-    const trimmedUserToken = typeof options.userToken === 'string' ? options.userToken.trim() : '';
+    const trimmedUserToken =
+      typeof safeOptions.userToken === 'string' ? safeOptions.userToken.trim() : '';
 
     if (transport === 'query' || transport === 'both') {
       if (trimmedUserToken) {
@@ -1525,21 +1531,67 @@ export class FeedbackClient {
       }
     }
 
-    const trimmedVersionId = typeof options.versionId === 'string' ? options.versionId.trim() : '';
+    const trimmedVersionId =
+      typeof safeOptions.versionId === 'string' ? safeOptions.versionId.trim() : '';
     if (trimmedVersionId) params.append('versionId', trimmedVersionId);
 
-    const trimmedQuery = typeof options.query === 'string' ? options.query.trim() : '';
+    const trimmedQuery = typeof safeOptions.query === 'string' ? safeOptions.query.trim() : '';
     if (trimmedQuery) params.append('q', trimmedQuery);
 
     const sendHeader = (transport === 'header' || transport === 'both') && !!trimmedUserToken;
 
-    return this.request<ListFeatureRequestsResult>({
+    const res = await this.request<Partial<ListFeatureRequestsResult>>({
       method: 'GET',
       path: `/api/v1/feature-requests?${params.toString()}`,
       userToken: sendHeader ? trimmedUserToken : undefined,
-      signal: options.signal,
-      timeoutMs: options.timeoutMs,
+      signal: safeOptions.signal,
+      timeoutMs: safeOptions.timeoutMs,
     });
+
+    const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
+    const requests = Array.isArray(safeRes?.requests)
+      ? safeRes.requests.filter(
+          (item): item is FeatureRequestItem =>
+            item !== null && typeof item === 'object' && !Array.isArray(item)
+        )
+      : [];
+    const total =
+      typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0
+        ? safeRes.total
+        : requests.length;
+
+    const isCursorResponse =
+      safeRes !== null &&
+      (typeof safeRes.hasMore === 'boolean' ||
+        typeof safeRes.nextCursor === 'string' ||
+        safeRes.nextCursor === null);
+
+    const isNullOrEmpty =
+      safeRes === null ||
+      (!('requests' in safeRes) &&
+        !('total' in safeRes) &&
+        !('hasMore' in safeRes) &&
+        !('nextCursor' in safeRes));
+
+    if (isCursorResponse || isNullOrEmpty) {
+      const hasMore = safeRes?.hasMore === true;
+      const nextCursor =
+        typeof safeRes?.nextCursor === 'string' && safeRes.nextCursor.trim().length > 0
+          ? safeRes.nextCursor.trim()
+          : null;
+
+      return {
+        requests,
+        total,
+        hasMore,
+        nextCursor,
+      };
+    }
+
+    return {
+      requests,
+      total,
+    };
   }
 
   /**
