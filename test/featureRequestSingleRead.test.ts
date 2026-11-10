@@ -212,9 +212,22 @@ test('fetchFeatureRequest maps 401 and 429 to their typed exceptions', async () 
 
 test('fetchFeatureRequest rejects a malformed 200 body without a usable request record', async () => {
   // A missing record, a bare array envelope, a non-record `request` value,
-  // and a `null` body must all surface as InvalidResponseException — never a
+  // a `null` body, and a record with missing, empty, whitespace-only, or
+  // non-string `id` must all surface as InvalidResponseException — never a
   // TypeError, and never an array returned as a record.
-  for (const body of [{ requests: [] }, { request: [] }, { request: null }, 'null']) {
+  for (const body of [
+    { requests: [] },
+    { request: [] },
+    { request: null },
+    'null',
+    { request: {} },
+    { request: { id: '' } },
+    { request: { id: '   \t\n  ' } },
+    { request: { id: null } },
+    { request: { id: 123 } },
+    { request: { id: [] } },
+    { request: { id: {} } },
+  ]) {
     const fetchMock = installSingleReadFetch(() => ({ status: 200, body }));
 
     try {
@@ -229,6 +242,19 @@ test('fetchFeatureRequest rejects a malformed 200 body without a usable request 
     } finally {
       fetchMock.restore();
     }
+  }
+});
+
+test('fetchFeatureRequest normalizes and trims request record id (#403)', async () => {
+  const record = makeRequestRecord('  fr_whitespace_padded  ', { title: 'Padded ID request' });
+  const fetchMock = installSingleReadFetch(() => ({ status: 200, body: { request: record } }));
+
+  try {
+    const result = await makeClient().fetchFeatureRequest('fr_padded');
+    assert.equal(result.id, 'fr_whitespace_padded');
+    assert.equal(result.title, 'Padded ID request');
+  } finally {
+    fetchMock.restore();
   }
 });
 

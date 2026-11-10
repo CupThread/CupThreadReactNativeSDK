@@ -1677,6 +1677,7 @@ export class FeedbackClient {
    * @throws {@link UnexpectedStatusException} When the request cannot be read (uniform HTTP 404 for missing, unapproved, or access-disabled ids), or the server returns another unexpected status code.
    * @throws {@link AuthenticationRequiredException} When the board requires sign-in for roadmap reads and no identity was presented (401).
    * @throws {@link RateLimitedException} When the shared per-IP public-read budget is spent (429).
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing request record / ID), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -1720,6 +1721,13 @@ export class FeedbackClient {
         `Feature request read for ${featureRequestId} returned no request record`
       );
     }
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!id) {
+      throw new InvalidResponseException(
+        `Feature request read for ${featureRequestId} returned no request record`
+      );
+    }
+    record.id = id;
     return record;
   }
 
