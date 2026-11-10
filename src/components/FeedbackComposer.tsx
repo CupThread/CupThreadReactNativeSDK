@@ -57,10 +57,16 @@ declare const __DEV__: boolean | undefined;
  * @param error - Optional caught error or exception details.
  */
 function warnInDev(message: string, error?: unknown): void {
-  const isDev =
-    typeof (globalThis as any).__DEV__ !== 'undefined'
-      ? Boolean((globalThis as any).__DEV__)
-      : typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  let isDev = false;
+  try {
+    if (typeof (globalThis as any).__DEV__ !== 'undefined') {
+      isDev = Boolean((globalThis as any).__DEV__);
+    } else if (typeof process !== 'undefined' && Boolean(process.env)) {
+      isDev = process.env.NODE_ENV !== 'production';
+    }
+  } catch {
+    isDev = false;
+  }
   if (isDev) {
     if (error !== undefined) {
       console.warn(message, error);
