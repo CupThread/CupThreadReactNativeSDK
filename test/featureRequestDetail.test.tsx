@@ -1194,3 +1194,179 @@ test(
     }
   }
 );
+
+// Issue #370 — FeatureRequestDetail: unhandled TypeError crash when item prop is null or invalid object
+test(
+  'FeatureRequestDetail: safely mounts and handles null, undefined, and invalid item props without throwing (#370)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+    const client = new RecordingClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_detail',
+    });
+
+    try {
+      // 1. item={null} with visible={false} renders null
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: null as any,
+              visible: false,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // 2. item={undefined} with visible={false} renders null
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: undefined as any,
+              visible: false,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // 3. item={null} with visible={true} renders null
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: null as any,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // 4. item={} (missing id) renders null without throwing
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: {} as any,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // 5. item={ id: '' } or non-string id renders null
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: { id: '   ' } as any,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: { id: 123 } as any,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // 6. Transition: mount valid item -> reset to null -> re-mount valid item
+      const validItem = makeItem({
+        id: 'fr_valid_lifecycle',
+        title: 'Valid Request',
+        description: 'Detailed description',
+      });
+
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: validItem,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.notEqual(renderer.toJSON(), null);
+      assert.equal(renderer.root.findAllByType(FeatureRequestDetail).length, 1);
+
+      // Reset to null / closed modal
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: null,
+              visible: false,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.equal(renderer.toJSON(), null);
+
+      // Re-open with another item
+      const nextItem = makeItem({
+        id: 'fr_valid_next',
+        title: 'Next Request',
+      });
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client,
+            children: React.createElement(FeatureRequestDetail, {
+              item: nextItem,
+              visible: true,
+              onClose: () => {},
+            }),
+          })
+        );
+      });
+      await flush();
+      assert.notEqual(renderer.toJSON(), null);
+
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
