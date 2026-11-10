@@ -2672,3 +2672,44 @@ test('useFeatureRequests gracefully handles null, non-array, and malformed respo
   assert.equal(harnessPaging.result.isLoadingMore, false);
   assert.equal(harnessPaging.result.items.length, 1, 'items remain intact after null page');
 });
+
+test('FeedbackClient.fetchFeatureRequests pagination filters items with empty/invalid IDs and trims padded IDs (#405)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_pagination_filter_ids',
+    });
+
+    mockPayload = {
+      requests: [
+        { id: '', title: 'Empty' },
+        { id: '   ', title: 'Spaces' },
+        { id: null, title: 'Null' },
+        { id: 456, title: 'Number' },
+        { id: '  fr_trimmed_page  ', title: 'Trimmed Page' },
+      ],
+      total: 5,
+      hasMore: true,
+      nextCursor: 'cur_page_2',
+    };
+
+    const res = await client.fetchFeatureRequests({ cursor: 'cur_start' });
+    assert.equal(res.requests.length, 1);
+    assert.equal(res.requests[0].id, 'fr_trimmed_page');
+    assert.equal(res.requests[0].title, 'Trimmed Page');
+    assert.equal(res.hasMore, true);
+    assert.equal(res.nextCursor, 'cur_page_2');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
