@@ -2251,8 +2251,19 @@ export class FeedbackClient {
     const signal = options?.signal;
     const timeoutMs = options?.timeoutMs;
     const config = await this.fetchAppConfig({ signal, timeoutMs });
-    if (!isSurfaceEnabled(config, 'changelog')) return null;
-    const limit = Math.min(Math.max(config.sdk?.changelogOverlay?.entryCount || 3, 1), 10);
+    if (
+      !config ||
+      typeof config !== 'object' ||
+      Array.isArray(config) ||
+      !isSurfaceEnabled(config, 'changelog')
+    ) {
+      return null;
+    }
+    const appearance: SdkAppearance =
+      config.sdk && typeof config.sdk === 'object' && !Array.isArray(config.sdk)
+        ? (config.sdk as SdkAppearance)
+        : ({} as SdkAppearance);
+    const limit = Math.min(Math.max(appearance.changelogOverlay?.entryCount || 3, 1), 10);
     // The overlay only ever displays `limit` entries, so request exactly that
     // page instead of pulling the full history.
     const page = await this.listChangelog({ limit, signal, timeoutMs });
@@ -2276,7 +2287,7 @@ export class FeedbackClient {
 
     return {
       entries,
-      appearance: config.sdk,
+      appearance,
       latestKey,
     };
   }
