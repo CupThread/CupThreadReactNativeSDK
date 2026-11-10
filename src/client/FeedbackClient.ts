@@ -2580,6 +2580,7 @@ export class FeedbackClient {
    * the signature timestamp is not a nonnegative integer.
    * @throws {@link InvalidUserAttributesSignatureException} If the configured
    * signer returns malformed signing material.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing/invalid ok/updatedAt fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -2699,7 +2700,7 @@ export class FeedbackClient {
       }
     }
 
-    return this.request<UserAttributesUpdateResult>({
+    const res = await this.request<UserAttributesUpdateResult>({
       method: 'PUT',
       path: `/api/v1/public/apps/${FeedbackClient.encodeSegment(this.config.appKey, 'appKey')}/user`,
       body,
@@ -2709,6 +2710,19 @@ export class FeedbackClient {
       timeoutMs: options.timeoutMs,
       deadlineAt,
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.ok !== 'boolean' ||
+      typeof res.updatedAt !== 'string' ||
+      res.updatedAt.trim().length === 0
+    ) {
+      throw new InvalidResponseException(
+        'User attributes update returned no valid confirmation record'
+      );
+    }
+    return res;
   }
 
   /**

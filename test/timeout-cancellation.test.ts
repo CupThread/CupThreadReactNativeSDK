@@ -653,7 +653,7 @@ test('FeedbackClient methods thread signal through to fetch', async () => {
       });
     }
     if (s.includes('/user')) {
-      return new Response(JSON.stringify({ success: true }), {
+      return new Response(JSON.stringify({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
