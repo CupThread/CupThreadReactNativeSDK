@@ -191,7 +191,7 @@ export const MAX_COMMENTS_PAGES = 100;
  * header is absent or unparseable.
  */
 export function parseRetryAfterMs(headerValue: string | null | undefined): number | null {
-  if (!headerValue) return null;
+  if (typeof headerValue !== 'string') return null;
   const trimmed = headerValue.trim();
   if (!trimmed) return null;
   const seconds = Number(trimmed);
