@@ -5,6 +5,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { createFlatListStub } from './helpers/virtualizedListStub';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import type { FeedbackAttachment, FeatureRequestItem } from '../src/types';
+import type { PickedAttachmentInput } from '../src/utils/attachments';
 
 // Regression tests for issue #49: every icon-only touch target must announce
 // itself to screen readers with a localized `accessibilityLabel` and
@@ -728,7 +729,9 @@ test(
       return jsonResponse({});
     }) as any;
 
-    let resolvePick: (value: any) => void = () => {};
+    let resolvePick: (
+      value: PickedAttachmentInput | PickedAttachmentInput[] | null | undefined
+    ) => void = () => {};
     let renderer!: TestRenderer.ReactTestRenderer;
     try {
       renderer = await renderWithProvider(
@@ -740,9 +743,11 @@ test(
             attachments: ATTACHMENTS,
           },
           onPickAttachment: () =>
-            new Promise((resolve) => {
-              resolvePick = resolve;
-            }),
+            new Promise<PickedAttachmentInput | PickedAttachmentInput[] | null | undefined>(
+              (resolve) => {
+                resolvePick = resolve;
+              }
+            ),
         })
       );
 
