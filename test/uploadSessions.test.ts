@@ -6,6 +6,7 @@ import {
   RateLimitedException,
   RequestTimeoutException,
   TurnstileRequiredException,
+  UnreadableUploadResponseException,
   UploadRejectedException,
   UploadValidationException,
 } from '../src/client/FeedbackException';
@@ -50,29 +51,28 @@ function installUploadFetch(
     });
 
     if (target.endsWith('/api/v1/uploads/sessions')) {
-      return new Response(
-        JSON.stringify(
-          options.sessionBody ?? {
-            session: {
-              sessionId: 'ups_1',
-              sessionToken: SESSION_TOKEN,
-              expiresAt: '2026-10-23T13:00:00.000Z',
-              maxFileSizeBytes: 10485760,
-              maxFiles: 8,
-            },
-            files: slots.map((uploadId, index) => ({
-              clientFileId: `file-${index}`,
-              uploadId,
-              uploadUrl: `/api/v1/uploads/${uploadId}`,
-              maxSizeBytes: 10485760,
-            })),
-          }
-        ),
-        {
-          status: options.sessionStatus ?? 201,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      const responsePayload =
+        options.sessionBody !== undefined
+          ? options.sessionBody
+          : {
+              session: {
+                sessionId: 'ups_1',
+                sessionToken: SESSION_TOKEN,
+                expiresAt: '2026-10-23T13:00:00.000Z',
+                maxFileSizeBytes: 10485760,
+                maxFiles: 8,
+              },
+              files: slots.map((uploadId, index) => ({
+                clientFileId: `file-${index}`,
+                uploadId,
+                uploadUrl: `/api/v1/uploads/${uploadId}`,
+                maxSizeBytes: 10485760,
+              })),
+            };
+      return new Response(JSON.stringify(responsePayload), {
+        status: options.sessionStatus ?? 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const uploadId = target.split('/').pop() || '';
@@ -395,21 +395,267 @@ test('createUploadSession rejects an unauthenticated response', async () => {
   }
 });
 
-test('createUploadSession rejects a response without a session token', async () => {
-  const mocked = installUploadFetch({
-    sessionBody: { session: { sessionId: 'ups_1' }, files: [] },
-  });
+test('createUploadSession rejects invalid session payloads (#399)', async () => {
+  const malformedBodies = [
+    null,
+    'session',
+    123,
+    true,
+    [],
+    {},
+    { session: null, files: [] },
+    { session: 'ups_1', files: [] },
+    { session: 123, files: [] },
+    { session: [], files: [] },
+    // Missing sessionId
+    { session: { sessionToken: SESSION_TOKEN, expiresAt: '2026-10-23T13:00:00.000Z' }, files: [] },
+    {
+      session: {
+        sessionId: '',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: [],
+    },
+    {
+      session: {
+        sessionId: '   ',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: [],
+    },
+    {
+      session: {
+        sessionId: 123,
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: [],
+    },
+    {
+      session: {
+        sessionId: null,
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: [],
+    },
+    // Missing sessionToken
+    { session: { sessionId: 'ups_1', expiresAt: '2026-10-23T13:00:00.000Z' }, files: [] },
+    {
+      session: { sessionId: 'ups_1', sessionToken: '', expiresAt: '2026-10-23T13:00:00.000Z' },
+      files: [],
+    },
+    {
+      session: { sessionId: 'ups_1', sessionToken: '   ', expiresAt: '2026-10-23T13:00:00.000Z' },
+      files: [],
+    },
+    {
+      session: { sessionId: 'ups_1', sessionToken: 123, expiresAt: '2026-10-23T13:00:00.000Z' },
+      files: [],
+    },
+    {
+      session: { sessionId: 'ups_1', sessionToken: null, expiresAt: '2026-10-23T13:00:00.000Z' },
+      files: [],
+    },
+    // Missing expiresAt
+    { session: { sessionId: 'ups_1', sessionToken: SESSION_TOKEN }, files: [] },
+    { session: { sessionId: 'ups_1', sessionToken: SESSION_TOKEN, expiresAt: '' }, files: [] },
+    { session: { sessionId: 'ups_1', sessionToken: SESSION_TOKEN, expiresAt: '   ' }, files: [] },
+    { session: { sessionId: 'ups_1', sessionToken: SESSION_TOKEN, expiresAt: 123 }, files: [] },
+    { session: { sessionId: 'ups_1', sessionToken: SESSION_TOKEN, expiresAt: null }, files: [] },
+    // Missing or invalid files array
+    {
+      session: {
+        sessionId: 'ups_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+    },
+    {
+      session: {
+        sessionId: 'ups_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: null,
+    },
+    {
+      session: {
+        sessionId: 'ups_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: 'not-an-array',
+    },
+    {
+      session: {
+        sessionId: 'ups_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: 123,
+    },
+    {
+      session: {
+        sessionId: 'ups_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: {},
+    },
+  ];
 
-  try {
-    await assert.rejects(
-      makeClient().createUploadSession([makeSpec()], { userToken: USER_TOKEN }),
-      (err: any) => {
-        assert.match(err.name, /UnreadableUploadResponse/);
-        return true;
-      }
-    );
-  } finally {
-    mocked.restore();
+  for (const sessionBody of malformedBodies) {
+    const mocked = installUploadFetch({ sessionBody });
+    try {
+      await assert.rejects(
+        makeClient().createUploadSession([makeSpec()], { userToken: USER_TOKEN }),
+        (err: any) => {
+          assert.ok(
+            err instanceof UnreadableUploadResponseException,
+            `Expected UnreadableUploadResponseException for body: ${JSON.stringify(sessionBody)}`
+          );
+          return true;
+        }
+      );
+    } finally {
+      mocked.restore();
+    }
+  }
+});
+
+test('createUploadSession rejects when files contains null, primitives, or invalid slot records (#399)', async () => {
+  const invalidFileSlots = [
+    [null],
+    ['invalid-slot-primitive'],
+    [123],
+    [true],
+    [[]],
+    [{}],
+    [{ clientFileId: 'f1' }],
+    [{ uploadId: '' }],
+    [{ uploadId: '   ' }],
+    [{ uploadId: '.' }],
+    [{ uploadId: '..' }],
+    [{ uploadId: null }],
+    [{ uploadId: 123 }],
+    [{ uploadId: [] }],
+    [{ uploadId: {} }],
+    // Has uploadUrl but lacks valid uploadId
+    [{ uploadUrl: '/api/v1/uploads/upl_1' }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: null }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: '' }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: '   ' }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: '.' }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: '..' }],
+    [{ uploadUrl: '/api/v1/uploads/upl_1', uploadId: 123 }],
+    // Invalid uploadUrl types
+    [{ uploadId: 'upl_1', uploadUrl: 123 }],
+    [{ uploadId: 'upl_1', uploadUrl: true }],
+    [{ uploadId: 'upl_1', uploadUrl: [] }],
+    [{ uploadId: 'upl_1', uploadUrl: {} }],
+  ];
+
+  for (const files of invalidFileSlots) {
+    const mocked = installUploadFetch({
+      sessionBody: {
+        session: {
+          sessionId: 'ups_1',
+          sessionToken: SESSION_TOKEN,
+          expiresAt: '2026-10-23T13:00:00.000Z',
+          maxFileSizeBytes: 10485760,
+          maxFiles: 8,
+        },
+        files,
+      },
+    });
+
+    try {
+      await assert.rejects(
+        makeClient().createUploadSession([makeSpec()], { userToken: USER_TOKEN }),
+        (err: any) => {
+          assert.ok(
+            err instanceof UnreadableUploadResponseException,
+            `Expected UnreadableUploadResponseException for slot: ${JSON.stringify(files)}`
+          );
+          return true;
+        }
+      );
+    } finally {
+      mocked.restore();
+    }
+  }
+});
+
+test('createUploadSession resolves valid session and slot payloads (#399)', async () => {
+  const validBodies = [
+    // Standard session with uploadUrl
+    {
+      session: {
+        sessionId: 'ups_valid_1',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+        maxFileSizeBytes: 10485760,
+        maxFiles: 8,
+      },
+      files: [
+        {
+          clientFileId: 'f-1',
+          uploadId: 'upl_custom_1',
+          uploadUrl: '/api/v1/uploads/upl_custom_1',
+          maxSizeBytes: 10485760,
+        },
+      ],
+    },
+    // Missing uploadUrl falls back to minted uploadUrl
+    {
+      session: {
+        sessionId: 'ups_valid_2',
+        sessionToken: SESSION_TOKEN,
+        expiresAt: '2026-10-23T13:00:00.000Z',
+      },
+      files: [
+        {
+          clientFileId: 'f-2',
+          uploadId: 'upl_custom_2',
+          maxSizeBytes: 5242880,
+        },
+      ],
+    },
+    // Whitespace-padded uploadId trimmed cleanly
+    {
+      session: {
+        sessionId: '  ups_valid_3  ',
+        sessionToken: `  ${SESSION_TOKEN}  `,
+        expiresAt: '  2026-10-23T13:00:00.000Z  ',
+      },
+      files: [
+        {
+          clientFileId: 'f-3',
+          uploadId: '  upl_custom_3  ',
+          maxSizeBytes: 2048,
+        },
+      ],
+    },
+  ];
+
+  for (const sessionBody of validBodies) {
+    const mocked = installUploadFetch({ sessionBody });
+    try {
+      const session = await makeClient().createUploadSession([makeSpec()], {
+        userToken: USER_TOKEN,
+      });
+      assert.ok(session.sessionId.startsWith('ups_valid'));
+      assert.equal(session.sessionToken, SESSION_TOKEN);
+      assert.equal(session.expiresAt, '2026-10-23T13:00:00.000Z');
+      assert.equal(session.files.length, 1);
+      assert.ok(session.files[0].uploadId.startsWith('upl_custom'));
+      assert.ok(session.files[0].uploadUrl.startsWith('/api/v1/uploads/upl_custom'));
+    } finally {
+      mocked.restore();
+    }
   }
 });
 
