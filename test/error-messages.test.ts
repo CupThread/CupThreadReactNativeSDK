@@ -116,7 +116,7 @@ test('userFacingErrorMessage safely handles null, undefined, or malformed common
 test('uploadErrorMessage safely handles null, undefined, or malformed strings and common dictionaries (#369)', () => {
   assert.equal(
     uploadErrorMessage(
-      new UploadValidationException('file_size_required'),
+      new UploadValidationException('file_size_required', 'File size required'),
       null as any,
       null as any
     ),
@@ -124,14 +124,18 @@ test('uploadErrorMessage safely handles null, undefined, or malformed strings an
   );
   assert.equal(
     uploadErrorMessage(
-      new UploadValidationException('file_size_required'),
+      new UploadValidationException('file_size_required', 'File size required'),
       undefined as any,
       undefined as any
     ),
     'Upload failed'
   );
   assert.equal(
-    uploadErrorMessage(new UploadValidationException('generic'), null as any, null as any),
+    uploadErrorMessage(
+      new UploadValidationException('invalid_field', 'Invalid field'),
+      null as any,
+      null as any
+    ),
     'Upload failed'
   );
   assert.equal(
@@ -176,7 +180,7 @@ test('uploadErrorMessage safely handles null, undefined, or malformed strings an
   // Verify valid strings and common dictionaries still work as intended
   assert.equal(
     uploadErrorMessage(
-      new UploadValidationException('file_size_required'),
+      new UploadValidationException('file_size_required', 'File size required'),
       enStrings.feedbackComposer,
       enStrings.common
     ),
@@ -184,7 +188,7 @@ test('uploadErrorMessage safely handles null, undefined, or malformed strings an
   );
   assert.equal(
     uploadErrorMessage(
-      new UploadValidationException('generic'),
+      new UploadValidationException('invalid_field', 'Invalid field'),
       enStrings.feedbackComposer,
       enStrings.common
     ),
