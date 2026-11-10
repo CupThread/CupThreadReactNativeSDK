@@ -83,7 +83,9 @@ export interface UserTokenStoreOptions {
 }
 
 /**
- * Storage key used to persist the anonymous user identifier in key-value storage.
+ * Whether diagnostics should reach the console in development mode.
+ * Checks `__DEV__` global first, falling back to `process.env.NODE_ENV !== 'production'`.
+ * Falls back safely to false when neither `__DEV__` nor `process.env` is available (e.g. browser ESM, workers).
  */
 function isDevMode(): boolean {
   try {
@@ -94,15 +96,18 @@ function isDevMode(): boolean {
     // ignore
   }
   try {
-    if (typeof process !== 'undefined' && process.env) {
+    if (typeof process !== 'undefined' && Boolean(process.env)) {
       return process.env.NODE_ENV !== 'production';
     }
   } catch {
     // ignore
   }
-  return true;
+  return false;
 }
 
+/**
+ * Storage key used to persist the anonymous user identifier in key-value storage.
+ */
 const STORAGE_KEY = 'cupthread_user_token_v1';
 
 /**
@@ -244,6 +249,15 @@ export class UserTokenStore {
    */
   public resetWarningForTests(): void {
     this.hasWarnedTransientSeen = false;
+  }
+
+  /**
+   * Whether diagnostics should reach the console in development mode.
+   *
+   * @internal
+   */
+  public static isDevMode(): boolean {
+    return isDevMode();
   }
 
   /**
