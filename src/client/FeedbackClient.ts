@@ -1851,12 +1851,28 @@ export class FeedbackClient {
       timeoutMs: options?.timeoutMs,
     });
 
-    const comments = res.comments || [];
+    const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
+    const comments = Array.isArray(safeRes?.comments)
+      ? safeRes.comments.filter(
+          (c): c is FeatureRequestComment =>
+            c !== null && typeof c === 'object' && !Array.isArray(c)
+        )
+      : [];
+    const total =
+      typeof safeRes?.total === 'number' && Number.isFinite(safeRes.total) && safeRes.total >= 0
+        ? safeRes.total
+        : comments.length;
+    const hasMore = safeRes?.hasMore === true;
+    const nextCursor =
+      typeof safeRes?.nextCursor === 'string' && safeRes.nextCursor.trim().length > 0
+        ? safeRes.nextCursor.trim()
+        : null;
+
     return {
       comments,
-      total: typeof res.total === 'number' ? res.total : comments.length,
-      hasMore: res.hasMore === true,
-      nextCursor: typeof res.nextCursor === 'string' ? res.nextCursor : null,
+      total,
+      hasMore,
+      nextCursor,
     };
   }
 

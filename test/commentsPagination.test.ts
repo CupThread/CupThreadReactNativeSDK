@@ -196,6 +196,82 @@ test('listComments normalizes a malformed pagination payload', async () => {
   }
 });
 
+test('listComments safely handles null, empty, or non-object responses (#373)', async () => {
+  for (const body of ['null', '', '[]', JSON.stringify('string payload'), '123', 'true']) {
+    const pages = new Map([[null, { status: 200, body }]]);
+    const fetchMock = installCommentsFetch(pages);
+    try {
+      const result = await makeClient().listComments('fr_1');
+      assert.deepEqual(result, {
+        comments: [],
+        total: 0,
+        hasMore: false,
+        nextCursor: null,
+      });
+    } finally {
+      fetchMock.restore();
+    }
+  }
+});
+
+test('listComments safely handles malformed comments, invalid total, and whitespace cursor (#373)', async () => {
+  const c1 = makeComment('c1');
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          comments: [null, undefined, 'not-a-comment', 123, [], c1],
+          total: -5,
+          hasMore: false,
+          nextCursor: '   ',
+        },
+      },
+    ],
+  ]);
+  const fetchMock = installCommentsFetch(pages);
+  try {
+    const result = await makeClient().listComments('fr_1');
+    assert.deepEqual(
+      result.comments,
+      [c1],
+      'must filter out null, undefined, primitives, and arrays'
+    );
+    assert.equal(result.total, 1, 'negative total must fall back to filtered comments length');
+    assert.equal(result.hasMore, false);
+    assert.equal(result.nextCursor, null, 'whitespace nextCursor must be normalized to null');
+  } finally {
+    fetchMock.restore();
+  }
+
+  // Non-array comments object
+  const nonArrayPages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          comments: { invalid: 'object' },
+          total: NaN,
+          hasMore: 'true' as any,
+          nextCursor: '   cur-123   ',
+        },
+      },
+    ],
+  ]);
+  const nonArrayFetch = installCommentsFetch(nonArrayPages);
+  try {
+    const result = await makeClient().listComments('fr_1');
+    assert.deepEqual(result.comments, []);
+    assert.equal(result.total, 0, 'NaN total must fall back to 0');
+    assert.equal(result.hasMore, false, 'non-boolean hasMore must be false');
+    assert.equal(result.nextCursor, 'cur-123', 'padded nextCursor must be trimmed');
+  } finally {
+    nonArrayFetch.restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Client: fetchComments auto-pagination (deprecated wrapper)
 // ---------------------------------------------------------------------------
