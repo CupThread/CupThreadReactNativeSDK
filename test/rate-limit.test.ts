@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import { FeedbackClient } from '../src/client/FeedbackClient';
+import { FeedbackClient, parseRetryAfterMs } from '../src/client/FeedbackClient';
 import {
   AuthenticationRequiredException,
   RateLimitedException,
@@ -141,6 +141,38 @@ test('parseRetryAfterMs accepts delta-seconds and HTTP-date forms', async () => 
   } finally {
     stubGarbage.restore();
   }
+});
+
+test('parseRetryAfterMs safely guards against null, undefined, whitespace, and non-string truthy inputs (#366)', () => {
+  // nullish and empty inputs
+  assert.equal(parseRetryAfterMs(null), null);
+  assert.equal(parseRetryAfterMs(undefined), null);
+  assert.equal(parseRetryAfterMs(''), null);
+  assert.equal(parseRetryAfterMs('   '), null);
+
+  // non-string truthy inputs do not throw TypeError
+  assert.equal(parseRetryAfterMs(120 as any), null);
+  assert.equal(parseRetryAfterMs(true as any), null);
+  assert.equal(parseRetryAfterMs({} as any), null);
+  assert.equal(parseRetryAfterMs([] as any), null);
+  assert.equal(parseRetryAfterMs((() => {}) as any), null);
+  assert.equal(parseRetryAfterMs(Symbol('retry') as any), null);
+
+  // valid delta-seconds string inputs
+  assert.equal(parseRetryAfterMs('30'), 30000);
+  assert.equal(parseRetryAfterMs('  60  '), 60000);
+  assert.equal(parseRetryAfterMs('0'), 0);
+  assert.equal(parseRetryAfterMs('-10'), 0);
+
+  // valid date string inputs
+  const futureMs = 15000;
+  const dateStr = new Date(Date.now() + futureMs).toUTCString();
+  const parsed = parseRetryAfterMs(dateStr);
+  assert.equal(typeof parsed, 'number');
+  assert.ok(parsed! >= 0 && parsed! <= 20000);
+
+  // unparseable string inputs
+  assert.equal(parseRetryAfterMs('not-a-date'), null);
 });
 
 test('Non-429 unexpected statuses still raise UnexpectedStatusException', async () => {
