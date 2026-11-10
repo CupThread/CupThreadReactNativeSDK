@@ -2588,3 +2588,84 @@ test('useFeatureRequests: the deferred page-0 still fires exactly once with no m
   );
   assert.equal(harness.result.isLoading, false);
 });
+
+test('useFeatureRequests gracefully handles null, non-array, and malformed responses (#376)', async () => {
+  // 1. Initial page-0 load with null response
+  const nullClient = {
+    fetchFeatureRequests: async () => null as any,
+  } as unknown as FeedbackClient;
+
+  const harnessNull = renderTestHook(() =>
+    useFeatureRequests({
+      client: nullClient,
+      pageSize: 20,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harnessNull.result.isLoading, false);
+  assert.deepEqual(harnessNull.result.items, []);
+  assert.equal(harnessNull.result.total, 0);
+  assert.equal(harnessNull.result.hasMore, false);
+  assert.equal(harnessNull.result.error, null);
+
+  // 2. Initial page-0 load with non-array requests object and invalid total
+  const nonArrayClient = {
+    fetchFeatureRequests: async () =>
+      ({
+        requests: { invalid: 'object' } as any,
+        total: NaN,
+        hasMore: false,
+        nextCursor: '   ',
+      }) as any,
+  } as unknown as FeedbackClient;
+
+  const harnessNonArray = renderTestHook(() =>
+    useFeatureRequests({
+      client: nonArrayClient,
+      pageSize: 20,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harnessNonArray.result.isLoading, false);
+  assert.deepEqual(harnessNonArray.result.items, []);
+  assert.equal(harnessNonArray.result.total, 0);
+  assert.equal(harnessNonArray.result.hasMore, false);
+  assert.equal(harnessNonArray.result.error, null);
+
+  // 3. loadMore with malformed response
+  let pageCount = 0;
+  const item1 = makeMockItem('fr_1', 1);
+  const pagingClient = {
+    fetchFeatureRequests: async () => {
+      pageCount++;
+      if (pageCount === 1) {
+        return {
+          requests: [item1],
+          total: 10,
+          hasMore: true,
+          nextCursor: 'cur_page_2',
+        };
+      }
+      // Page 2 returns malformed payload
+      return null as any;
+    },
+  } as unknown as FeedbackClient;
+
+  const harnessPaging = renderTestHook(() =>
+    useFeatureRequests({
+      client: pagingClient,
+      pageSize: 1,
+    })
+  );
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harnessPaging.result.items.length, 1);
+  assert.equal(harnessPaging.result.hasMore, true);
+
+  await harnessPaging.result.loadMore();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(harnessPaging.result.isLoadingMore, false);
+  assert.equal(harnessPaging.result.items.length, 1, 'items remain intact after null page');
+});
