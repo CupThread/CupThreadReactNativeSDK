@@ -922,6 +922,7 @@ export class FeedbackClient {
    * @throws {@link RateLimitedException} If the upload rate limit or daily storage quota is exceeded (429).
    * @throws {@link TurnstileRequiredException} If human verification is required and no valid token was supplied (403).
    * @throws {@link RequestTimeoutException} If session creation times out.
+   * @throws {@link UnreadableUploadResponseException} If the server returns a malformed session or slot record.
    *
    * @example
    * ```ts
@@ -976,31 +977,48 @@ export class FeedbackClient {
     const slots = json?.files;
     if (
       !session ||
+      typeof session !== 'object' ||
+      Array.isArray(session) ||
+      typeof session.sessionId !== 'string' ||
+      !session.sessionId.trim() ||
       typeof session.sessionToken !== 'string' ||
-      !session.sessionToken ||
+      !session.sessionToken.trim() ||
+      typeof session.expiresAt !== 'string' ||
+      !session.expiresAt.trim() ||
       !Array.isArray(slots)
     ) {
       throw new UnreadableUploadResponseException();
     }
 
     return {
-      sessionId: session.sessionId,
-      sessionToken: session.sessionToken,
-      expiresAt: session.expiresAt,
+      sessionId: session.sessionId.trim(),
+      sessionToken: session.sessionToken.trim(),
+      expiresAt: session.expiresAt.trim(),
       maxFileSizeBytes: session.maxFileSizeBytes,
       maxFiles: session.maxFiles,
       files: slots.map((slot) => {
-        let uploadUrl = slot.uploadUrl;
-        if (!uploadUrl) {
-          const uploadId = typeof slot.uploadId === 'string' ? slot.uploadId.trim() : '';
-          if (!uploadId || uploadId === '.' || uploadId === '..') {
-            throw new UnreadableUploadResponseException();
-          }
+        if (!slot || typeof slot !== 'object' || Array.isArray(slot)) {
+          throw new UnreadableUploadResponseException();
+        }
+        const uploadId = typeof slot.uploadId === 'string' ? slot.uploadId.trim() : '';
+        if (!uploadId || uploadId === '.' || uploadId === '..') {
+          throw new UnreadableUploadResponseException();
+        }
+        let uploadUrl: string;
+        if (typeof slot.uploadUrl === 'string' && slot.uploadUrl.trim().length > 0) {
+          uploadUrl = slot.uploadUrl.trim();
+        } else if (
+          slot.uploadUrl === undefined ||
+          slot.uploadUrl === null ||
+          slot.uploadUrl === ''
+        ) {
           uploadUrl = `/api/v1/uploads/${encodeURIComponent(uploadId)}`;
+        } else {
+          throw new UnreadableUploadResponseException();
         }
         return {
           clientFileId: slot.clientFileId,
-          uploadId: slot.uploadId,
+          uploadId,
           uploadUrl,
           maxSizeBytes: slot.maxSizeBytes,
         };
