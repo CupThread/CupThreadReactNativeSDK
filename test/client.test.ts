@@ -203,14 +203,23 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
 
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     interceptedUrls.push(url.toString());
-    // The table only asserts URLs, but `postComment` validates its response as
-    // a created-comment record, so its route needs a spec-shaped envelope.
+    // The table only asserts URLs, but `postComment` and vote endpoints validate
+    // their responses, so their routes need spec-shaped envelopes.
     if (init?.method === 'POST' && url.toString().endsWith('/comments')) {
       return new Response(
         JSON.stringify({
           comment: { id: 'c_enc', body: 'ok', createdAt: '2026-10-25T00:00:00.000Z' },
         }),
         { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (url.toString().endsWith('/vote')) {
+      return new Response(
+        JSON.stringify({
+          voted: true,
+          voteCount: 1,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
     return new Response(JSON.stringify({}), {
@@ -344,6 +353,15 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
           comment: { id: 'c_plain', body: 'ok', createdAt: '2026-10-25T00:00:00.000Z' },
         }),
         { status: 201, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (url.toString().endsWith('/vote')) {
+      return new Response(
+        JSON.stringify({
+          voted: true,
+          voteCount: 1,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
     return new Response(JSON.stringify({}), {
@@ -2326,6 +2344,16 @@ test('FeedbackClient handles non-string optional inputs gracefully (#298)', asyn
       );
     }
 
+    if (url.includes('/vote')) {
+      return new Response(
+        JSON.stringify({
+          voted: true,
+          voteCount: 1,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as any;
 
@@ -3058,6 +3086,137 @@ test('FeedbackClient.submitFeatureRequest rejects malformed responses with Inval
     );
     assert.equal(result.featureRequestId, 'fr_valid_123');
     assert.equal(result.pending, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.castVote and removeVote reject malformed responses with InvalidResponseException (#391)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies: unknown[] = [
+    null,
+    [],
+    ['invalid'],
+    123,
+    true,
+    'ok',
+    {},
+    { voted: true }, // missing voteCount
+    { voted: true, voteCount: '12' }, // non-numeric voteCount
+    { voted: true, voteCount: null }, // non-numeric voteCount
+    { voted: true, voteCount: NaN }, // non-finite voteCount
+    { voted: true, voteCount: Infinity }, // non-finite voteCount
+    { voted: true, voteCount: -Infinity }, // non-finite voteCount
+    { voteCount: 5 }, // missing voted
+    { voted: 'true', voteCount: 5 }, // non-boolean voted
+    { voted: null, voteCount: 5 }, // non-boolean voted
+    { voted: undefined, voteCount: 5 }, // non-boolean voted
+    { voted: 1, voteCount: 5 }, // non-boolean voted
+  ];
+  let next = 0;
+
+  globalThis.fetch = (async () => {
+    const item = malformedBodies[next++];
+    return new Response(JSON.stringify(item), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_vote_malformed_test',
+    });
+
+    for (let i = 0; i < malformedBodies.length; i++) {
+      await assert.rejects(
+        () => client.castVote('fr_123', 'usr_test_1'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Vote operation for fr_123 returned invalid response payload/
+          );
+          return true;
+        }
+      );
+    }
+
+    // Also test removeVote with the same malformed bodies
+    next = 0;
+    for (let i = 0; i < malformedBodies.length; i++) {
+      await assert.rejects(
+        () => client.removeVote('fr_123', 'usr_test_1'),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /Vote operation for fr_123 returned invalid response payload/
+          );
+          return true;
+        }
+      );
+    }
+
+    // Resolves successfully with valid payload
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          voted: true,
+          voteCount: 15,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as any;
+
+    const castResult = await client.castVote('fr_123', 'usr_test_1');
+    assert.equal(castResult.voted, true);
+    assert.equal(castResult.voteCount, 15);
+
+    // Resolves successfully with valid payload including warning
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          voted: true,
+          voteCount: 15,
+          warning: { code: 'email_not_verified', error: 'Email verification needed' },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as any;
+
+    const warningResult = await client.castVote('fr_123', 'usr_test_1');
+    assert.equal(warningResult.voted, true);
+    assert.equal(warningResult.voteCount, 15);
+    assert.deepEqual(warningResult.warning, {
+      code: 'email_not_verified',
+      error: 'Email verification needed',
+    });
+
+    // Resolves successfully for removeVote
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          voted: false,
+          voteCount: 14,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }) as any;
+
+    const removeResult = await client.removeVote('fr_123', 'usr_test_1');
+    assert.equal(removeResult.voted, false);
+    assert.equal(removeResult.voteCount, 14);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1791,6 +1791,8 @@ export class FeedbackClient {
    * @param userToken - User token performing the vote.
    * @param options - Optional request options (including `shipNotifyEmail`, `turnstileToken`, `signal`, and `timeoutMs`) or an `AbortSignal`.
    * @returns Updated vote status (`voted: true`) and total vote count.
+   * @throws {@link TypeError} If `userToken` is empty or whitespace-only.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing/invalid vote fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -1821,7 +1823,7 @@ export class FeedbackClient {
         ? castOpts.turnstileToken.trim() || undefined
         : undefined;
 
-    return this.request<VoteResult>({
+    const res = await this.request<VoteResult>({
       method: 'POST',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
@@ -1834,6 +1836,19 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.voted !== 'boolean' ||
+      typeof res.voteCount !== 'number' ||
+      !Number.isFinite(res.voteCount)
+    ) {
+      throw new InvalidResponseException(
+        `Vote operation for ${featureRequestId} returned invalid response payload`
+      );
+    }
+    return res;
   }
 
   /**
@@ -1847,6 +1862,8 @@ export class FeedbackClient {
    * @param userToken - User token removing the vote.
    * @param options - Optional request options or an `AbortSignal`.
    * @returns Updated vote status (`voted: false`) and total vote count.
+   * @throws {@link TypeError} If `userToken` is empty or whitespace-only.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing/invalid vote fields), or if network transport/JSON parsing fails.
    *
    * @example
    * ```ts
@@ -1863,7 +1880,7 @@ export class FeedbackClient {
     if (!trimmedToken) {
       throw new TypeError('Expected a non-empty string for userToken');
     }
-    return this.request<VoteResult>({
+    const res = await this.request<VoteResult>({
       method: 'DELETE',
       path: `/api/v1/feature-requests/${FeedbackClient.encodeSegment(featureRequestId, 'featureRequestId')}/vote`,
       body: {
@@ -1874,6 +1891,19 @@ export class FeedbackClient {
       signal: extractSignal(options),
       timeoutMs: extractTimeoutMs(options),
     });
+    if (
+      !res ||
+      typeof res !== 'object' ||
+      Array.isArray(res) ||
+      typeof res.voted !== 'boolean' ||
+      typeof res.voteCount !== 'number' ||
+      !Number.isFinite(res.voteCount)
+    ) {
+      throw new InvalidResponseException(
+        `Vote operation for ${featureRequestId} returned invalid response payload`
+      );
+    }
+    return res;
   }
 
   /**
@@ -1889,6 +1919,8 @@ export class FeedbackClient {
    * @param userToken - User token performing the vote.
    * @param options - Optional request options or an `AbortSignal`.
    * @returns Updated vote status and total vote count.
+   * @throws {@link TypeError} If `userToken` is empty or whitespace-only.
+   * @throws {@link InvalidResponseException} If the server returns an invalid response payload (null, non-object, array, or missing/invalid vote fields), or if network transport/JSON parsing fails.
    */
   public async toggleVote(
     featureRequestId: string,
