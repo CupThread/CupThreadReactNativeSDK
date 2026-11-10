@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
+  InvalidResponseException,
   InvalidUserAttributesException,
   InvalidUserAttributesSignatureException,
   RequestTimeoutException,
@@ -749,6 +750,79 @@ test('updateUserAttributes trims userToken and plan/currency before computing HM
     });
     const expectedSignature = hmacSha256Hex(secret, expectedCanonical);
     assert.equal(req.body.signature, expectedSignature);
+  } finally {
+    recorder.restore();
+  }
+});
+
+test('updateUserAttributes rejects with InvalidResponseException when the server returns 200 with invalid payloads (#396)', async () => {
+  const malformedBodies = [
+    null,
+    'ok',
+    123,
+    true,
+    false,
+    [],
+    ['item'],
+    {},
+    { success: true },
+    { ok: 'true', updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: null, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: undefined, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: 1, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: true },
+    { ok: true, updatedAt: '' },
+    { ok: true, updatedAt: '   ' },
+    { ok: true, updatedAt: 123 },
+    { ok: true, updatedAt: null },
+    { ok: true, updatedAt: undefined },
+    { ok: true, updatedAt: [] },
+    { ok: true, updatedAt: {} },
+  ];
+
+  const client = new FeedbackClient({
+    baseUrl: 'https://api.cupthread.com',
+    appKey: APP_KEY,
+  });
+
+  for (const body of malformedBodies) {
+    const recorder = installRecordingFetch(body);
+    try {
+      await assert.rejects(
+        () => client.updateUserAttributes({ userToken: USER_TOKEN, isPaying: true }),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /User attributes update returned no valid confirmation record/
+          );
+          return true;
+        }
+      );
+    } finally {
+      recorder.restore();
+    }
+  }
+});
+
+test('updateUserAttributes resolves successfully with valid response record (#396)', async () => {
+  const validBody = {
+    ok: true,
+    updatedAt: '2026-09-01T10:00:00.000Z',
+  };
+  const recorder = installRecordingFetch(validBody);
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: APP_KEY,
+    });
+    const result = await client.updateUserAttributes({
+      userToken: USER_TOKEN,
+      isPaying: true,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.updatedAt, '2026-09-01T10:00:00.000Z');
   } finally {
     recorder.restore();
   }

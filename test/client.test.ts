@@ -242,6 +242,15 @@ test('FeedbackClient percent-encodes appKey, featureRequestId, and userId path s
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
+    if (url.toString().endsWith('/user')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updatedAt: '2026-09-01T10:00:00.000Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -400,6 +409,15 @@ test('FeedbackClient leaves ordinary path segments byte-identical (no double-enc
       return new Response(
         JSON.stringify({
           unsubscribed: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (url.toString().endsWith('/user')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updatedAt: '2026-09-01T10:00:00.000Z',
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
@@ -3395,6 +3413,78 @@ test('subscribeToChangelog, unsubscribeFromChangelog, and unsubscribeFromDigest 
 
     const digestRes = await client.unsubscribeFromDigest('digest.token.value');
     assert.equal(digestRes.unsubscribed, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('FeedbackClient.updateUserAttributes rejects invalid response payloads and resolves valid payloads (#396)', async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedBodies = [
+    null,
+    'ok',
+    123,
+    true,
+    false,
+    [],
+    ['item'],
+    {},
+    { success: true },
+    { ok: 'true', updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: null, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: undefined, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: 1, updatedAt: '2026-09-01T10:00:00.000Z' },
+    { updatedAt: '2026-09-01T10:00:00.000Z' },
+    { ok: true },
+    { ok: true, updatedAt: '' },
+    { ok: true, updatedAt: '   ' },
+    { ok: true, updatedAt: 123 },
+    { ok: true, updatedAt: null },
+    { ok: true, updatedAt: undefined },
+    { ok: true, updatedAt: [] },
+    { ok: true, updatedAt: {} },
+  ];
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_user_attr_test',
+    });
+
+    for (const body of malformedBodies) {
+      globalThis.fetch = (async () => {
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as any;
+
+      await assert.rejects(
+        () => client.updateUserAttributes({ userToken: 'usr_tok', isPaying: true }),
+        (err: unknown) => {
+          assert.ok(err instanceof InvalidResponseException);
+          assert.match(
+            (err as Error).message,
+            /User attributes update returned no valid confirmation record/
+          );
+          return true;
+        }
+      );
+    }
+
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updatedAt: '2026-09-01T10:00:00.000Z',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as any;
+
+    const res = await client.updateUserAttributes({ userToken: 'usr_tok', isPaying: true });
+    assert.equal(res.ok, true);
+    assert.equal(res.updatedAt, '2026-09-01T10:00:00.000Z');
   } finally {
     globalThis.fetch = originalFetch;
   }
