@@ -1330,16 +1330,67 @@ export class FeedbackClient {
       deadlineAt: params.deadlineAt,
     });
 
+    if (!json || typeof json !== 'object' || Array.isArray(json)) {
+      throw new UnreadableUploadResponseException();
+    }
+
+    let uploadId = slot.uploadId;
+    if (json.uploadId !== undefined) {
+      if (
+        typeof json.uploadId !== 'string' ||
+        !json.uploadId.trim() ||
+        json.uploadId.trim() === '.' ||
+        json.uploadId.trim() === '..'
+      ) {
+        throw new UnreadableUploadResponseException();
+      }
+      const responseUploadId = json.uploadId.trim();
+      if (responseUploadId !== slot.uploadId) {
+        throw new UnreadableUploadResponseException();
+      }
+      uploadId = responseUploadId;
+    }
+
+    let filename = declaration.filename;
+    if (json.filename !== undefined) {
+      if (typeof json.filename !== 'string') {
+        throw new UnreadableUploadResponseException();
+      }
+      const trimmed = json.filename.trim();
+      if (trimmed.length > 0) {
+        filename = trimmed;
+      }
+    }
+
+    let mimeType = declaration.mimeType;
+    if (json.mimeType !== undefined) {
+      if (typeof json.mimeType !== 'string') {
+        throw new UnreadableUploadResponseException();
+      }
+      const trimmed = json.mimeType.trim();
+      if (trimmed.length > 0) {
+        mimeType = trimmed;
+      }
+    }
+
+    let size = declaration.size;
+    if (json.size !== undefined) {
+      if (typeof json.size !== 'number' || !Number.isFinite(json.size) || json.size < 0) {
+        throw new UnreadableUploadResponseException();
+      }
+      size = json.size;
+    }
+
     return {
       kind: declaration.kind,
-      uploadId: json?.uploadId || slot.uploadId,
-      key: json?.uploadId || slot.uploadId,
+      uploadId,
+      key: uploadId,
       // The served `UploadedFileResponse` carries no download URL; it is minted
       // server-side when the feedback submission finalizes.
       url: slot.uploadUrl,
-      filename: json?.filename || declaration.filename,
-      mimeType: json?.mimeType || declaration.mimeType,
-      size: json?.size ?? declaration.size,
+      filename,
+      mimeType,
+      size,
     };
   }
 

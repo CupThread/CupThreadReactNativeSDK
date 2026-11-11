@@ -34,6 +34,7 @@ function installUploadFetch(
     slots?: string[];
     sessionStatus?: number;
     sessionBody?: unknown;
+    slotBody?: unknown;
     slotResponder?: (uploadId: string, index: number) => Response;
   } = {}
 ) {
@@ -75,22 +76,26 @@ function installUploadFetch(
       });
     }
 
-    const uploadId = target.split('/').pop() || '';
+    const uploadId = decodeURIComponent(target.split('/').pop() || '');
     if (options.slotResponder) {
       return options.slotResponder(uploadId, slots.indexOf(uploadId));
     }
     // Served `UploadedFileResponse` shape: mimeType/size (no contentType,
     // sizeBytes, or downloadUrl).
+    const slotPayload =
+      options.slotBody !== undefined
+        ? options.slotBody
+        : {
+            uploadId,
+            status: 'uploaded',
+            stored: true,
+            filename: 'file',
+            mimeType: 'image/png',
+            size: 1024,
+            sha256: 'a'.repeat(64),
+          };
     return new Response(
-      JSON.stringify({
-        uploadId,
-        status: 'uploaded',
-        stored: true,
-        filename: 'file',
-        mimeType: 'image/png',
-        size: 1024,
-        sha256: 'a'.repeat(64),
-      }),
+      typeof slotPayload === 'string' ? slotPayload : JSON.stringify(slotPayload),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   }) as any;
@@ -744,6 +749,147 @@ test('uploadAttachment URL-encodes the upload id in the slot path', async () => 
   }
 });
 
+test('uploadAttachment and uploadAttachments reject when slot response is null, primitive, array, or malformed (#402)', async () => {
+  const invalidSlotBodies = [
+    null,
+    'primitive-string',
+    123,
+    true,
+    false,
+    [],
+    [{}],
+    { uploadId: 123 },
+    { uploadId: '.' },
+    { uploadId: '..' },
+    { uploadId: '' },
+    { uploadId: '   ' },
+    { uploadId: 'upl_mismatched' },
+    { uploadId: null },
+    { uploadId: [] },
+    { uploadId: {} },
+    { filename: 123 },
+    { filename: null },
+    { filename: [] },
+    { filename: {} },
+    { mimeType: 123 },
+    { mimeType: null },
+    { mimeType: [] },
+    { mimeType: {} },
+    { size: 'invalid' },
+    { size: null },
+    { size: [] },
+    { size: {} },
+    { size: -1 },
+    { size: -100 },
+    { size: NaN },
+    { size: Infinity },
+  ];
+
+  for (const slotBody of invalidSlotBodies) {
+    const mocked = installUploadFetch({ slotBody });
+    try {
+      await assert.rejects(
+        makeClient().uploadAttachment({ ...makeBlobOptions(), userToken: USER_TOKEN }),
+        (err: any) => {
+          assert.ok(
+            err instanceof UnreadableUploadResponseException,
+            `Expected UnreadableUploadResponseException for single upload with slotBody: ${JSON.stringify(slotBody)}`
+          );
+          return true;
+        }
+      );
+    } finally {
+      mocked.restore();
+    }
+
+    const batchMocked = installUploadFetch({ slotBody });
+    try {
+      await assert.rejects(
+        makeClient().uploadAttachments([makeBlobOptions()], { userToken: USER_TOKEN }),
+        (err: any) => {
+          assert.ok(
+            err instanceof UnreadableUploadResponseException,
+            `Expected UnreadableUploadResponseException for batch upload with slotBody: ${JSON.stringify(slotBody)}`
+          );
+          return true;
+        }
+      );
+    } finally {
+      batchMocked.restore();
+    }
+  }
+});
+
+test('uploadAttachment resolves when slot response is valid object or empty object {} (#402)', async () => {
+  // Empty object {} falls back to declaration and slot values
+  const mockedEmpty = installUploadFetch({ slotBody: {} });
+  try {
+    const attachment = await makeClient().uploadAttachment({
+      file: { uri: 'file:///tmp/pic.png' },
+      filename: 'pic.png',
+      mimeType: 'image/png',
+      size: 500,
+      userToken: USER_TOKEN,
+    });
+    assert.equal(attachment.uploadId, 'upl_1');
+    assert.equal(attachment.key, 'upl_1');
+    assert.equal(attachment.filename, 'pic.png');
+    assert.equal(attachment.mimeType, 'image/png');
+    assert.equal(attachment.size, 500);
+    assert.equal(attachment.kind, 'image');
+    assert.equal(attachment.url, '/api/v1/uploads/upl_1');
+  } finally {
+    mockedEmpty.restore();
+  }
+
+  // Valid slot response with trimmed custom values
+  const mockedCustom = installUploadFetch({
+    slotBody: {
+      uploadId: '  upl_1  ',
+      filename: '  custom_name.png  ',
+      mimeType: '  image/jpeg  ',
+      size: 2048,
+    },
+  });
+  try {
+    const attachment = await makeClient().uploadAttachment({
+      file: { uri: 'file:///tmp/raw.png' },
+      filename: 'raw.png',
+      mimeType: 'image/png',
+      size: 100,
+      userToken: USER_TOKEN,
+    });
+    assert.equal(attachment.uploadId, 'upl_1');
+    assert.equal(attachment.key, 'upl_1');
+    assert.equal(attachment.filename, 'custom_name.png');
+    assert.equal(attachment.mimeType, 'image/jpeg');
+    assert.equal(attachment.size, 2048);
+  } finally {
+    mockedCustom.restore();
+  }
+
+  // Whitespace-only filename and mimeType fall back to declaration
+  const mockedWhitespaceFallback = installUploadFetch({
+    slotBody: {
+      filename: '   ',
+      mimeType: '',
+    },
+  });
+  try {
+    const attachment = await makeClient().uploadAttachment({
+      file: { uri: 'file:///tmp/fallback.png' },
+      filename: 'fallback.png',
+      mimeType: 'image/png',
+      size: 250,
+      userToken: USER_TOKEN,
+    });
+    assert.equal(attachment.filename, 'fallback.png');
+    assert.equal(attachment.mimeType, 'image/png');
+  } finally {
+    mockedWhitespaceFallback.restore();
+  }
+});
+
 test('uploadAttachments reserves one session for the whole batch', async () => {
   const mocked = installUploadFetch({ slots: ['upl_1', 'upl_2', 'upl_3'] });
 
@@ -1001,7 +1147,7 @@ test('uploadAttachments bills session creation and every slot against one budget
 
     slotRequests += 1;
     if (slotRequests === 1) {
-      const uploadId = target.split('/').pop() || '';
+      const uploadId = decodeURIComponent(target.split('/').pop() || '');
       return new Response(
         JSON.stringify({
           uploadId,
