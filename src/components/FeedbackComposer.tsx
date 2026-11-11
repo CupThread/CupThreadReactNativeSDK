@@ -573,6 +573,7 @@ export function FeedbackComposer({
           },
         ]}
         placeholder={strings.feedbackComposer.titlePlaceholder}
+        accessibilityLabel={strings.feedbackComposer.titleLabel}
         placeholderTextColor={colors.textMuted}
         value={title}
         onChangeText={setTitle}
@@ -593,6 +594,7 @@ export function FeedbackComposer({
           },
         ]}
         placeholder={strings.feedbackComposer.detailsPlaceholder}
+        accessibilityLabel={strings.feedbackComposer.detailsLabel}
         placeholderTextColor={colors.textMuted}
         value={description}
         onChangeText={setDescription}
@@ -614,6 +616,7 @@ export function FeedbackComposer({
           },
         ]}
         placeholder={strings.feedbackComposer.namePlaceholder}
+        accessibilityLabel={strings.feedbackComposer.nameLabel}
         placeholderTextColor={colors.textMuted}
         value={reporterName}
         onChangeText={setReporterName}
@@ -632,6 +635,7 @@ export function FeedbackComposer({
           },
         ]}
         placeholder={strings.feedbackComposer.emailPlaceholder}
+        accessibilityLabel={strings.feedbackComposer.emailLabel}
         placeholderTextColor={colors.textMuted}
         value={reporterEmail}
         onChangeText={setReporterEmail}

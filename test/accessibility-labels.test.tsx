@@ -1480,3 +1480,62 @@ test('all locale dictionaries provide non-empty a11y label strings', async () =>
     );
   }
 });
+
+test(
+  'FeedbackComposer, FeatureRequestComposeSheet & FeatureRequestsScreen: every TextInput exposes a localized accessibilityLabel (#286)',
+  renderTestOptions,
+  async () => {
+    const restoreFetch = stubFetch();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    const cases: Array<{
+      name: string;
+      element: React.ReactElement;
+      expected: string[];
+    }> = [
+      {
+        name: 'FeedbackComposer',
+        element: React.createElement(FeedbackComposer, { onClose: () => {} }),
+        expected: [
+          enStrings.feedbackComposer.titleLabel,
+          enStrings.feedbackComposer.detailsLabel,
+          enStrings.feedbackComposer.nameLabel,
+          enStrings.feedbackComposer.emailLabel,
+        ],
+      },
+      {
+        name: 'FeatureRequestComposeSheet',
+        element: React.createElement(FeatureRequestComposeSheet, { onClose: () => {} }),
+        expected: [
+          enStrings.featureRequestCompose.titleLabel,
+          enStrings.featureRequestCompose.descriptionLabel,
+          enStrings.featureRequestCompose.nameLabel,
+        ],
+      },
+      {
+        name: 'FeatureRequestsScreen',
+        element: React.createElement(FeatureRequestsScreen, { onBack: () => {} }),
+        expected: [enStrings.featureRequests.searchPlaceholder],
+      },
+    ];
+
+    try {
+      for (const { name, element, expected } of cases) {
+        textInputProps.length = 0;
+        renderer = await renderWithProvider(element);
+        const labels = new Set(textInputProps.map((p) => p.accessibilityLabel));
+        for (const label of expected) {
+          assert.ok(labels.has(label), `${name}: missing TextInput accessibilityLabel "${label}"`);
+        }
+        assert.ok(
+          textInputProps.every((p) => typeof p.accessibilityLabel === 'string'),
+          `${name}: every TextInput must have an accessibilityLabel`
+        );
+        renderer.unmount();
+      }
+    } finally {
+      restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
