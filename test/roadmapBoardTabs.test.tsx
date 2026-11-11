@@ -1271,3 +1271,52 @@ test(
     }
   }
 );
+
+test(
+  'RoadmapBoardScreen: untagged request appears only under Other, not in a slug-less column or its badge (#416)',
+  renderTestOptions,
+  async () => {
+    renderedTexts.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/columns/')) {
+        return new Response(
+          JSON.stringify({ columns: [{ ...makeColumn('col_a', 'General'), slug: '' }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        const untagged = { ...makeRequest('fr_untagged', ''), columnId: null, status: '' };
+        return new Response(JSON.stringify({ requests: [untagged], total: 1 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderBoard();
+      const tabs = getColumnTabs(renderer);
+      const labels = tabs.map(getTabLabel);
+      assert.deepEqual(labels, ['General, (,0,)', 'Other, (,1,)']);
+      assert.equal(
+        finalPassTexts().includes('Request fr_untagged'),
+        false,
+        'untagged request must not render under the slug-less column'
+      );
+
+      await act(async () => {
+        tabs[1].props.onPress();
+      });
+      await flush();
+      assert.ok(finalPassTexts().includes('Request fr_untagged'));
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);

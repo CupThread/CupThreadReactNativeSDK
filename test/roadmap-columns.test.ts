@@ -233,3 +233,18 @@ test('groupRoadmapRequests puts untagged requests exclusively in orphans, never 
   assert.deepEqual(orphanRequests, [untagged]);
   assert.equal(columns.filter((c) => requestBelongsToColumn(untagged, c)).length, 0);
 });
+
+test('requestBelongsToColumn trims status and slug before the legacy fallback match (#416)', () => {
+  const column = makeColumn({ id: 'col_1', slug: ' planned ' });
+  assert.equal(
+    requestBelongsToColumn(
+      makeRequest({ id: 'r1', columnId: undefined, status: 'planned ' }),
+      column
+    ),
+    true
+  );
+  const blankSlug = makeColumn({ id: 'col_2', slug: '   ' });
+  const blankStatus = makeRequest({ id: 'r2', columnId: undefined, status: '  ' });
+  assert.equal(requestBelongsToColumn(blankStatus, blankSlug), false);
+  assert.equal(requestBelongsToColumn(blankStatus, column), false);
+});
