@@ -1344,7 +1344,11 @@ export class FeedbackClient {
       ) {
         throw new UnreadableUploadResponseException();
       }
-      uploadId = json.uploadId.trim();
+      const responseUploadId = json.uploadId.trim();
+      if (responseUploadId !== slot.uploadId) {
+        throw new UnreadableUploadResponseException();
+      }
+      uploadId = responseUploadId;
     }
 
     let filename = declaration.filename;

@@ -76,7 +76,7 @@ function installUploadFetch(
       });
     }
 
-    const uploadId = target.split('/').pop() || '';
+    const uploadId = decodeURIComponent(target.split('/').pop() || '');
     if (options.slotResponder) {
       return options.slotResponder(uploadId, slots.indexOf(uploadId));
     }
@@ -763,6 +763,7 @@ test('uploadAttachment and uploadAttachments reject when slot response is null, 
     { uploadId: '..' },
     { uploadId: '' },
     { uploadId: '   ' },
+    { uploadId: 'upl_mismatched' },
     { uploadId: null },
     { uploadId: [] },
     { uploadId: {} },
@@ -844,7 +845,7 @@ test('uploadAttachment resolves when slot response is valid object or empty obje
   // Valid slot response with trimmed custom values
   const mockedCustom = installUploadFetch({
     slotBody: {
-      uploadId: '  upl_custom_trimmed  ',
+      uploadId: '  upl_1  ',
       filename: '  custom_name.png  ',
       mimeType: '  image/jpeg  ',
       size: 2048,
@@ -858,8 +859,8 @@ test('uploadAttachment resolves when slot response is valid object or empty obje
       size: 100,
       userToken: USER_TOKEN,
     });
-    assert.equal(attachment.uploadId, 'upl_custom_trimmed');
-    assert.equal(attachment.key, 'upl_custom_trimmed');
+    assert.equal(attachment.uploadId, 'upl_1');
+    assert.equal(attachment.key, 'upl_1');
     assert.equal(attachment.filename, 'custom_name.png');
     assert.equal(attachment.mimeType, 'image/jpeg');
     assert.equal(attachment.size, 2048);
@@ -1146,7 +1147,7 @@ test('uploadAttachments bills session creation and every slot against one budget
 
     slotRequests += 1;
     if (slotRequests === 1) {
-      const uploadId = target.split('/').pop() || '';
+      const uploadId = decodeURIComponent(target.split('/').pop() || '');
       return new Response(
         JSON.stringify({
           uploadId,
