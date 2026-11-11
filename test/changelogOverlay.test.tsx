@@ -281,3 +281,81 @@ test(
     }
   }
 );
+
+async function renderOverlayWithEntries(
+  appKey: string,
+  onlyIfUnseen: boolean,
+  onClose: () => void
+): Promise<{ renderer: any; restore: () => void }> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const s = url.toString();
+    if (s.includes('/api/v1/public/config/')) {
+      return new Response(JSON.stringify({ appKey, sdk: { features: { changelog: true } } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (s.includes('/changelog')) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response('{}', { status: 200 });
+  }) as any;
+  const client = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey });
+  let renderer: any = null;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <CupThreadProvider client={client}>
+        <ChangelogOverlay visible={true} onlyIfUnseen={onlyIfUnseen} onClose={onClose} />
+      </CupThreadProvider>
+    );
+  });
+  await flush(10);
+  return {
+    renderer,
+    restore: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
+}
+
+test(
+  'ChangelogOverlay renders the empty-changelog notice instead of a blank card when there are no entries (#199)',
+  renderTestOptions,
+  async () => {
+    let closed = false;
+    const { renderer, restore } = await renderOverlayWithEntries('app_overlay_empty', false, () => {
+      closed = true;
+    });
+    try {
+      assert.ok(
+        JSON.stringify(renderer.toJSON()).includes('No release notes published yet.'),
+        'empty overlay must show the emptyChangelog copy'
+      );
+      assert.equal(closed, false, 'non-onlyIfUnseen overlay must not auto-dismiss');
+    } finally {
+      restore();
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'ChangelogOverlay still auto-dismisses with onlyIfUnseen when there is nothing to show (#199)',
+  renderTestOptions,
+  async () => {
+    let closed = false;
+    const { renderer, restore } = await renderOverlayWithEntries('app_overlay_empty2', true, () => {
+      closed = true;
+    });
+    try {
+      assert.equal(closed, true);
+    } finally {
+      restore();
+      renderer?.unmount();
+    }
+  }
+);
