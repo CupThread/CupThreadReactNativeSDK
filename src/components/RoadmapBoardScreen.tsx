@@ -32,6 +32,7 @@ import {
   ROADMAP_OTHER_COLUMN_ID,
   formatColumnTabCount,
   groupRoadmapRequests,
+  requestBelongsToColumn,
 } from '../utils/roadmapColumns';
 
 /**
@@ -176,9 +177,7 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
   const columnItems = useMemo(() => {
     if (isOtherSelected) return orphanRequests;
     if (!activeColumn) return requests;
-    return requests.filter((r) => {
-      return r.columnId === activeColumn.id || (!r.columnId && r.status === activeColumn.slug);
-    });
+    return requests.filter((r) => requestBelongsToColumn(r, activeColumn));
   }, [isOtherSelected, orphanRequests, activeColumn, requests]);
 
   // Visible columns first, then the "Other" fallback tab whenever any request
@@ -263,12 +262,10 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
               const count =
                 col.id === ROADMAP_OTHER_COLUMN_ID
                   ? orphanRequests.length
-                  : requests.filter(
-                      (r) =>
-                        r.columnId === col.id ||
-                        (!r.columnId &&
-                          r.status === visibleColumns.find((c) => c.id === col.id)?.slug)
-                    ).length;
+                  : requests.filter((r) => {
+                      const column = visibleColumns.find((c) => c.id === col.id);
+                      return column ? requestBelongsToColumn(r, column) : false;
+                    }).length;
 
               return (
                 <TouchableOpacity

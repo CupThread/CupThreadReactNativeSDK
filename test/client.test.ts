@@ -2739,6 +2739,64 @@ test('FeedbackClient.listComments filters out comment items with missing, empty,
   }
 });
 
+test('FeedbackClient.fetchColumns filters out column items with missing, empty, or non-string IDs and trims whitespace (#411)', async () => {
+  const originalFetch = globalThis.fetch;
+  let mockPayload: any = null;
+
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify(mockPayload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as any;
+
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_filter_column_ids',
+    });
+
+    // 1. Wrapped response: { columns: [...] }
+    mockPayload = {
+      columns: [
+        { id: '', name: 'Empty string id', position: 10 },
+        { id: '   \t\n  ', name: 'Whitespace only id', position: 20 },
+        { id: null, name: 'Null id', position: 30 },
+        { id: undefined, name: 'Undefined id', position: 40 },
+        { id: 123, name: 'Numeric id', position: 50 },
+        { id: [], name: 'Array id', position: 60 },
+        { id: {}, name: 'Object id', position: 70 },
+        { name: 'Missing id property', position: 80 },
+        { id: '  col_padded_2  ', name: 'Padded ID 2', position: 200 },
+        { id: 'col_clean_1', name: 'Clean ID 1', position: 100 },
+      ],
+    };
+
+    const resWrapped = await client.fetchColumns();
+    assert.equal(resWrapped.length, 2);
+    assert.equal(resWrapped[0].id, 'col_clean_1');
+    assert.equal(resWrapped[0].name, 'Clean ID 1');
+    assert.equal(resWrapped[1].id, 'col_padded_2');
+    assert.equal(resWrapped[1].name, 'Padded ID 2');
+
+    // 2. Direct array payload: [...]
+    mockPayload = [
+      { id: '', name: 'Empty' },
+      { id: null, name: 'Null' },
+      { id: '   ', name: 'Whitespace' },
+      { id: '  col_trimmed_0  ', name: 'Zero', position: -10 },
+      { id: 'col_1', name: 'One', position: 10 },
+    ];
+
+    const resArray = await client.fetchColumns();
+    assert.equal(resArray.length, 2);
+    assert.equal(resArray[0].id, 'col_trimmed_0');
+    assert.equal(resArray[1].id, 'col_1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('FeedbackClient.fetchVersions filters out version items with missing, empty, or non-string IDs and trims whitespace (#412)', async () => {
   const originalFetch = globalThis.fetch;
   let mockPayload: any = null;
