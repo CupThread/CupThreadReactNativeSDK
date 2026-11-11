@@ -181,6 +181,12 @@ export function ChangelogOverlay({
               retryLabel={strings.common.retry}
               onRetry={handleRetry}
             />
+          ) : entries.length === 0 ? (
+            <View style={styles.loadingArea}>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                {strings.changelog.emptyChangelog}
+              </Text>
+            </View>
           ) : (
             <ScrollView contentContainerStyle={styles.content}>
               {entries.map((item) => {
@@ -252,6 +258,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
     textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   content: {
     paddingHorizontal: 20,
