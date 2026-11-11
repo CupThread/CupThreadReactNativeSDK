@@ -386,6 +386,11 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
                     style={styles.replyButton}
                     activeOpacity={0.7}
                     accessibilityRole="button"
+                    accessibilityLabel={
+                      typeof item.authorName === 'string' && item.authorName.trim()
+                        ? `${strings.comments.replyButton}: ${item.authorName.trim()}`
+                        : strings.comments.replyButton
+                    }
                   >
                     <Text style={[styles.replyButtonText, { color: colors.primary }]}>
                       {strings.comments.replyButton}
