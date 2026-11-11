@@ -375,6 +375,7 @@ export function FeatureRequestComposeSheet({
           },
         ]}
         placeholder={strings.featureRequestCompose.titlePlaceholder}
+        accessibilityLabel={strings.featureRequestCompose.titleLabel}
         placeholderTextColor={colors.textMuted}
         value={title}
         onChangeText={setTitle}
@@ -395,6 +396,7 @@ export function FeatureRequestComposeSheet({
           },
         ]}
         placeholder={strings.featureRequestCompose.descriptionPlaceholder}
+        accessibilityLabel={strings.featureRequestCompose.descriptionLabel}
         placeholderTextColor={colors.textMuted}
         value={description}
         onChangeText={setDescription}
@@ -416,6 +418,7 @@ export function FeatureRequestComposeSheet({
           },
         ]}
         placeholder={strings.featureRequestCompose.namePlaceholder}
+        accessibilityLabel={strings.featureRequestCompose.nameLabel}
         placeholderTextColor={colors.textMuted}
         value={requesterName}
         onChangeText={setRequesterName}

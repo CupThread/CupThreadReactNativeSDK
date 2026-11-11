@@ -293,6 +293,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             },
           ]}
           placeholder={strings.featureRequests.searchPlaceholder}
+          accessibilityLabel={strings.featureRequests.searchPlaceholder}
           placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
