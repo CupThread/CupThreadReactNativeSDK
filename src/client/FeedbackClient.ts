@@ -1472,9 +1472,19 @@ export class FeedbackClient {
       : Array.isArray((safeRes as { columns?: BoardColumn[] })?.columns)
         ? (safeRes as { columns: BoardColumn[] }).columns
         : [];
-    const columns = rawList.filter(
-      (c): c is BoardColumn => c !== null && typeof c === 'object' && !Array.isArray(c)
-    );
+    const columns = rawList
+      .filter(
+        (c): c is BoardColumn =>
+          c !== null &&
+          typeof c === 'object' &&
+          !Array.isArray(c) &&
+          typeof c.id === 'string' &&
+          c.id.trim().length > 0
+      )
+      .map((c) => ({
+        ...c,
+        id: c.id.trim(),
+      }));
     return [...columns].sort((a, b) => {
       const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
       const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;
