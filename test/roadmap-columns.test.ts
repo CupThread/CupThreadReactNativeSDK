@@ -204,3 +204,32 @@ test('requestBelongsToColumn uses status/slug only when columnId is blank', () =
   assert.equal(requestBelongsToColumn(blank, visibleA), true);
   assert.equal(requestBelongsToColumn(unknown, visibleA), false);
 });
+
+test('requestBelongsToColumn never matches when request status and column slug are both missing or empty (#416)', () => {
+  const noSlug = makeColumn({ id: 'col_1', slug: undefined as any });
+  const emptySlug = makeColumn({ id: 'col_2', slug: '' });
+  const noStatus = makeRequest({ id: 'r1', columnId: null as any, status: undefined as any });
+  const emptyStatus = makeRequest({ id: 'r2', columnId: undefined, status: '' });
+  for (const r of [noStatus, emptyStatus]) {
+    for (const c of [noSlug, emptySlug]) {
+      assert.equal(requestBelongsToColumn(r, c), false);
+    }
+  }
+});
+
+test('requestBelongsToColumn does not match undefined ids on both sides (#416)', () => {
+  const noId = makeColumn({ id: 'x', slug: 'planned' });
+  (noId as any).id = undefined;
+  const request = makeRequest({ id: 'r1', columnId: 'something' });
+  assert.equal(requestBelongsToColumn(request, noId), false);
+  const noColumnRequest = makeRequest({ id: 'r2', columnId: undefined, status: '' });
+  assert.equal(requestBelongsToColumn(noColumnRequest, noId), false);
+});
+
+test('groupRoadmapRequests puts untagged requests exclusively in orphans, never in a column (#416)', () => {
+  const col = makeColumn({ id: 'col_1', slug: undefined as any });
+  const untagged = makeRequest({ id: 'r1', columnId: null as any, status: undefined as any });
+  const { columns, orphanRequests } = groupRoadmapRequests([col], [untagged]);
+  assert.deepEqual(orphanRequests, [untagged]);
+  assert.equal(columns.filter((c) => requestBelongsToColumn(untagged, c)).length, 0);
+});
