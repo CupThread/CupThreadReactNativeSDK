@@ -19,15 +19,17 @@ export interface RoadmapColumnGrouping {
 }
 
 /**
- * Whether a request belongs to a column. `columnId` values are compared after
- * trimming (the client trims column ids), and the legacy `status`/`slug`
+ * Whether a request belongs to a column. `columnId`, `status` and `slug` values
+ * are compared after trimming (the client trims column ids), and the legacy `status`/`slug`
  * fallback applies only when the request has no usable `columnId`.
  */
 export function requestBelongsToColumn(request: FeatureRequestItem, column: BoardColumn): boolean {
   const columnId = typeof column.id === 'string' ? column.id.trim() : '';
   const requestColumnId = typeof request.columnId === 'string' ? request.columnId.trim() : '';
   if (requestColumnId) return Boolean(columnId) && requestColumnId === columnId;
-  return Boolean(request.status && column.slug && request.status === column.slug);
+  const status = typeof request.status === 'string' ? request.status.trim() : '';
+  const slug = typeof column.slug === 'string' ? column.slug.trim() : '';
+  return Boolean(status && slug && status === slug);
 }
 
 /**
