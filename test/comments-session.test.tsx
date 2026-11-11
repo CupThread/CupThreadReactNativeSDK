@@ -962,3 +962,39 @@ test(
     }
   }
 );
+
+test(
+  'CommentsSection: reply buttons expose a role and a label naming the target author (#284)',
+  renderTestOptions,
+  async () => {
+    const harness = await renderComments(
+      () => 'clerk_jwt_test',
+      [
+        makeComment('c_named', { authorName: 'Alice' }),
+        makeComment('c_padded', { authorName: '  Bob Padded  ' }),
+        makeComment('c_blank', { authorName: '   ' }),
+        makeComment('c_non_string', { authorName: 42 as any }),
+      ]
+    );
+
+    try {
+      const replyButtons = harness.renderer.root
+        .findAllByType(TouchableOpacityStub as any)
+        .filter((button) =>
+          button.findAllByType(TextStub as any).some((t) => t.props?.children === 'Reply')
+        );
+      assert.equal(replyButtons.length, 4, 'every comment must render a reply button');
+
+      assert.deepEqual(
+        replyButtons.map((b) => b.props.accessibilityLabel),
+        ['Reply: Alice', 'Reply: Bob Padded', 'Reply', 'Reply']
+      );
+      for (const button of replyButtons) {
+        assert.equal(button.props.accessibilityRole, 'button');
+      }
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
