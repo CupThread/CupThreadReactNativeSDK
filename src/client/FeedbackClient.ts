@@ -1506,9 +1506,19 @@ export class FeedbackClient {
       : Array.isArray((safeRes as { versions?: AppVersion[] })?.versions)
         ? (safeRes as { versions: AppVersion[] }).versions
         : [];
-    const versions = rawList.filter(
-      (v): v is AppVersion => v !== null && typeof v === 'object' && !Array.isArray(v)
-    );
+    const versions = rawList
+      .filter(
+        (v): v is AppVersion =>
+          v !== null &&
+          typeof v === 'object' &&
+          !Array.isArray(v) &&
+          typeof v.id === 'string' &&
+          v.id.trim().length > 0
+      )
+      .map((v) => ({
+        ...v,
+        id: v.id.trim(),
+      }));
     return [...versions].sort((a, b) => {
       const posA = typeof a.position === 'number' && Number.isFinite(a.position) ? a.position : 0;
       const posB = typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : 0;
