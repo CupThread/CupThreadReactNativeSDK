@@ -458,6 +458,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
               },
             ]}
             placeholder={strings.comments.inputPlaceholder}
+            accessibilityLabel={strings.comments.inputPlaceholder}
             placeholderTextColor={colors.textMuted}
             value={commentText}
             onChangeText={setCommentText}

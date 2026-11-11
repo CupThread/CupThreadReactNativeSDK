@@ -102,6 +102,7 @@ function SubscribeCard({
               },
             ]}
             placeholder={strings.changelog.emailPlaceholder}
+            accessibilityLabel={strings.changelog.emailPlaceholder}
             placeholderTextColor={colors.textMuted}
             value={email}
             onChangeText={setEmail}

@@ -1539,3 +1539,43 @@ test(
     }
   }
 );
+
+test(
+  'WhatsNewScreen & CommentsSection: TextInputs expose a localized accessibilityLabel (#294)',
+  renderTestOptions,
+  async () => {
+    const restoreFetch = stubFetch();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    const cases: Array<{ name: string; element: React.ReactElement; expected: string }> = [
+      {
+        name: 'WhatsNewScreen',
+        element: React.createElement(WhatsNewScreen, { onBack: () => {} }),
+        expected: enStrings.changelog.emailPlaceholder,
+      },
+      {
+        name: 'CommentsSection',
+        element: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+        expected: enStrings.comments.inputPlaceholder,
+      },
+    ];
+
+    try {
+      for (const { name, element, expected } of cases) {
+        textInputProps.length = 0;
+        renderer = await renderWithProvider(element, {
+          commentSessionProvider: () => 'session_tok_live',
+        });
+        assert.ok(textInputProps.length > 0, `${name}: expected a TextInput to render`);
+        assert.ok(
+          textInputProps.every((p) => p.accessibilityLabel === expected),
+          `${name}: every TextInput must have accessibilityLabel "${expected}"`
+        );
+        renderer.unmount();
+      }
+    } finally {
+      restoreFetch();
+      renderer?.unmount();
+    }
+  }
+);
