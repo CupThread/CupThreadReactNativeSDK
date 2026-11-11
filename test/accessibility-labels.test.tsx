@@ -1579,3 +1579,71 @@ test(
     }
   }
 );
+
+test(
+  'FeatureRequestsScreen & RoadmapBoardScreen: request cards expose button role and title label (#283)',
+  renderTestOptions,
+  async () => {
+    const restoreStub = stubFetch();
+    const stubbedFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/feature-requests') && !/\/comments/.test(target)) {
+        return jsonResponse({
+          requests: [
+            {
+              id: 'fr_1',
+              appId: APP_KEY,
+              columnId: 'col_progress',
+              title: '  Widget support  ',
+              body: 'Details',
+              status: 'published',
+              upvotesCount: 3,
+              commentsCount: 0,
+              hasVoted: false,
+              createdAt: '2026-08-01T00:00:00.000Z',
+            },
+          ],
+          total: 1,
+        });
+      }
+      return stubbedFetch(url as any, init);
+    }) as any;
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    const screens: Array<{ name: string; element: React.ReactElement }> = [
+      {
+        name: 'FeatureRequestsScreen',
+        element: React.createElement(FeatureRequestsScreen, { onBack: () => {} }),
+      },
+      {
+        name: 'RoadmapBoardScreen',
+        element: React.createElement(RoadmapBoardScreen, { onBack: () => {} }),
+      },
+    ];
+
+    try {
+      for (const { name, element } of screens) {
+        pressables.length = 0;
+        renderer = await renderWithProvider(element);
+        // FeatureRequestsScreen debounces its first page-0 load (250ms).
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        await flush(4);
+        const card = pressables.find((p) => p.props.accessibilityLabel === 'Widget support');
+        assert.ok(
+          card,
+          `${name}: request card must expose accessibilityLabel equal to the trimmed title`
+        );
+        assert.equal(
+          card.props.accessibilityRole,
+          'button',
+          `${name}: request card must be a button`
+        );
+        renderer.unmount();
+      }
+    } finally {
+      restoreStub();
+      renderer?.unmount();
+    }
+  }
+);

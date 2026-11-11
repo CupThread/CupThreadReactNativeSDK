@@ -161,6 +161,8 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
       <TouchableOpacity
         activeOpacity={0.8}
         onPress={() => setSelectedItem(item)}
+        accessibilityRole="button"
+        accessibilityLabel={typeof item.title === 'string' ? item.title.trim() : ''}
         style={[
           styles.card,
           {
