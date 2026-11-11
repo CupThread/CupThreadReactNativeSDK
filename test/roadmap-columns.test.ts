@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   formatColumnTabCount,
   groupRoadmapRequests,
+  requestBelongsToColumn,
   ROADMAP_OTHER_COLUMN_ID,
 } from '../src/utils/roadmapColumns';
 import type { BoardColumn, FeatureRequestItem } from '../src/types';
@@ -185,4 +186,21 @@ test('formatColumnTabCount clamps NaN, negative, non-integer, and invalid inputs
   assert.equal(formatColumnTabCount(-Infinity, true), '0+');
   assert.equal(formatColumnTabCount(undefined as any, false), '0');
   assert.equal(formatColumnTabCount(null as any, true), '0+');
+});
+
+test('requestBelongsToColumn matches padded columnId against trimmed column id (#415)', () => {
+  const padded = makeRequest({ id: 'r1', columnId: '  col_a  ' });
+  assert.equal(requestBelongsToColumn(padded, visibleA), true);
+  assert.equal(requestBelongsToColumn(padded, visibleB), false);
+  const { orphanRequests } = groupRoadmapRequests([visibleA], [padded]);
+  assert.deepEqual(orphanRequests, []);
+});
+
+test('requestBelongsToColumn uses status/slug only when columnId is blank', () => {
+  const legacy = makeRequest({ id: 'r2', status: 'planned' });
+  const blank = makeRequest({ id: 'r3', columnId: '   ', status: 'planned' });
+  const unknown = makeRequest({ id: 'r4', columnId: 'col_x', status: 'planned' });
+  assert.equal(requestBelongsToColumn(legacy, visibleA), true);
+  assert.equal(requestBelongsToColumn(blank, visibleA), true);
+  assert.equal(requestBelongsToColumn(unknown, visibleA), false);
 });
