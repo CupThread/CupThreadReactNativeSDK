@@ -274,6 +274,7 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
             style={styles.refreshErrorRetry}
             activeOpacity={0.7}
             accessibilityRole="button"
+            accessibilityLabel={strings.common.retry}
           >
             <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
               {strings.common.retry}

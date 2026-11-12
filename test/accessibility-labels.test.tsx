@@ -30,6 +30,7 @@ const pressables: CapturedPressable[] = [];
 const modalProps: Record<string, any>[] = [];
 const textProps: Record<string, any>[] = [];
 const textInputProps: Record<string, any>[] = [];
+const flatListProps: Record<string, any>[] = [];
 
 /** Recursively collects the visible text inside a stubbed element tree. */
 function collectText(node: any): string {
@@ -78,7 +79,13 @@ if (supportsModuleMocks) {
       Modal: ModalStub,
       SafeAreaView: ({ children }: any) => children ?? null,
       RefreshControl: () => null,
-      FlatList: createFlatListStub(),
+      // Records the FlatList props (including the refreshControl element) so
+      // tests can drive pull-to-refresh, then renders exactly like the shared
+      // VirtualizedList stub.
+      FlatList: (props: any) => {
+        flatListProps.push(props);
+        return createFlatListStub()(props);
+      },
       StyleSheet: { create: (styles: any) => styles, flatten: (s: any) => s },
       Alert: { alert: () => {} },
       Linking: { openURL: () => Promise.resolve() },
@@ -1643,6 +1650,449 @@ test(
       }
     } finally {
       restoreStub();
+      renderer?.unmount();
+    }
+  }
+);
+
+/**
+ * Invokes the `onRefresh` handler of the refreshControl element most recently
+ * passed to the FlatList stub, so a test can reproduce a failed
+ * pull-to-refresh without a real gesture.
+ */
+async function triggerRefresh(): Promise<void> {
+  const list = flatListProps[flatListProps.length - 1];
+  assert.ok(list?.refreshControl?.props?.onRefresh, 'rendered list must expose a RefreshControl');
+  await act(async () => {
+    await list.refreshControl.props.onRefresh();
+  });
+  await flush(4);
+}
+
+const BANNER_REQUEST = {
+  id: 'fr_banner',
+  appId: APP_KEY,
+  columnId: 'col_progress',
+  title: 'Banner item',
+  body: 'Details',
+  status: 'published',
+  upvotesCount: 0,
+  commentsCount: 0,
+  hasVoted: false,
+  createdAt: '2026-08-01T00:00:00.000Z',
+};
+
+function makeRoadmapFetch(refreshStarted: () => boolean): (url: string | URL | Request) => any {
+  return (url: string | URL | Request) => {
+    const target = url.toString();
+    if (target.includes('/api/v1/public/config/')) {
+      return jsonResponse({
+        appKey: APP_KEY,
+        name: 'A11y Test App',
+        theme: {},
+        sdk: { features: { roadmap: true } },
+      });
+    }
+    if (target.includes('/api/v1/public/columns/')) {
+      if (refreshStarted()) return Promise.reject(new Error('refresh failed'));
+      return jsonResponse({
+        columns: [
+          {
+            id: 'col_progress',
+            appId: APP_KEY,
+            name: 'In Progress',
+            slug: 'in-progress',
+            position: 0,
+            isVisible: true,
+          },
+        ],
+      });
+    }
+    if (target.includes('/api/v1/feature-requests')) {
+      if (refreshStarted()) return Promise.reject(new Error('refresh failed'));
+      return jsonResponse({ requests: [BANNER_REQUEST], total: 1 });
+    }
+    return jsonResponse({});
+  };
+}
+
+test(
+  'RoadmapBoardScreen: footer load-more exposes a role/label and switches to Retry on error (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let requestsCallCount = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { roadmap: true } },
+        });
+      }
+      if (target.includes('/api/v1/public/columns/')) {
+        return jsonResponse({
+          columns: [
+            {
+              id: 'col_progress',
+              appId: APP_KEY,
+              name: 'In Progress',
+              slug: 'in-progress',
+              position: 0,
+              isVisible: true,
+            },
+          ],
+        });
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        requestsCallCount += 1;
+        if (requestsCallCount === 1) {
+          return jsonResponse({
+            requests: [
+              {
+                id: 'fr_footer',
+                appId: APP_KEY,
+                columnId: 'col_progress',
+                title: 'Footer item',
+                body: 'Details',
+                status: 'published',
+                upvotesCount: 0,
+                commentsCount: 0,
+                hasVoted: false,
+                createdAt: '2026-08-01T00:00:00.000Z',
+              },
+            ],
+            total: 10,
+          });
+        }
+        return Promise.reject(new Error('load more failed'));
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(RoadmapBoardScreen, { onBack: () => {} })
+      );
+
+      // Idle footer: the non-empty column renders its footer load-more button
+      // announcing the localized "Load more" label.
+      const idleLoadMore = pressables.filter((p) => p.text === enStrings.roadmap.loadMore).pop() as
+        CapturedPressable | undefined;
+      assert.ok(idleLoadMore, 'footer load-more button must render');
+      assert.equal(idleLoadMore.props.accessibilityRole, 'button');
+      assert.equal(idleLoadMore.props.accessibilityLabel, enStrings.roadmap.loadMore);
+
+      // Fail the next page: the visible text switches to Retry, and the
+      // announced label must switch with it.
+      await act(async () => {
+        idleLoadMore.props.onPress();
+      });
+      await flush(4);
+
+      const retryButtons = pressables.filter((p) => p.text === enStrings.common.retry);
+      assert.ok(retryButtons.length > 0, 'footer must render a Retry button after a failure');
+      const retry = retryButtons[retryButtons.length - 1];
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'RoadmapBoardScreen: refresh-error banner retry button exposes a role and label (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let refreshStarted = false;
+    globalThis.fetch = makeRoadmapFetch(() => refreshStarted) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(RoadmapBoardScreen, { onBack: () => {} })
+      );
+      assert.ok(
+        pressables.some((p) => p.text === 'Banner item'),
+        'initial load must succeed'
+      );
+
+      // A failed pull-to-refresh with cached rows keeps the list mounted and
+      // shows the non-blocking banner; its Retry button must be announced.
+      refreshStarted = true;
+      await triggerRefresh();
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'refresh-error banner must render a Retry button');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeatureRequestsScreen: refresh-error banner retry button exposes a role and label (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let refreshStarted = false;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { featureRequests: true } },
+        });
+      }
+      if (target.includes('/api/v1/public/versions/')) {
+        return jsonResponse({ versions: [] });
+      }
+      if (target.includes('/api/v1/feature-requests') && !/\/comments/.test(target)) {
+        if (refreshStarted) return Promise.reject(new Error('refresh failed'));
+        return jsonResponse({ requests: [BANNER_REQUEST], total: 1 });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(FeatureRequestsScreen, { onBack: () => {} })
+      );
+      // FeatureRequestsScreen debounces its first page-0 load (250ms).
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await flush(4);
+      assert.ok(
+        pressables.some((p) => p.text === 'Banner item'),
+        'initial load must succeed'
+      );
+
+      refreshStarted = true;
+      await triggerRefresh();
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'refresh-error banner must render a Retry button');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen: refresh-error banner retry button exposes a role and label (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let refreshStarted = false;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { changelog: true } },
+        });
+      }
+      if (target.includes('/changelog')) {
+        if (refreshStarted) return Promise.reject(new Error('refresh failed'));
+        return jsonResponse({
+          entries: [
+            {
+              id: 'chg_banner',
+              title: 'Release 1.0.0',
+              body: 'Initial release notes',
+              publishedAt: '2026-09-01T00:00:00.000Z',
+              versionLabel: '1.0.0',
+            },
+          ],
+        });
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(WhatsNewScreen, { onBack: () => {} })
+      );
+      assert.ok(
+        textProps.some((t) => t.children === 'Release 1.0.0'),
+        'initial changelog load must succeed'
+      );
+
+      refreshStarted = true;
+      await triggerRefresh();
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'refresh-error banner must render a Retry button');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'CommentsSection: load-more exposes a role/label and switches to Retry on error (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    const originalFetch = globalThis.fetch;
+    let commentsCallCount = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { featureRequests: true } },
+        });
+      }
+      if (target.includes('/comments')) {
+        commentsCallCount += 1;
+        if (commentsCallCount === 1) {
+          return jsonResponse({
+            comments: [
+              {
+                id: 'cmt_page1',
+                featureRequestId: 'fr_1',
+                authorName: 'DevTeam',
+                body: 'First page comment',
+                createdAt: '2026-08-20T09:00:00.000Z',
+                isHidden: false,
+              },
+            ],
+            total: 5,
+            hasMore: true,
+            nextCursor: 'cur_2',
+          });
+        }
+        return Promise.reject(new Error('load more failed'));
+      }
+      return jsonResponse({});
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+        { commentSessionProvider: () => 'session_tok_live' }
+      );
+
+      const idleLoadMore = pressables
+        .filter((p) => p.text === enStrings.comments.loadMore)
+        .pop() as CapturedPressable | undefined;
+      assert.ok(idleLoadMore, 'comments load-more button must render');
+      assert.equal(idleLoadMore.props.accessibilityRole, 'button');
+      assert.equal(idleLoadMore.props.accessibilityLabel, enStrings.comments.loadMore);
+
+      await act(async () => {
+        idleLoadMore.props.onPress();
+      });
+      await flush(4);
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'comments footer must render a Retry button after a failure');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'CommentsSection: cancel-reply and sign-in retry buttons expose roles/labels (#264)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    textInputProps.length = 0;
+    const restoreFetch = stubFetch();
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      // 1. Cancel reply: arming a reply renders the replying bar whose cancel
+      // control must announce the localized cancel-reply label.
+      renderer = await renderWithProvider(
+        React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+        { commentSessionProvider: () => 'session_tok_live' }
+      );
+      const reply = pressables.filter((p) => p.text === 'Reply').pop() as
+        CapturedPressable | undefined;
+      assert.ok(reply, 'reply button must render');
+      await act(async () => {
+        reply.props.onPress();
+      });
+      await flush(2);
+
+      const cancel = pressables.filter((p) => p.text === enStrings.comments.cancelReply).pop() as
+        CapturedPressable | undefined;
+      assert.ok(cancel, 'cancel-reply button must render after arming a reply');
+      assert.equal(cancel.props.accessibilityRole, 'button');
+      assert.equal(cancel.props.accessibilityLabel, enStrings.comments.cancelReply);
+      renderer.unmount();
+
+      // 2. Sign-in retry: a session source that yields no token refuses the
+      // submit and swaps the composer for the sign-in notice, whose Retry
+      // control must be announced.
+      pressables.length = 0;
+      textInputProps.length = 0;
+      renderer = await renderWithProvider(
+        React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+        { commentSessionProvider: () => '' }
+      );
+      const input = textInputProps[textInputProps.length - 1];
+      assert.ok(input, 'composer input must render');
+      await act(async () => {
+        input.onChangeText('A comment that will be refused');
+      });
+      await flush(2);
+
+      const post = pressables.filter((p) => p.text === 'Post Comment').pop() as
+        CapturedPressable | undefined;
+      assert.ok(post, 'post button must render');
+      await act(async () => {
+        post.props.onPress();
+      });
+      await flush(2);
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'sign-in notice must render a Retry button after a refused submit');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      restoreFetch();
       renderer?.unmount();
     }
   }
