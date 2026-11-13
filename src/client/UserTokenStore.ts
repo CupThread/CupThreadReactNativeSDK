@@ -169,6 +169,15 @@ export class UserTokenStore {
   private identityLocked: boolean = false;
 
   /**
+   * Whether the most recent storage read failed, leaving the persisted token
+   * unknown. While set, the store never writes over storage it could not
+   * verify: a token minted in this window is provisional, and a later read
+   * either adopts the persisted identity or persists the provisional one once
+   * storage is verified empty.
+   */
+  private storageReadUnverified: boolean = false;
+
+  /**
    * Subscribers notified whenever the active identity changes (setToken /
    * resetToken / getToken adoption). Lets reactive consumers such as
    * `<CupThreadProvider>` follow explicit login/logout identity switches.
@@ -420,7 +429,10 @@ export class UserTokenStore {
         }
       }
     } catch {
-      // Fallback
+      // A failed read is not verification that storage is empty: keep any
+      // in-memory token provisional and never write over the unknown value.
+      // The next `getToken()` read retries and adopts the persisted token.
+      this.storageReadUnverified = true;
     }
   }
 
@@ -444,6 +456,11 @@ export class UserTokenStore {
    * authoritative and are never reverted by any storage re-read (the initial
    * load or a later {@link UserTokenStore.getToken}).
    *
+   * A failed storage read during construction leaves the persisted token
+   * unknown: `.token` mints a provisional in-memory UUID and does not write it,
+   * and the next {@link UserTokenStore.getToken} read retries and adopts the
+   * stored identity instead of overwriting it.
+   *
    * @example
    * ```ts
    * const userToken = UserTokenStore.shared.token;
@@ -453,8 +470,9 @@ export class UserTokenStore {
     if (!this.cachedToken) {
       const fresh = generateUUID();
       this.cachedToken = fresh;
-      // Only write synchronously if storage is synchronous to prevent corrupting async adapters
-      if (this.storage && !this.isAsyncStorage) {
+      // Only write synchronously if storage is synchronous and its contents
+      // were verified to be empty — never over an unreadable persisted token.
+      if (this.storage && !this.isAsyncStorage && !this.storageReadUnverified) {
         try {
           this.storage.setItem(STORAGE_KEY, fresh);
         } catch {
@@ -471,6 +489,9 @@ export class UserTokenStore {
    * @remarks
    * If storage already contains a token, it is restored into memory and returned.
    * A new UUID is generated and persisted only when storage is verified to be empty.
+   * A storage read that rejects is never treated as verification that storage
+   * is empty: no token is written in that window, and the next `getToken()`
+   * retries the read and adopts the persisted identity once it resolves.
    *
    * Explicit identities installed via {@link UserTokenStore.setToken} or
    * {@link UserTokenStore.resetToken} are authoritative: `getToken()` never
@@ -501,9 +522,12 @@ export class UserTokenStore {
         return this.cachedToken;
       }
       // 1. First, check persistent storage adapter if available
+      let storageVerified = false;
       if (this.storage) {
         try {
           const stored = await this.storage.getItem(STORAGE_KEY);
+          storageVerified = true;
+          this.storageReadUnverified = false;
           if (this.identityLocked && this.cachedToken) {
             return this.cachedToken;
           }
@@ -517,13 +541,18 @@ export class UserTokenStore {
             return this.cachedToken;
           }
         } catch {
-          // If storage lookup fails, fall through to fallback
+          // The read failed, so the persisted token is unknown: fall through
+          // with `storageVerified` false and never write over that value.
+          this.storageReadUnverified = true;
         }
       }
 
-      // 2. If storage is empty, check if we already have an in-memory token
+      // 2. If storage is empty, check if we already have an in-memory token.
+      // Persist it only when the read verified storage is empty; on a failed
+      // read the cached token stays provisional so the next call can retry the
+      // read and adopt the stored identity.
       if (this.cachedToken) {
-        if (this.storage) {
+        if (this.storage && storageVerified) {
           try {
             await this.storage.setItem(STORAGE_KEY, this.cachedToken);
           } catch {
@@ -533,10 +562,11 @@ export class UserTokenStore {
         return this.cachedToken;
       }
 
-      // 3. Storage is truly empty: generate new UUID and persist it
+      // 3. No cached token: mint one. Persist it only when the read verified
+      // storage is empty; otherwise it is in-memory only.
       const newToken = generateUUID();
       this.cachedToken = newToken;
-      if (this.storage) {
+      if (this.storage && storageVerified) {
         try {
           await this.storage.setItem(STORAGE_KEY, newToken);
         } catch {
