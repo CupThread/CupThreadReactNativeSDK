@@ -835,7 +835,7 @@ test('useFeatureRequests clears a stale loadMoreError on the next successful pag
 });
 test('useFeatureRequests clears loadMoreError when the query changes even if the replacement page-0 has not landed', async () => {
   let query = 'alpha';
-  let failLoadMore = true;
+  const failLoadMore = true;
   const mockClient = {
     fetchFeatureRequests: async (opts: { query?: string; offset?: number }) => {
       if ((opts.offset ?? 0) > 0) {
@@ -871,7 +871,7 @@ test('useFeatureRequests clears loadMoreError when the query changes even if the
 });
 
 test('useFeatureRequests clears loadMoreError at the start of a manual refresh that fails', async () => {
-  let failLoadMore = true;
+  const failLoadMore = true;
   let failRefresh = false;
   const mockClient = {
     fetchFeatureRequests: async (opts: { offset?: number }) => {
