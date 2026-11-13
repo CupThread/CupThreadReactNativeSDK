@@ -92,7 +92,11 @@ function createDeferred<T>() {
 class SwapStubClient extends FeedbackClient {
   fetchCalls: string[] = [];
   postCalls: PostCall[] = [];
-  commentSources = new Map<string, FeatureRequestComment[]>();
+  paginatedSources = new Map<
+    string,
+    { base: FeatureRequestComment[]; more: FeatureRequestComment[]; cursor: string }
+  >();
+  deferredLoadMore?: ReturnType<typeof createDeferred<ListFeatureRequestCommentsResult>>;
   deferredFetches = new Map<
     string,
     ReturnType<typeof createDeferred<ListFeatureRequestCommentsResult>>
@@ -101,8 +105,34 @@ class SwapStubClient extends FeedbackClient {
   fetchFailures = new Set<string>();
   postedComment = makeComment('c_new', { authorName: null, body: 'Freshly posted' });
 
-  override async listComments(featureRequestId: string): Promise<ListFeatureRequestCommentsResult> {
+  override async listComments(
+    featureRequestId: string,
+    opts?: { cursor?: string | null }
+  ): Promise<ListFeatureRequestCommentsResult> {
     this.fetchCalls.push(featureRequestId);
+    const paginated = this.paginatedSources.get(featureRequestId);
+    if (paginated) {
+      if (!opts?.cursor) {
+        return {
+          comments: paginated.base,
+          total: paginated.base.length + paginated.more.length,
+          hasMore: true,
+          nextCursor: paginated.cursor,
+        };
+      }
+      if (opts.cursor === paginated.cursor && this.deferredLoadMore) {
+        return this.deferredLoadMore.promise;
+      }
+      if (opts.cursor === paginated.cursor) {
+        return {
+          comments: paginated.more,
+          total: paginated.base.length + paginated.more.length,
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
+    }
+
     const deferred = this.deferredFetches.get(featureRequestId);
     if (deferred) return deferred.promise;
     if (this.fetchFailures.has(featureRequestId)) throw new Error('network gone');
@@ -467,6 +497,86 @@ test(
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+const { enStrings } = await import('../src/i18n');
+
+test(
+  'a client swap on the same request id invalidates stale load-more results (#451)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+    const clientA = new SwapStubClient({
+      baseUrl: 'https://api.cupthread.com/a',
+      appKey: 'app_comments_a',
+    });
+    clientA.paginatedSources.set('fr_A', {
+      base: [makeComment('c_a1', 'Client A base')],
+      more: [makeComment('c_a2', 'Client A more')],
+      cursor: 'cursor_a',
+    });
+
+    const clientB = new SwapStubClient({
+      baseUrl: 'https://api.cupthread.com/b',
+      appKey: 'app_comments_b',
+    });
+    clientB.paginatedSources.set('fr_A', {
+      base: [makeComment('c_b1', 'Client B base')],
+      more: [makeComment('c_b2', 'Client B more')],
+      cursor: 'cursor_b',
+    });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client: clientA,
+          userToken: 'usr_tok_test',
+          commentSessionProvider: () => 'clerk_jwt_live',
+          children: React.createElement(CommentsSection, { featureRequestId: 'fr_A' }),
+        })
+      );
+    });
+    await flush();
+
+    try {
+      const loadMoreButton = findButtonByText(renderer.root, enStrings.comments.loadMore);
+      assert.ok(loadMoreButton, 'load more affordance should render for client A');
+
+      await act(async () => {
+        await loadMoreButton!.props.onPress();
+      });
+      await flush(2);
+
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client: clientB,
+            userToken: 'usr_tok_test',
+            commentSessionProvider: () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_A' }),
+          })
+        );
+      });
+      await flush(12);
+
+      const text = collectText(renderer.root);
+      assert.ok(
+        !text.includes('Client A more'),
+        'client A load-more page must not remain after client swap'
+      );
+      assert.ok(
+        !text.includes('Client A base'),
+        'previous client comments must be cleared on swap'
+      );
+      assert.equal(clientB.fetchCalls.filter((id) => id === 'fr_A').length, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer.unmount();
     }
   }
 );
