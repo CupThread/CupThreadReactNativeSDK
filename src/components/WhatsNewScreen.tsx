@@ -344,7 +344,9 @@ export function WhatsNewScreen({ onBack, headerTitle }: WhatsNewScreenProps) {
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={strings.changelog.loadMore}
+                  accessibilityLabel={
+                    loadMoreError ? strings.common.retry : strings.changelog.loadMore
+                  }
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
                     {loadMoreError ? strings.common.retry : strings.changelog.loadMore}

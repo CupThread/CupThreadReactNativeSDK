@@ -2097,3 +2097,152 @@ test(
     }
   }
 );
+
+test(
+  'WhatsNewScreen: footer load-more exposes a role/label and switches to Retry on error (#262)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    const originalFetch = globalThis.fetch;
+    let changelogCallCount = 0;
+    globalThis.fetch = async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { changelog: true } },
+        });
+      }
+      if (target.includes('/changelog')) {
+        changelogCallCount += 1;
+        if (changelogCallCount === 1) {
+          return jsonResponse({
+            entries: [
+              {
+                id: 'chg_page1',
+                title: 'Release 1.0.0',
+                body: 'Notes',
+                publishedAt: '2026-09-01T00:00:00.000Z',
+                versionLabel: '1.0.0',
+              },
+            ],
+            hasMore: true,
+            nextCursor: 'cur_2',
+          });
+        }
+        return Promise.reject(new Error('load more failed'));
+      }
+      return jsonResponse({});
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(WhatsNewScreen, { onBack: () => {} })
+      );
+
+      const idleLoadMore = pressables
+        .filter((p) => p.text === enStrings.changelog.loadMore)
+        .pop() as CapturedPressable | undefined;
+      assert.ok(idleLoadMore, 'changelog footer load-more button must render');
+      assert.equal(idleLoadMore.props.accessibilityRole, 'button');
+      assert.equal(idleLoadMore.props.accessibilityLabel, enStrings.changelog.loadMore);
+
+      // Fail the next page: the visible text switches to Retry, and the
+      // announced label must switch with it.
+      await act(async () => {
+        idleLoadMore.props.onPress();
+      });
+      await flush(4);
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'changelog footer must render a Retry button after a failure');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);
+
+test(
+  'FeatureRequestsScreen: footer load-more exposes a role/label and switches to Retry on error (#262)',
+  renderTestOptions,
+  async () => {
+    pressables.length = 0;
+    flatListProps.length = 0;
+    const originalFetch = globalThis.fetch;
+    let requestsCallCount = 0;
+    globalThis.fetch = async (url: string | URL | Request) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return jsonResponse({
+          appKey: APP_KEY,
+          name: 'A11y Test App',
+          theme: {},
+          sdk: { features: { featureRequests: true } },
+        });
+      }
+      if (target.includes('/api/v1/feature-requests')) {
+        requestsCallCount += 1;
+        if (requestsCallCount === 1) {
+          return jsonResponse({
+            requests: [
+              {
+                id: 'fr_page1',
+                appId: APP_KEY,
+                columnId: 'col_progress',
+                title: 'First page item',
+                body: 'Details',
+                status: 'published',
+                upvotesCount: 0,
+                commentsCount: 0,
+                hasVoted: false,
+                createdAt: '2026-08-01T00:00:00.000Z',
+              },
+            ],
+            total: 10,
+            hasMore: true,
+            nextCursor: 'cur_2',
+          });
+        }
+        return Promise.reject(new Error('load more failed'));
+      }
+      return jsonResponse({});
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      renderer = await renderWithProvider(
+        React.createElement(FeatureRequestsScreen, { onBack: () => {} })
+      );
+      // FeatureRequestsScreen debounces its first page-0 load (250ms).
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await flush(4);
+
+      const idleLoadMore = pressables.filter((p) => p.text === enStrings.roadmap.loadMore).pop() as
+        CapturedPressable | undefined;
+      assert.ok(idleLoadMore, 'feature-requests footer load-more button must render');
+      assert.equal(idleLoadMore.props.accessibilityRole, 'button');
+      assert.equal(idleLoadMore.props.accessibilityLabel, enStrings.roadmap.loadMore);
+
+      await act(async () => {
+        idleLoadMore.props.onPress();
+      });
+      await flush(4);
+
+      const retry = pressables.filter((p) => p.text === enStrings.common.retry).pop() as
+        CapturedPressable | undefined;
+      assert.ok(retry, 'feature-requests footer must render a Retry button after a failure');
+      assert.equal(retry.props.accessibilityRole, 'button');
+      assert.equal(retry.props.accessibilityLabel, enStrings.common.retry);
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer?.unmount();
+    }
+  }
+);

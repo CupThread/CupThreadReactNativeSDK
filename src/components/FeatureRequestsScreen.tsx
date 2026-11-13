@@ -495,6 +495,10 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
                   }}
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    loadMoreError ? strings.common.retry : strings.roadmap.loadMore
+                  }
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
                     {loadMoreError ? strings.common.retry : strings.roadmap.loadMore}
