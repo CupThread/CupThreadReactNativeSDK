@@ -278,6 +278,7 @@ const INVALID_UPLOAD_FILE_CASES: Array<{ label: string; file: unknown }> = [
   { label: 'null', file: null },
   { label: 'number', file: 123 },
   { label: 'empty uri', file: { uri: '' } },
+  { label: 'size-only object', file: { size: 1234 } },
 ];
 
 test('uploadAttachment rejects an invalid file payload before any request (#434)', async () => {
@@ -303,6 +304,29 @@ test('uploadAttachment rejects an invalid file payload before any request (#434)
     }
 
     assert.equal(mocked.requests.length, 0, 'invalid payloads must not reserve quota');
+  } finally {
+    mocked.restore();
+  }
+});
+
+test('uploadAttachment rejects a size-only object before reserving quota (#434)', async () => {
+  const mocked = installUploadFetch();
+
+  try {
+    await assert.rejects(
+      makeClient().uploadAttachment({
+        file: { size: 1234 } as never,
+        filename: 'a.png',
+        mimeType: 'image/png',
+        size: 1234,
+      }),
+      (err: unknown) => {
+        assert.ok(err instanceof UploadValidationException);
+        assert.equal(err.code, 'invalid_file_payload');
+        return true;
+      }
+    );
+    assert.equal(mocked.requests.length, 0);
   } finally {
     mocked.restore();
   }

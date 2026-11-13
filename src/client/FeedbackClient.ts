@@ -463,12 +463,21 @@ function validateUploadAttachmentFile(file: unknown): UploadAttachmentFile {
     );
   }
 
-  const blobSize = (file as Blob).size;
-  if (typeof blobSize === 'number' && Number.isFinite(blobSize)) {
-    return file as Blob;
+  if (isUploadAttachmentBlob(file)) {
+    return file;
   }
 
   throw new UploadValidationException('invalid_file_payload', INVALID_UPLOAD_FILE_PAYLOAD_MESSAGE);
+}
+
+function isUploadAttachmentBlob(file: object): file is Blob {
+  if (typeof Blob !== 'undefined' && file instanceof Blob) {
+    return true;
+  }
+  if ('arrayBuffer' in file && typeof file.arrayBuffer === 'function') {
+    return true;
+  }
+  return 'stream' in file && typeof file.stream === 'function';
 }
 
 function isUploadAttachmentUriPayload(
