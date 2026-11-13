@@ -308,6 +308,30 @@ test('useAsyncData: setData does not mark hasLoaded', async () => {
   assert.deepEqual(harness.result.data, ['local-only']);
 });
 
+test('useAsyncData: mergeStale merges only before first successful load', async () => {
+  let call = 0;
+  const merge = (local: { ids: string[] } | null, incoming: { ids: string[] }) => ({
+    ids: [...incoming.ids, ...(local?.ids ?? []).filter((id) => !incoming.ids.includes(id))],
+  });
+  const fetcher = async (): Promise<{ ids: string[] }> => {
+    call += 1;
+    if (call === 1) return { ids: ['server-a'] };
+    return { ids: ['server-b'] };
+  };
+  const harness = renderTestHook(() => useAsyncData(fetcher, { mergeStale: merge }));
+  await flush();
+  assert.deepEqual(harness.result.data, { ids: ['server-a'] });
+  harness.result.setData({ ids: ['local-only'] });
+  await flush();
+  await harness.result.reload();
+  await flush();
+  assert.deepEqual(
+    harness.result.data,
+    { ids: ['server-b'] },
+    'after first success, reload must replace data instead of merging stale locals'
+  );
+});
+
 test('useAsyncData: successful load sets hasLoaded and a later failed reload keeps it', async () => {
   let shouldFail = false;
   const fetcher = async (_signal: AbortSignal): Promise<string[]> => {

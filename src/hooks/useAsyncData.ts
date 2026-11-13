@@ -105,6 +105,8 @@ export function useAsyncData<T>(
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   const [hasLoaded, setHasLoaded] = useState<boolean>(false);
+  const hasLoadedRef = useRef(false);
+  hasLoadedRef.current = hasLoaded;
 
   const controllerRef = useRef<AbortController | null>(null);
   const fetcherRef = useRef(fetcher);
@@ -126,15 +128,19 @@ export function useAsyncData<T>(
       const result = await fetcherRef.current(signal);
       if (signal?.aborted) return;
 
-      if (mergeStaleRef.current && localRevisionRef.current !== rev) {
-        setData((prev) => mergeStaleRef.current!(prev, result));
-      } else if (mergeStaleRef.current) {
-        setData((prev) => (prev != null ? mergeStaleRef.current!(prev, result) : result));
-      } else if (localRevisionRef.current !== rev) {
-        // Stale write skipped when mergeStale is omitted
-      } else {
-        setData(result);
-      }
+      setData((prev) => {
+        if (mergeStaleRef.current && prev != null && !hasLoadedRef.current) {
+          return mergeStaleRef.current(prev, result);
+        }
+        if (localRevisionRef.current !== rev) {
+          if (mergeStaleRef.current) {
+            return mergeStaleRef.current(prev, result);
+          }
+          return prev;
+        }
+        return result;
+      });
+      hasLoadedRef.current = true;
       setHasLoaded(true);
       setError(null);
     } catch (err: any) {
@@ -184,6 +190,7 @@ export function useAsyncData<T>(
       setIsRefreshing(false);
       return;
     }
+    hasLoadedRef.current = false;
     setHasLoaded(false);
     setIsLoading(true);
     void reload();
