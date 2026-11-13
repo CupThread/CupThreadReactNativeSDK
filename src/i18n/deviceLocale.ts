@@ -64,6 +64,74 @@ function detectDeviceLocale(): string | null {
   return detectViaOptionalPackages() ?? detectViaReactNativeCore();
 }
 
+/**
+ * Reads a BCP 47 tag from a loaded `expo-localization` module export.
+ *
+ * Supports the modern top-level `getLocales` API, the v10 `locale` string, and
+ * the legacy nested `Localization` object for older host bundles.
+ */
+export function resolveExpoLocalizationLanguageTag(expoLocalization: unknown): string | null {
+  if (!expoLocalization || typeof expoLocalization !== 'object') {
+    return null;
+  }
+
+  const getLocales =
+    'getLocales' in expoLocalization && typeof expoLocalization.getLocales === 'function'
+      ? expoLocalization.getLocales
+      : undefined;
+  const modernLocales = getLocales?.();
+  if (Array.isArray(modernLocales)) {
+    const firstLocale = modernLocales[0];
+    if (firstLocale && typeof firstLocale === 'object' && 'languageTag' in firstLocale) {
+      const languageTag = firstLocale.languageTag;
+      if (typeof languageTag === 'string' && languageTag) {
+        return languageTag;
+      }
+    }
+  }
+
+  if ('locale' in expoLocalization) {
+    const moduleLocale = expoLocalization.locale;
+    if (typeof moduleLocale === 'string' && moduleLocale) {
+      return moduleLocale;
+    }
+  }
+
+  const legacyLocalization =
+    'Localization' in expoLocalization ? expoLocalization.Localization : undefined;
+  if (!legacyLocalization || typeof legacyLocalization !== 'object') {
+    return null;
+  }
+
+  const legacyGetLocales =
+    'getLocales' in legacyLocalization && typeof legacyLocalization.getLocales === 'function'
+      ? legacyLocalization.getLocales
+      : undefined;
+  const legacyLocales = legacyGetLocales?.();
+  if (Array.isArray(legacyLocales)) {
+    const firstLegacyLocale = legacyLocales[0];
+    if (
+      firstLegacyLocale &&
+      typeof firstLegacyLocale === 'object' &&
+      'languageTag' in firstLegacyLocale
+    ) {
+      const languageTag = firstLegacyLocale.languageTag;
+      if (typeof languageTag === 'string' && languageTag) {
+        return languageTag;
+      }
+    }
+  }
+
+  if ('locale' in legacyLocalization) {
+    const nestedLocale = legacyLocalization.locale;
+    if (typeof nestedLocale === 'string' && nestedLocale) {
+      return nestedLocale;
+    }
+  }
+
+  return null;
+}
+
 function detectViaOptionalPackages(): string | null {
   try {
     // Dynamically check expo-localization if the host app ships it.
@@ -72,10 +140,8 @@ function detectViaOptionalPackages(): string | null {
     // dependency handling from failing bundles without the package.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const expoLocalization = require('expo-localization');
-    const tag =
-      expoLocalization?.Localization?.getLocales?.()[0]?.languageTag ??
-      expoLocalization?.Localization?.locale;
-    if (typeof tag === 'string' && tag) {
+    const tag = resolveExpoLocalizationLanguageTag(expoLocalization);
+    if (tag) {
       return tag;
     }
   } catch {

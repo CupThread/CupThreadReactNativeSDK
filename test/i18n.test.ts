@@ -6,6 +6,7 @@ import {
   resolveLocale,
   resetDeviceLocaleCache,
   setDeviceLocaleProvider,
+  resolveExpoLocalizationLanguageTag,
   deStrings,
   enStrings,
   esStrings,
@@ -416,6 +417,35 @@ test('getDeviceLocale returns null in plain Node without any locale package', ()
   // source available.
   resetDeviceLocaleCache();
   assert.equal(getDeviceLocale(), null);
+});
+
+test('resolveExpoLocalizationLanguageTag prefers modern getLocales exports (#443)', () => {
+  assert.equal(
+    resolveExpoLocalizationLanguageTag({
+      getLocales: () => [{ languageTag: 'fr-FR' }],
+      locale: 'de-DE',
+    }),
+    'fr-FR'
+  );
+});
+
+test('resolveExpoLocalizationLanguageTag reads expo-localization v10 locale export (#443)', () => {
+  assert.equal(resolveExpoLocalizationLanguageTag({ locale: 'pt-BR' }), 'pt-BR');
+});
+
+test('resolveExpoLocalizationLanguageTag keeps legacy nested Localization as fallback (#443)', () => {
+  assert.equal(
+    resolveExpoLocalizationLanguageTag({
+      Localization: { getLocales: () => [{ languageTag: 'ja-JP' }] },
+    }),
+    'ja-JP'
+  );
+  assert.equal(
+    resolveExpoLocalizationLanguageTag({
+      Localization: { locale: 'ko-KR' },
+    }),
+    'ko-KR'
+  );
 });
 
 test('resolveLocale passes explicit locale tags through verbatim', () => {
