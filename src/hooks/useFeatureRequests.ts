@@ -517,6 +517,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       }
 
       const rev = localRevisionRef.current;
+      setLoadMoreError(null);
 
       // Settled-vote guards this fetch cannot need (#184): a page-0 starting
       // now postdates those settlements, so its response is authoritative
@@ -784,6 +785,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     // search-spacing window): until it lands, the on-screen list belongs to
     // the previous query/filter and loadMore must refuse to paginate it.
     page0GenerationRef.current += 1;
+    setLoadMoreError(null);
 
     const controller = new AbortController();
 

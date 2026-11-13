@@ -833,6 +833,74 @@ test('useFeatureRequests clears a stale loadMoreError on the next successful pag
   assert.equal(harness.result.error, null);
   assert.equal(harness.result.items.length, 1, 'refresh shows the fresh page-0 list');
 });
+test('useFeatureRequests clears loadMoreError when the query changes even if the replacement page-0 has not landed', async () => {
+  let query = 'alpha';
+  let failLoadMore = true;
+  const mockClient = {
+    fetchFeatureRequests: async (opts: { query?: string; offset?: number }) => {
+      if ((opts.offset ?? 0) > 0) {
+        if (failLoadMore) throw new Error('pagination offline');
+        return { requests: [makeMockItem('fr_p2', 2)], total: 4 };
+      }
+      const q = typeof opts.query === 'string' ? opts.query : '';
+      return { requests: [makeMockItem(`fr_${q}`, 1)], total: 4 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({
+      client: mockClient,
+      userToken: 'test_token',
+      query,
+      pageSize: 2,
+      debounceMs: 0,
+    })
+  );
+  await flush();
+
+  await harness.result.loadMore();
+  await flush();
+  assert.ok(harness.result.loadMoreError instanceof Error);
+
+  query = 'beta';
+  harness.rerender();
+  await flush();
+
+  assert.equal(harness.result.loadMoreError, null);
+  assert.equal(harness.result.error, null);
+});
+
+test('useFeatureRequests clears loadMoreError at the start of a manual refresh that fails', async () => {
+  let failLoadMore = true;
+  let failRefresh = false;
+  const mockClient = {
+    fetchFeatureRequests: async (opts: { offset?: number }) => {
+      if (failRefresh && (opts.offset ?? 0) === 0) throw new Error('refresh offline');
+      if ((opts.offset ?? 0) > 0) {
+        if (failLoadMore) throw new Error('pagination offline');
+        return { requests: [makeMockItem('fr_p2', 2)], total: 4 };
+      }
+      return { requests: [makeMockItem('fr_p1', 1)], total: 4 };
+    },
+  } as unknown as FeedbackClient;
+
+  const harness = renderTestHook(() =>
+    useFeatureRequests({ client: mockClient, userToken: 'test_token', pageSize: 2 })
+  );
+  await flush();
+
+  await harness.result.loadMore();
+  await flush();
+  assert.ok(harness.result.loadMoreError instanceof Error);
+
+  failRefresh = true;
+  await harness.result.refresh();
+  await flush();
+
+  assert.equal(harness.result.loadMoreError, null);
+  assert.ok(harness.result.error instanceof Error);
+  assert.equal(harness.result.error.message, 'refresh offline');
+});
 
 // ---------------------------------------------------------------------------
 // i18n: common.error and common.retry must exist in every locale
