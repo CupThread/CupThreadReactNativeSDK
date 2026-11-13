@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useLayoutEffect, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,12 @@ import type {
   SubmitSuccessContext,
 } from '../types';
 import { formatFileSize } from '../utils/formatters';
-import { processPickedAttachments, uploadInSessionChunks } from '../utils/attachments';
+import {
+  isUploadAttachmentOptions,
+  processPickedAttachments,
+  uploadInSessionChunks,
+} from '../utils/attachments';
+import { linkAbortSignals } from '../utils/abortSignals';
 import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../client/FeedbackClient';
 import { isSurfaceEnabled } from '../utils/featureFlags';
 import {
@@ -241,6 +246,21 @@ export function FeedbackComposer({
   // Counts submit attempts so a late settlement can never clobber the busy
   // state or form of a newer submission that started after a reopen.
   const submitSeqRef = useRef(0);
+  // Counts attachment pick/upload attempts so a late settlement can never
+  // append attachments, surface notices, or release a newer pick's busy state.
+  const uploadSeqRef = useRef(0);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+
+  const cancelInFlightAttachmentUpload = useCallback(() => {
+    const active = uploadAbortRef.current;
+    if (active) {
+      active.abort();
+      uploadAbortRef.current = null;
+    }
+    uploadSeqRef.current += 1;
+  }, []);
+
+  useEffect(() => () => cancelInFlightAttachmentUpload(), [cancelInFlightAttachmentUpload]);
 
   // Runs as a layout effect so the session token advances (and the reopen
   // reset lands) before the reopened form paints: a passive effect can be
@@ -290,6 +310,13 @@ export function FeedbackComposer({
       prevInitialDraftRef.current = initialDraft;
     }
     prevVisibleRef.current = visible;
+    if (wasVisible && !visible) {
+      cancelInFlightAttachmentUpload();
+      // The upload was cancelled with the hidden form, so no request owns the
+      // spinner now. A composer that preserves its draft must not reopen with
+      // attachment and submit controls disabled by a dead attempt.
+      setIsUploadingAttachment(false);
+    }
   }, [
     visible,
     preserveDraftOnClose,
@@ -303,14 +330,20 @@ export function FeedbackComposer({
     isUploadingAttachment,
     isSubmitting,
     errorMessage,
+    cancelInFlightAttachmentUpload,
   ]);
 
   const handleClose = useCallback(() => {
+    cancelInFlightAttachmentUpload();
+    // A host can close the composer without toggling `visible` (embedded form,
+    // modal dismissed elsewhere). Clearing the flag here keeps the controls
+    // usable; the cancelled attempt's ownership-guarded `finally` cannot.
+    setIsUploadingAttachment(false);
     if (!preserveDraftOnClose) {
       resetForm(initialDraft);
     }
     if (onClose) onClose();
-  }, [preserveDraftOnClose, initialDraft, resetForm, onClose]);
+  }, [preserveDraftOnClose, initialDraft, resetForm, onClose, cancelInFlightAttachmentUpload]);
 
   const handlePickAttachment = async () => {
     if (
@@ -322,20 +355,70 @@ export function FeedbackComposer({
     ) {
       return;
     }
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    const uploadId = ++uploadSeqRef.current;
+    const uploadSession = openSessionRef.current;
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    // A picker may return its own cancellation signal. It stays authoritative
+    // alongside the composer's session controller: either source aborting
+    // cancels the upload, and a cancelled pick can never append a late result.
+    // The list is declared outside `try` so `catch` can honor the same rule.
+    let pickSignals: Array<AbortSignal | undefined> = [];
+    const isPickAborted = () => pickSignals.some((signal) => signal?.aborted === true);
+
     try {
       setIsUploadingAttachment(true);
       const picked = await onPickAttachment();
-      if (!picked || isSubmittingRef.current || isSubmitting) {
+      if (
+        !picked ||
+        uploadId !== uploadSeqRef.current ||
+        openSessionRef.current !== uploadSession ||
+        controller.signal.aborted
+      ) {
         return;
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
+      pickSignals = items.map((item) =>
+        isUploadAttachmentOptions(item) ? item.signal : undefined
+      );
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      const uploadSingle = async (options: UploadAttachmentOptions) => {
-        if (isSubmittingRef.current || isSubmitting) {
-          throw new Error('Upload cancelled: submission in progress');
+      if (
+        uploadId !== uploadSeqRef.current ||
+        openSessionRef.current !== uploadSession ||
+        controller.signal.aborted ||
+        isPickAborted()
+      ) {
+        return;
+      }
+      const assertUploadActive = (extraSignals: readonly (AbortSignal | undefined)[] = []) => {
+        if (
+          uploadId !== uploadSeqRef.current ||
+          openSessionRef.current !== uploadSession ||
+          controller.signal.aborted ||
+          extraSignals.some((signal) => signal?.aborted === true) ||
+          isSubmittingRef.current ||
+          isSubmitting
+        ) {
+          const abortError = new Error('The operation was aborted');
+          abortError.name = 'AbortError';
+          throw abortError;
         }
-        return client.uploadAttachment({ ...options, userToken: effectiveToken });
+      };
+      const uploadSingle = async (options: UploadAttachmentOptions) => {
+        assertUploadActive([options.signal]);
+        const linked = linkAbortSignals([controller.signal, options.signal]);
+        try {
+          return await client.uploadAttachment({
+            ...options,
+            userToken: effectiveToken,
+            signal: linked.signal,
+          });
+        } finally {
+          linked.dispose();
+        }
       };
       const { succeeded, failed, unsupported, rejected } = await processPickedAttachments(items, {
         // Reject known-oversized picks before an upload session is reserved, so
@@ -353,16 +436,32 @@ export function FeedbackComposer({
           uploadInSessionChunks(batch, {
             chunkSize: MAX_UPLOAD_FILES,
             uploadBatch: async (chunk) => {
-              if (isSubmittingRef.current || isSubmitting) {
-                throw new Error('Upload cancelled: submission in progress');
+              const chunkSignals = chunk.map((item) => item.signal);
+              assertUploadActive(chunkSignals);
+              // `uploadAttachments` prefers the shared signal, so link every
+              // item signal into it instead of replacing them.
+              const linked = linkAbortSignals([controller.signal, ...chunkSignals]);
+              try {
+                return await client.uploadAttachments(chunk, {
+                  userToken: effectiveToken,
+                  signal: linked.signal,
+                });
+              } finally {
+                linked.dispose();
               }
-              return client.uploadAttachments(chunk, { userToken: effectiveToken });
             },
             upload: uploadSingle,
           }),
       });
 
-      if (isSubmittingRef.current || isSubmitting) {
+      if (
+        uploadId !== uploadSeqRef.current ||
+        openSessionRef.current !== uploadSession ||
+        controller.signal.aborted ||
+        isPickAborted() ||
+        isSubmittingRef.current ||
+        isSubmitting
+      ) {
         return;
       }
 
@@ -399,12 +498,32 @@ export function FeedbackComposer({
       } else {
         setAttachmentNotice(null);
       }
-    } catch (err: any) {
-      if (!isSubmittingRef.current && !isSubmitting) {
+    } catch (err: unknown) {
+      const error = err as { name?: string };
+      if (error?.name === 'AbortError') {
+        return;
+      }
+      if (
+        uploadId === uploadSeqRef.current &&
+        openSessionRef.current === uploadSession &&
+        !controller.signal.aborted &&
+        !isPickAborted() &&
+        !isSubmittingRef.current &&
+        !isSubmitting
+      ) {
         setAttachmentNotice(uploadErrorMessage(err, strings.feedbackComposer, strings.common));
       }
     } finally {
-      setIsUploadingAttachment(false);
+      if (uploadAbortRef.current === controller) {
+        uploadAbortRef.current = null;
+      }
+      if (
+        uploadId === uploadSeqRef.current &&
+        openSessionRef.current === uploadSession &&
+        !controller.signal.aborted
+      ) {
+        setIsUploadingAttachment(false);
+      }
     }
   };
 
@@ -438,6 +557,7 @@ export function FeedbackComposer({
       return;
     }
 
+    cancelInFlightAttachmentUpload();
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setErrorMessage(null);
