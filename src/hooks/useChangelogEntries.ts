@@ -142,10 +142,22 @@ export function useChangelogEntries(
   const isLoadingMoreRef = useRef<boolean>(false);
   const loadControllerRef = useRef<AbortController | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
+  // Identity of the list the cursor belongs to. A keyset cursor is only
+  // meaningful for the client/page size that produced it, so an identity
+  // change must invalidate the old walk before the replacement resolves.
+  const firstPageIdentityRef = useRef({ client, pageSize });
+  // Bumped on every identity change so an in-flight load-more that resolves
+  // late cannot append the previous list's page to the new one.
+  const listGenerationRef = useRef(0);
 
   const loadFirstPage = useCallback(
     async (signal?: AbortSignal) => {
       if (!enabled) return;
+      // Every first-page load replaces the list, so a load-more failure
+      // against the previous list no longer applies — including when the
+      // replacement fails, where the old footer error would otherwise stay
+      // visible next to the new first-page error (#437).
+      setLoadMoreError(null);
       try {
         const page = await client.listChangelog({ limit: pageSize, signal });
         if (signal?.aborted) return;
@@ -189,6 +201,20 @@ export function useChangelogEntries(
     loadControllerRef.current?.abort();
     loadMoreControllerRef.current?.abort();
 
+    const identity = firstPageIdentityRef.current;
+    const identityChanged = identity.client !== client || identity.pageSize !== pageSize;
+    firstPageIdentityRef.current = { client, pageSize };
+    if (identityChanged) {
+      // Drop the previous list's walk before the replacement starts: a cursor
+      // from another client/page size can never be followed here, and a
+      // failed replacement page must not leave `loadMore` holding it.
+      listGenerationRef.current += 1;
+      nextCursorRef.current = null;
+      hasMoreRef.current = false;
+      setHasMore(false);
+      setLoadMoreError(null);
+    }
+
     const controller = new AbortController();
     loadControllerRef.current = controller;
     // The replacement this effect schedules is a plain load, never a
@@ -203,13 +229,14 @@ export function useChangelogEntries(
     return () => {
       controller.abort();
     };
-  }, [loadFirstPage, enabled]);
+  }, [loadFirstPage, enabled, client, pageSize]);
 
   const loadMore = useCallback(async () => {
     if (!enabled || isLoading || isRefreshing || isLoadingMoreRef.current) return;
     if (!hasMoreRef.current) return;
     const cursor = nextCursorRef.current;
     if (!cursor) return;
+    const generation = listGenerationRef.current;
 
     loadMoreControllerRef.current?.abort();
     const controller = new AbortController();
@@ -225,6 +252,9 @@ export function useChangelogEntries(
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
+      // The list was swapped while this page was in flight: its entries and
+      // cursor belong to the previous client/page size, so never merge them.
+      if (listGenerationRef.current !== generation) return;
       // Keyset cursors only move forward. If a refresh rewound the cursor
       // while this page was in flight, the response is stale — discard it.
       if (nextCursorRef.current !== cursor) return;
