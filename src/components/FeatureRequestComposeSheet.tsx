@@ -206,6 +206,10 @@ export function FeatureRequestComposeSheet({
         isSubmittingRef.current = false;
       }
       prevInitialDraftRef.current = initialDraft;
+    } else if (wasVisible && !visible) {
+      // Dismissing ends ownership: a late settlement must not close or report
+      // ownership of a form the host already closed.
+      openSessionRef.current += 1;
     }
     prevVisibleRef.current = visible;
   }, [
@@ -219,7 +223,6 @@ export function FeatureRequestComposeSheet({
     isSubmitting,
     errorMessage,
   ]);
-
   const handleClose = useCallback(() => {
     if (!preserveDraftOnClose) {
       resetForm(initialDraft);
@@ -315,8 +318,10 @@ export function FeatureRequestComposeSheet({
           warnInDev('[CupThread] FeatureRequestComposeSheet: onClose callback threw:', closeErr);
         }
       }
-    } catch (err: any) {
-      if (submitId === submitSeqRef.current) {
+    } catch (err: unknown) {
+      const isLatest = submitId === submitSeqRef.current;
+      const ownsForm = isLatest && openSessionRef.current === submitSession;
+      if (ownsForm) {
         setErrorMessage(
           userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
         );
