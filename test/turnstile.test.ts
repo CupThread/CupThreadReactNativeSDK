@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
+  RequestTimeoutException,
   TurnstileRequiredException,
   UnexpectedStatusException,
 } from '../src/client/FeedbackException';
@@ -150,6 +151,182 @@ test('submit omits turnstileToken when the provider returns undefined or blank',
       description: 'The app crashes immediately on launch.',
     });
     assert.equal('turnstileToken' in requests[1].body, false);
+  } finally {
+    restore();
+  }
+});
+
+/** A provider that never settles, standing in for a hung WebView or backend. */
+function stalledProvider<T>(): Promise<T> {
+  return new Promise<T>(() => {});
+}
+
+test('submit rejects with RequestTimeoutException when the turnstile provider stalls', async () => {
+  const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 50,
+      turnstileTokenProvider: () => stalledProvider<string | undefined>(),
+    });
+
+    await assert.rejects(
+      client.submit({
+        title: 'Crash on launch',
+        description: 'The app crashes immediately on launch.',
+      }),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err instanceof Error ? err.name : String(err)}`
+        );
+        // The reported budget is the submission's timeout, not a provider-only one.
+        assert.equal(err.timeoutMs, 50);
+        return true;
+      }
+    );
+    assert.equal(requests.length, 0, 'no request may be sent once the provider budget elapsed');
+  } finally {
+    restore();
+  }
+});
+
+test('aborting the caller signal settles a pending turnstile provider with AbortError', async () => {
+  const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 5000,
+      turnstileTokenProvider: () => stalledProvider<string | undefined>(),
+    });
+    const controller = new AbortController();
+    const pending = client.submit(
+      {
+        title: 'Crash on launch',
+        description: 'The app crashes immediately on launch.',
+      },
+      undefined,
+      { signal: controller.signal }
+    );
+    setTimeout(() => controller.abort(), 20);
+
+    await assert.rejects(pending, (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.equal(err.name, 'AbortError');
+      return true;
+    });
+    assert.equal(requests.length, 0, 'an aborted provider must not send the request');
+  } finally {
+    restore();
+  }
+});
+
+test('a provider that rejects while aborting does not leak an unhandled rejection', async () => {
+  const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const controller = new AbortController();
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 5000,
+      turnstileTokenProvider: () => {
+        // Synchronously abort the caller and reject: the race checks the abort
+        // before it can attach handlers, so the rejection must be pre-handled.
+        controller.abort();
+        return Promise.reject(new Error('provider rejected while aborting'));
+      },
+    });
+
+    await assert.rejects(
+      client.submit(
+        {
+          title: 'Crash on launch',
+          description: 'The app crashes immediately on launch.',
+        },
+        undefined,
+        { signal: controller.signal }
+      ),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.equal(err.name, 'AbortError');
+        return true;
+      }
+    );
+    // Let the runtime report a rejection that was left unhandled.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(unhandled, []);
+    assert.equal(requests.length, 0);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    restore();
+  }
+});
+
+test('a provider that resolves after the deadline cannot restart the request budget', async () => {
+  const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 50,
+      turnstileTokenProvider: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return 'tok_late_1234567890';
+      },
+    });
+
+    await assert.rejects(
+      client.submit({
+        title: 'Crash on launch',
+        description: 'The app crashes immediately on launch.',
+      }),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err instanceof Error ? err.name : String(err)}`
+        );
+        return true;
+      }
+    );
+    assert.equal(requests.length, 0, 'a late provider token must not be sent');
+  } finally {
+    restore();
+  }
+});
+
+test('submitFeatureRequest bounds a stalled turnstile provider by its timeout', async () => {
+  const { requests, restore } = stubFetch([
+    { status: 200, body: '{"featureRequestId":"fr_1","pending":false}' },
+  ]);
+  try {
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 50,
+      turnstileTokenProvider: () => stalledProvider<string | undefined>(),
+    });
+
+    await assert.rejects(
+      client.submitFeatureRequest(
+        { title: 'Add dark mode', description: 'Please add a dark theme.' },
+        'usr_token_abc'
+      ),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err instanceof Error ? err.name : String(err)}`
+        );
+        return true;
+      }
+    );
+    assert.equal(requests.length, 0, 'the feature request must not be sent');
   } finally {
     restore();
   }

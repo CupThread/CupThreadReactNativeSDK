@@ -1587,3 +1587,52 @@ test('submit suppresses legacy attachment warning in production (#383)', async (
     }
   }
 });
+
+test('uploadAttachments bounds a stalled turnstile provider by the upload budget', async () => {
+  const mocked = installUploadFetch();
+  // Real timers: the assertion is that the SDK's own budget timer settles the
+  // operation, so fake timers would replace the behavior under test.
+  try {
+    const started = Date.now();
+    await assert.rejects(
+      makeClient({
+        uploadTimeoutMs: 50,
+        turnstileTokenProvider: () => new Promise<string | undefined>(() => {}),
+      }).uploadAttachments([makeBlobOptions('one.png')], { userToken: USER_TOKEN }),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof RequestTimeoutException,
+          `Expected RequestTimeoutException, got ${err instanceof Error ? err.name : String(err)}`
+        );
+        // The upload budget, not the JSON request budget, bounds the provider.
+        assert.equal(err.timeoutMs, 50);
+        return true;
+      }
+    );
+    assert.equal(mocked.requests.length, 0, 'a stalled provider must not reserve a session');
+    assert.ok(Date.now() - started < 1000, 'the call must not hang on the provider');
+  } finally {
+    mocked.restore();
+  }
+});
+
+test('createUploadSession aborts a pending turnstile provider with the caller signal', async () => {
+  const mocked = installUploadFetch();
+  try {
+    const controller = new AbortController();
+    const pending = makeClient({
+      uploadTimeoutMs: 5000,
+      turnstileTokenProvider: () => new Promise<string | undefined>(() => {}),
+    }).createUploadSession([makeSpec()], { signal: controller.signal, userToken: USER_TOKEN });
+    setTimeout(() => controller.abort(), 20);
+
+    await assert.rejects(pending, (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.equal(err.name, 'AbortError');
+      return true;
+    });
+    assert.equal(mocked.requests.length, 0, 'an aborted provider must not create a session');
+  } finally {
+    mocked.restore();
+  }
+});

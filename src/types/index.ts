@@ -144,6 +144,16 @@ export interface FeedbackClientConfig {
    * `turnstileToken` set directly on the draft always takes precedence.
    * Synchronous return values are also accepted. Return `undefined` to omit
    * the field (e.g. when the host knows the endpoint is exempt).
+   *
+   * The provider is part of the operation's timeout and abort budget: it
+   * shares `timeoutMs` ({@link FeedbackClientConfig.timeoutMs}) with the
+   * submission, and `uploadTimeoutMs` with upload session creation. A provider
+   * that never settles therefore rejects that call with
+   * {@link RequestTimeoutException} once the budget elapses, and aborting the
+   * caller's signal settles it with an `AbortError`; the promise is raced, so
+   * the provider does not need to observe a signal itself. Implementations
+   * should still settle promptly (and must not be relied on to run after the
+   * call already ended).
    */
   turnstileTokenProvider?: () => string | undefined | Promise<string | undefined>;
 
