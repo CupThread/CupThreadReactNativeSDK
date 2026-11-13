@@ -343,6 +343,10 @@ async function executeWithTimeout<T>(
   };
 
   const race = <R>(promise: Promise<R>): Promise<R> => {
+    // Mark the promise handled before the synchronous checks below can throw:
+    // otherwise a provider that rejects while the operation is already settled
+    // surfaces as an unhandled rejection.
+    promise.catch(() => undefined);
     if (isTimeout()) {
       throw new RequestTimeoutException(reportedTimeoutMs, timeoutMessage);
     }
@@ -737,6 +741,12 @@ export class FeedbackClient {
     budget: OperationBudget,
     timeoutMessage: string
   ): Promise<T> {
+    if (budget.deadlineAt !== undefined && budget.deadlineAt - Date.now() <= 0) {
+      // No budget left (an earlier step of the same operation spent it): a
+      // clamped 1 ms timer could still let the step or its request reach the
+      // server after the documented deadline, so fail before starting.
+      throw new RequestTimeoutException(budget.timeoutMs, timeoutMessage);
+    }
     const effectiveTimeoutMs = clampToDeadline(budget.timeoutMs, budget.deadlineAt);
     return executeWithTimeout<T>(
       {

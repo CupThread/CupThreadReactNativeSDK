@@ -223,6 +223,52 @@ test('aborting the caller signal settles a pending turnstile provider with Abort
   }
 });
 
+test('a provider that rejects while aborting does not leak an unhandled rejection', async () => {
+  const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const controller = new AbortController();
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_provider_budget',
+      timeoutMs: 5000,
+      turnstileTokenProvider: () => {
+        // Synchronously abort the caller and reject: the race checks the abort
+        // before it can attach handlers, so the rejection must be pre-handled.
+        controller.abort();
+        return Promise.reject(new Error('provider rejected while aborting'));
+      },
+    });
+
+    await assert.rejects(
+      client.submit(
+        {
+          title: 'Crash on launch',
+          description: 'The app crashes immediately on launch.',
+        },
+        undefined,
+        { signal: controller.signal }
+      ),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.equal(err.name, 'AbortError');
+        return true;
+      }
+    );
+    // Let the runtime report a rejection that was left unhandled.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(unhandled, []);
+    assert.equal(requests.length, 0);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    restore();
+  }
+});
+
 test('a provider that resolves after the deadline cannot restart the request budget', async () => {
   const { requests, restore } = stubFetch([{ status: 200, body: '{"submissionId":"sub_1"}' }]);
   try {
