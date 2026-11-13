@@ -935,10 +935,13 @@ test(
       if (target.includes('/comments')) {
         if (init?.method && init.method !== 'GET') {
           // postComment: the write route shares the path with the read route.
-          return new Response(JSON.stringify(makeComment('c_posted', { body: 'First!' })), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(
+            JSON.stringify({ comment: makeComment('c_posted', { body: 'First!' }) }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         }
         const query = new URLSearchParams(target.split('?')[1] ?? '');
         const cursor = query.get('cursor');
@@ -966,6 +969,15 @@ test(
         );
       }
       // The provider's config fetch is the only other call; it may 404.
+      if (target.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_comments_pagination_test',
+            sdk: { features: { comments: true } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       return new Response('not found', { status: 404 });
     }) as any;
 
@@ -1301,6 +1313,118 @@ test(
         'heading must update to Comments (2), ignoring hidden comment in count'
       );
 
+      renderer.unmount();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+);
+
+test(
+  'CommentsSection: failed first-page load keeps retry after post (#431)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    let listCalls = 0;
+    const requests: RecordedRequest[] = [];
+
+    globalThis.fetch = (async (url: string | URL | Request, init?: { method?: string }) => {
+      const target = url.toString();
+      if (target.includes('/api/v1/public/config/')) {
+        return new Response(
+          JSON.stringify({
+            appKey: 'app_comments_pagination_test',
+            sdk: { features: { comments: true } },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (target.includes('/comments')) {
+        if (init?.method && init.method !== 'GET') {
+          return new Response(
+            JSON.stringify({ comment: makeComment('c_posted', { body: 'First!' }) }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        const query = new URLSearchParams(target.split('?')[1] ?? '');
+        const cursor = query.get('cursor');
+        requests.push({ url: target, cursor, limit: query.get('limit') });
+        listCalls += 1;
+        if (listCalls === 1) {
+          return new Response('server error', { status: 500 });
+        }
+        if (cursor === null) {
+          return new Response(
+            JSON.stringify({
+              comments: [makeComment('c1')],
+              total: 2,
+              hasMore: true,
+              nextCursor: 'cur-2',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            comments: [makeComment('c2')],
+            total: 2,
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('not found', { status: 404 });
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(
+          React.createElement(CupThreadProvider, {
+            client: makeClient(),
+            userToken: 'usr_tok_test',
+            commentSessionProvider: async () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_1' }),
+          })
+        );
+      });
+      await settle();
+
+      const beforePost = collectTexts(renderer.root);
+      assert.ok(beforePost.includes(strings.common.error), 'failed load must surface the error');
+      assert.ok(beforePost.includes(strings.common.retry), 'failed load must keep retry visible');
+
+      const input = renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        input.props.onChangeText('First!');
+      });
+      const send = findPressable(renderer.root, strings.comments.postButton);
+      assert.ok(send, 'composer must stay enabled after a failed first page');
+      await act(async () => {
+        send.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'First!');
+
+      const afterPost = collectTexts(renderer.root);
+      assert.ok(
+        afterPost.includes(strings.common.retry),
+        'retry must remain after a successful post'
+      );
+      const retry = findPressable(renderer.root, strings.common.retry);
+      assert.ok(retry, 'manual retry must remain available after post');
+      await act(async () => {
+        retry.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === 'Comment c1');
+      assert.ok(
+        collectTexts(renderer.root).includes('First!'),
+        'seeded post must survive manual retry and merge into page 0'
+      );
+      const loadMore = findPressable(renderer.root, strings.comments.loadMore);
+      assert.ok(loadMore, 'a successful reload must restore pagination from the server page');
       renderer.unmount();
     } finally {
       globalThis.fetch = originalFetch;

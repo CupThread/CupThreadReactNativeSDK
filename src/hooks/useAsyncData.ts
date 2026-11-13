@@ -49,6 +49,13 @@ export interface UseAsyncDataResult<T> {
   error: Error | null;
 
   /**
+   * Whether at least one fetch for the current fetcher completed successfully.
+   * Local `setData` writes do not set this; it resets when the fetcher identity
+   * changes.
+   */
+  hasLoaded: boolean;
+
+  /**
    * Runs a full reload with `isLoading = true`. Aborts any in-flight request.
    * Used to implement retry buttons.
    */
@@ -97,6 +104,9 @@ export function useAsyncData<T>(
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [hasLoaded, setHasLoaded] = useState<boolean>(false);
+  const hasLoadedRef = useRef(false);
+  hasLoadedRef.current = hasLoaded;
 
   const controllerRef = useRef<AbortController | null>(null);
   const fetcherRef = useRef(fetcher);
@@ -117,15 +127,21 @@ export function useAsyncData<T>(
     try {
       const result = await fetcherRef.current(signal);
       if (signal?.aborted) return;
-
-      if (localRevisionRef.current !== rev) {
-        if (mergeStaleRef.current) {
-          setData((prev) => mergeStaleRef.current!(prev, result));
+      const hadLoadedBeforeFetch = hasLoadedRef.current;
+      setData((prev) => {
+        if (mergeStaleRef.current && prev != null && !hadLoadedBeforeFetch) {
+          return mergeStaleRef.current(prev, result);
         }
-        // Stale write skipped when mergeStale is omitted
-      } else {
-        setData(result);
-      }
+        if (localRevisionRef.current !== rev) {
+          if (mergeStaleRef.current) {
+            return mergeStaleRef.current(prev, result);
+          }
+          return prev;
+        }
+        return result;
+      });
+      hasLoadedRef.current = true;
+      setHasLoaded(true);
       setError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || signal?.aborted) return;
@@ -162,6 +178,14 @@ export function useAsyncData<T>(
   const reload = useCallback(() => runWithController('initial'), [runWithController]);
   const refresh = useCallback(() => runWithController('refresh'), [runWithController]);
 
+  // Initial load, and reload when `enabled` flips on. Reset `hasLoaded` only
+  // when the fetcher identity changes (including while disabled) so stale data
+  // from an earlier load keeps its "loaded" semantics across re-enables.
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    setHasLoaded(false);
+  }, [fetcher]);
+
   // Initial load, and reload when the fetcher identity or `enabled` changes.
   useEffect(() => {
     if (!enabled) {
@@ -174,7 +198,6 @@ export function useAsyncData<T>(
       setIsRefreshing(false);
       return;
     }
-
     setIsLoading(true);
     void reload();
 
@@ -189,5 +212,14 @@ export function useAsyncData<T>(
     };
   }, []);
 
-  return { data, isLoading, isRefreshing, error, reload, refresh, setData: wrappedSetData };
+  return {
+    data,
+    isLoading,
+    isRefreshing,
+    error,
+    hasLoaded,
+    reload,
+    refresh,
+    setData: wrappedSetData,
+  };
 }

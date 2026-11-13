@@ -286,6 +286,108 @@ test('useAsyncData aborts an in-flight request when unmounted', async () => {
   assert.equal(aborted, true, 'unmount must abort the in-flight fetch');
 });
 
+test('useAsyncData: hasLoaded stays false until a fetch succeeds', async () => {
+  const failingFetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    throw new Error('fail');
+  };
+  const harness = renderTestHook(() => useAsyncData(failingFetcher));
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+  assert.ok(harness.result.error);
+});
+
+test('useAsyncData: setData does not mark hasLoaded', async () => {
+  const failingFetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    throw new Error('fail');
+  };
+  const harness = renderTestHook(() => useAsyncData(failingFetcher));
+  await flush();
+  harness.result.setData(['local-only']);
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+  assert.deepEqual(harness.result.data, ['local-only']);
+});
+
+test('useAsyncData: mergeStale merges only before first successful load', async () => {
+  let call = 0;
+  const merge = (local: { ids: string[] } | null, incoming: { ids: string[] }) => ({
+    ids: [...incoming.ids, ...(local?.ids ?? []).filter((id) => !incoming.ids.includes(id))],
+  });
+  const fetcher = async (): Promise<{ ids: string[] }> => {
+    call += 1;
+    if (call === 1) return { ids: ['server-a'] };
+    return { ids: ['server-b'] };
+  };
+  const harness = renderTestHook(() => useAsyncData(fetcher, { mergeStale: merge }));
+  await flush();
+  assert.deepEqual(harness.result.data, { ids: ['server-a'] });
+  harness.result.setData({ ids: ['local-only'] });
+  await flush();
+  await harness.result.reload();
+  await flush();
+  assert.deepEqual(
+    harness.result.data,
+    { ids: ['server-b'] },
+    'after first success, reload must replace data instead of merging stale locals'
+  );
+});
+
+test('useAsyncData: successful load sets hasLoaded and a later failed reload keeps it', async () => {
+  let shouldFail = false;
+  const fetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    if (shouldFail) throw new Error('reload failed');
+    return ['ok'];
+  };
+  const harness = renderTestHook(() => useAsyncData(fetcher));
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  shouldFail = true;
+  await harness.result.reload();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  assert.deepEqual(harness.result.data, ['ok']);
+});
+test('useAsyncData: toggling enabled does not reset hasLoaded after a successful load', async () => {
+  let enabled = true;
+  const fetcher = async (_signal: AbortSignal): Promise<string[]> => ['ok'];
+  const harness = renderTestHook(() => useAsyncData(fetcher, { enabled }));
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+});
+
+test('useAsyncData: fetcher identity change resets hasLoaded even while disabled', async () => {
+  let enabled = false;
+  let activeFetcher = async (_signal: AbortSignal): Promise<string[]> => ['first'];
+  const harness = renderTestHook(() => useAsyncData(activeFetcher, { enabled }));
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = false;
+  activeFetcher = async (_signal: AbortSignal): Promise<string[]> => ['second'];
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  assert.deepEqual(harness.result.data, ['second']);
+});
+
 // ---------------------------------------------------------------------------
 // useAsyncData: disabling while a refresh/reload is in flight must release
 // both loading flags (#158). The aborted operation's guarded `finally` skips
