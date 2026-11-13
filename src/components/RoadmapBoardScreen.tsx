@@ -328,6 +328,8 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
             onPress={handleRefresh}
             style={styles.refreshErrorRetry}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.retry}
           >
             <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
               {strings.common.retry}
@@ -429,6 +431,9 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
                   style={[styles.loadMoreBtn, { borderColor: colors.border }]}
                   activeOpacity={0.7}
                   accessibilityRole="button"
+                  accessibilityLabel={
+                    requestsLoadMoreError ? strings.common.retry : strings.roadmap.loadMore
+                  }
                 >
                   <Text style={[styles.loadMoreBtnText, { color: colors.primary }]}>
                     {requestsLoadMoreError ? strings.common.retry : strings.roadmap.loadMore}

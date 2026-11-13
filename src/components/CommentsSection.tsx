@@ -413,6 +413,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
               style={styles.loadMoreButton}
               activeOpacity={0.7}
               accessibilityRole="button"
+              accessibilityLabel={loadMoreError ? strings.common.retry : strings.comments.loadMore}
             >
               <Text style={[styles.loadMoreText, { color: colors.primary }]}>
                 {loadMoreError ? strings.common.retry : strings.comments.loadMore}
@@ -441,7 +442,11 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
                     : strings.common.anonymous
                 )}
               </Text>
-              <TouchableOpacity onPress={() => setReplyTo(null)} accessibilityRole="button">
+              <TouchableOpacity
+                onPress={() => setReplyTo(null)}
+                accessibilityRole="button"
+                accessibilityLabel={strings.comments.cancelReply}
+              >
                 <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
                   {strings.comments.cancelReply}
                 </Text>
@@ -507,6 +512,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
             <TouchableOpacity
               onPress={recheckSession}
               accessibilityRole="button"
+              accessibilityLabel={strings.common.retry}
               activeOpacity={0.7}
             >
               <Text style={[styles.signInRetryText, { color: colors.primary }]}>
