@@ -584,6 +584,92 @@ test(
   }
 );
 
+test(
+  'FeedbackComposer: dismiss without reopen calls onClose once and stale success reports ownsForm: false',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<FeedbackSubmissionResult>();
+    let closeCalls = 0;
+    const successContexts: boolean[] = [];
+    const harness = createFeedbackHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ submissionId: 'sub_2', forwardedToGithub: false }),
+      onClose: () => {
+        closeCalls++;
+      },
+      onSubmitSuccess: (_result, { ownsForm }) => {
+        successContexts.push(ownsForm);
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+      assert.equal(harness.submitCalls.length, 1);
+
+      harness.setVisible(false);
+      await flush();
+      assert.equal(closeCalls, 0, 'setVisible(false) alone must not invoke onClose');
+
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+      await flush();
+
+      assert.equal(closeCalls, 0, 'stale success must not close a dismissed form again');
+      assert.deepEqual(successContexts, [false]);
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+    }
+  }
+);
+
+test(
+  'FeedbackComposer: dismiss without reopen surfaces no stale failure on the hidden form',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<FeedbackSubmissionResult>();
+    const harness = createFeedbackHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ submissionId: 'sub_2', forwardedToGithub: false }),
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      harness.setVisible(false);
+      await flush();
+
+      firstSubmit.reject(new Error('offline'));
+      await flush();
+
+      harness.setVisible(true);
+      await flush();
+
+      assert.equal(
+        collectText(harness.renderer).some((text) => text.includes('offline')),
+        false,
+        'a stale failure must not render on a later reopen'
+      );
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.reject(new Error('offline'));
+    }
+  }
+);
+
 interface SheetHarness {
   renderer: TestRenderer.ReactTestRenderer;
   submitCalls: FeatureRequestDraft[];
@@ -842,6 +928,48 @@ test(
       );
       assert.equal(closeCalls, 1, 'the host closes on the owned success');
 
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+    }
+  }
+);
+
+test(
+  'FeatureRequestComposeSheet: dismiss without reopen reports ownsForm: false and does not close twice',
+  renderTestOptions,
+  async () => {
+    const firstSubmit = defer<{ featureRequestId: string; pending: boolean }>();
+    let closeCalls = 0;
+    const successContexts: boolean[] = [];
+    const harness = createSheetHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ featureRequestId: 'fr_2', pending: false }),
+      onClose: () => {
+        closeCalls++;
+      },
+      onSubmitSuccess: (_result, { ownsForm }) => {
+        successContexts.push(ownsForm);
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      harness.setVisible(false);
+      await flush();
+
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+      await flush();
+
+      assert.equal(closeCalls, 0);
+      assert.deepEqual(successContexts, [false]);
       harness.renderer.unmount();
     } finally {
       firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });

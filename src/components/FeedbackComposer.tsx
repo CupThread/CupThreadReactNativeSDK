@@ -308,15 +308,17 @@ export function FeedbackComposer({
         isSubmittingRef.current = false;
       }
       prevInitialDraftRef.current = initialDraft;
-    }
-    prevVisibleRef.current = visible;
-    if (wasVisible && !visible) {
+    } else if (wasVisible && !visible) {
+      // Dismissing ends ownership: a late settlement must not close or report
+      // ownership of a form the host already closed.
+      openSessionRef.current += 1;
       cancelInFlightAttachmentUpload();
       // The upload was cancelled with the hidden form, so no request owns the
       // spinner now. A composer that preserves its draft must not reopen with
       // attachment and submit controls disabled by a dead attempt.
       setIsUploadingAttachment(false);
     }
+    prevVisibleRef.current = visible;
   }, [
     visible,
     preserveDraftOnClose,
