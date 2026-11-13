@@ -848,3 +848,267 @@ test(
     }
   }
 );
+
+test(
+  'FeedbackComposer: close/reopen during an in-flight attachment upload does not leak attachments into the new session',
+  renderTestOptions,
+  async () => {
+    const firstUpload = defer<FeedbackAttachment>();
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    const uploadCalls: unknown[] = [];
+    let pickCount = 0;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_reopen',
+    });
+    client.uploadAttachment = (async (opts: any) => {
+      uploadCalls.push(opts);
+      uploadSignals.push(opts.signal);
+      return firstUpload.promise;
+    }) as any;
+    client.uploadAttachments = (async (batch: any[], shared?: any) => {
+      const uploaded: FeedbackAttachment[] = [];
+      for (const item of batch) {
+        uploaded.push(
+          await (client.uploadAttachment as any)({
+            ...item,
+            userToken: shared?.userToken,
+            signal: shared?.signal ?? item.signal,
+          })
+        );
+      }
+      return uploaded;
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    const buildElement = (visible: boolean) =>
+      React.createElement(CupThreadProvider, {
+        client,
+        userToken: 'usr_tok_upload_reopen',
+        children: React.createElement(FeedbackComposer, {
+          visible,
+          isModal: false,
+          initialDraft: {
+            title: 'Bug report',
+            description: 'Something broke',
+            attachments: [],
+          },
+          onPickAttachment: async () => {
+            pickCount += 1;
+            return {
+              file: { uri: `file:///tmp/${pickCount}.png`, size: 100 },
+              filename: `${pickCount}.png`,
+              mimeType: 'image/png',
+              size: 100,
+            };
+          },
+        }),
+      });
+
+    act(() => {
+      renderer = TestRenderer.create(buildElement(true));
+    });
+    await flush();
+
+    const findAddAttachmentButton = () => {
+      const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+      for (const btn of buttons) {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        if (style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4)) {
+          return btn;
+        }
+      }
+      return null;
+    };
+
+    const addBtn = findAddAttachmentButton();
+    assert.ok(addBtn);
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(pickCount, 1);
+    assert.equal(uploadCalls.length, 1);
+
+    act(() => {
+      renderer.update(buildElement(false));
+    });
+    await flush();
+    act(() => {
+      renderer.update(buildElement(true));
+    });
+    await flush();
+
+    assert.equal(uploadSignals[0]?.aborted, true, 'the previous upload must be aborted on close');
+
+    firstUpload.resolve(makeAttachment('stale-session'));
+    await flush();
+
+    assert.equal(
+      renderer.root.findAll((node) => {
+        const style = Array.isArray(node.props?.style) ? node.props.style : [node.props?.style];
+        return style?.some((s: any) => s && s.padding === 4);
+      }).length,
+      0,
+      'stale upload must not append attachment chips to the reopened session'
+    );
+    assert.ok(
+      !collectText(renderer).some((text) => text.includes('too large') || text.includes('failed')),
+      'stale upload must not surface attachment notices in the reopened session'
+    );
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'FeedbackComposer: a stale attachment upload cannot clear a newer session upload busy state',
+  renderTestOptions,
+  async () => {
+    const firstUpload = defer<FeedbackAttachment>();
+    const secondUpload = defer<FeedbackAttachment>();
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    let pickCount = 0;
+    let uploadAttempt = 0;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_upload_spinner',
+    });
+    client.uploadAttachment = (async (opts: any) => {
+      uploadSignals.push(opts.signal);
+      uploadAttempt += 1;
+      return uploadAttempt === 1 ? firstUpload.promise : secondUpload.promise;
+    }) as any;
+    client.uploadAttachments = (async (batch: any[], shared?: any) => {
+      const uploaded: FeedbackAttachment[] = [];
+      for (const item of batch) {
+        uploaded.push(
+          await (client.uploadAttachment as any)({
+            ...item,
+            userToken: shared?.userToken,
+            signal: shared?.signal ?? item.signal,
+          })
+        );
+      }
+      return uploaded;
+    }) as any;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    const buildElement = (visible: boolean) =>
+      React.createElement(CupThreadProvider, {
+        client,
+        userToken: 'usr_tok_upload_spinner',
+        children: React.createElement(FeedbackComposer, {
+          visible,
+          isModal: false,
+          initialDraft: {
+            title: 'Bug report',
+            description: 'Something broke',
+            attachments: [],
+          },
+          onPickAttachment: async () => {
+            pickCount += 1;
+            return {
+              file: { uri: `file:///tmp/${pickCount}.png`, size: 100 },
+              filename: `${pickCount}.png`,
+              mimeType: 'image/png',
+              size: 100,
+            };
+          },
+        }),
+      });
+
+    act(() => {
+      renderer = TestRenderer.create(buildElement(true));
+    });
+    await flush();
+
+    const findAddAttachmentButton = () => {
+      const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+      for (const btn of buttons) {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        if (style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4)) {
+          return btn;
+        }
+      }
+      return null;
+    };
+    const findSubmitButton = () => {
+      const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+      const submitBtn = buttons.find((btn) => {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        return style.some((s: any) => s && s.marginTop === 22);
+      });
+      if (!submitBtn) {
+        throw new Error('Submit button not found');
+      }
+      return submitBtn;
+    };
+
+    const addBtn = findAddAttachmentButton();
+    assert.ok(addBtn);
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+
+    act(() => {
+      renderer.update(buildElement(false));
+    });
+    await flush();
+    act(() => {
+      renderer.update(buildElement(true));
+    });
+    await flush();
+
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(pickCount, 2);
+
+    const submitBtn = findSubmitButton();
+    assert.equal(
+      Boolean(submitBtn.props.disabled),
+      true,
+      'session-2 upload must keep Submit disabled'
+    );
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      true,
+      'session-2 upload must keep add-attachment disabled'
+    );
+
+    firstUpload.resolve(makeAttachment('stale-session'));
+    await flush();
+
+    assert.equal(
+      Boolean(submitBtn.props.disabled),
+      true,
+      'stale upload must not clear session-2 busy state'
+    );
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      true,
+      'stale upload must not clear session-2 spinner'
+    );
+
+    secondUpload.resolve(makeAttachment('fresh-session'));
+    await flush();
+
+    assert.equal(
+      Boolean(submitBtn.props.disabled),
+      false,
+      'current upload must re-enable Submit when done'
+    );
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      false,
+      'current upload must re-enable add-attachment when done'
+    );
+
+    renderer.unmount();
+  }
+);
