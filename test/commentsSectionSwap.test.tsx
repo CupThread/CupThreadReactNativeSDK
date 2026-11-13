@@ -92,6 +92,7 @@ function createDeferred<T>() {
 class SwapStubClient extends FeedbackClient {
   fetchCalls: string[] = [];
   postCalls: PostCall[] = [];
+  commentSources = new Map<string, FeatureRequestComment[]>();
   paginatedSources = new Map<
     string,
     { base: FeatureRequestComment[]; more: FeatureRequestComment[]; cursor: string }
@@ -104,7 +105,6 @@ class SwapStubClient extends FeedbackClient {
   deferredPosts = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment>>>();
   fetchFailures = new Set<string>();
   postedComment = makeComment('c_new', { authorName: null, body: 'Freshly posted' });
-
   override async listComments(
     featureRequestId: string,
     opts?: { cursor?: string | null }
@@ -515,8 +515,8 @@ test(
       appKey: 'app_comments_a',
     });
     clientA.paginatedSources.set('fr_A', {
-      base: [makeComment('c_a1', 'Client A base')],
-      more: [makeComment('c_a2', 'Client A more')],
+      base: [makeComment('c_a1', { body: 'Client A base' })],
+      more: [makeComment('c_a2', { body: 'Client A more' })],
       cursor: 'cursor_a',
     });
 
@@ -525,8 +525,8 @@ test(
       appKey: 'app_comments_b',
     });
     clientB.paginatedSources.set('fr_A', {
-      base: [makeComment('c_b1', 'Client B base')],
-      more: [makeComment('c_b2', 'Client B more')],
+      base: [makeComment('c_b1', { body: 'Client B base' })],
+      more: [makeComment('c_b2', { body: 'Client B more' })],
       cursor: 'cursor_b',
     });
 
@@ -541,16 +541,21 @@ test(
         })
       );
     });
-    await flush();
-
+    await flush(20);
     try {
+      assert.deepEqual(clientA.fetchCalls, ['fr_A'], 'client A should fetch first comments page');
+      assert.ok(
+        collectText(renderer.root).includes('Client A base'),
+        'client A first page should load'
+      );
       const loadMoreButton = findButtonByText(renderer.root, enStrings.comments.loadMore);
       assert.ok(loadMoreButton, 'load more affordance should render for client A');
 
-      await act(async () => {
-        await loadMoreButton!.props.onPress();
+      const pendingLoadMore = createDeferred<ListFeatureRequestCommentsResult>();
+      clientA.deferredLoadMore = pendingLoadMore;
+      await act(() => {
+        void loadMoreButton!.props.onPress();
       });
-      await flush(2);
 
       await act(async () => {
         renderer.update(
@@ -563,17 +568,43 @@ test(
         );
       });
       await flush(12);
+      assert.ok(
+        collectText(renderer.root).includes('Client B base'),
+        'client B first page must render after swap'
+      );
+
+      pendingLoadMore.resolve({
+        comments: [makeComment('c_a2', { body: 'Client A more' })],
+        total: 2,
+        hasMore: false,
+        nextCursor: null,
+      });
+      await flush(12);
 
       const text = collectText(renderer.root);
       assert.ok(
         !text.includes('Client A more'),
-        'client A load-more page must not remain after client swap'
+        'late client A load-more must not merge after client swap'
       );
-      assert.ok(
-        !text.includes('Client A base'),
-        'previous client comments must be cleared on swap'
-      );
+      assert.ok(text.includes('Client B base'), 'client B page must remain after stale settlement');
       assert.equal(clientB.fetchCalls.filter((id) => id === 'fr_A').length, 1);
+
+      const loadMoreAfterSwap = findButtonByText(renderer.root, enStrings.comments.loadMore);
+      assert.ok(loadMoreAfterSwap, 'client B pagination cursor should remain available');
+      const pendingB = createDeferred<ListFeatureRequestCommentsResult>();
+      clientB.deferredLoadMore = pendingB;
+      await act(() => {
+        void loadMoreAfterSwap!.props.onPress();
+      });
+      assert.equal(clientB.fetchCalls.filter((id) => id === 'fr_A').length, 2);
+      pendingB.resolve({
+        comments: [makeComment('c_b2', { body: 'Client B more' })],
+        total: 2,
+        hasMore: false,
+        nextCursor: null,
+      });
+      await flush(8);
+      assert.ok(collectText(renderer.root).includes('Client B more'));
     } finally {
       globalThis.fetch = originalFetch;
       renderer.unmount();
