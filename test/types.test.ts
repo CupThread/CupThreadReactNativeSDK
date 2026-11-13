@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { UploadAttachmentFile, UploadAttachmentOptions } from '../src/client/FeedbackClient';
 import { getThemeColors } from '../src/theme/SdkTheme';
-import type { SdkTheme } from '../src/types';
 import { formatDate } from '../src/utils/formatters';
+import type { SdkTheme } from '../src/types';
 
 const ALL_THEMES: SdkTheme[] = ['light', 'dark', 'midnight', 'ocean', 'forest', 'sunset', 'candy'];
 const HEX_COLOR = /^#[0-9a-f]{6}$/;
@@ -205,4 +206,37 @@ test('FeatureRequestComment carries the fields the published OpenAPI schema serv
     authorEmail: 'nobody@example.com',
   };
   void leaked;
+});
+
+test('UploadAttachmentOptions.file rejects plain strings at compile time (#434)', () => {
+  type UriFieldMustRejectPlainString = UploadAttachmentOptions extends { file: string }
+    ? true
+    : false;
+  const compileProbe: UriFieldMustRejectPlainString = false;
+  assert.equal(compileProbe, false);
+
+  const validUri: UploadAttachmentFile = {
+    uri: 'file:///tmp/screenshot.png',
+  };
+  const validBlob: UploadAttachmentFile = new Blob(['x'], {
+    type: 'image/png',
+  });
+  const options: UploadAttachmentOptions = {
+    file: validUri,
+    filename: 'shot.png',
+    mimeType: 'image/png',
+    size: 1024,
+  };
+  assert.equal(options.file, validUri);
+  assert.ok(validBlob.size > 0);
+
+  const invalidPlainString = {
+    file: 'file:///tmp/shot.png',
+    filename: 'shot.png',
+    mimeType: 'image/png',
+    size: 1024,
+  };
+  // @ts-expect-error file must be a Blob or a non-empty { uri } object, not a plain string (issue #434)
+  const _rejectsStringFile: UploadAttachmentOptions = invalidPlainString;
+  void _rejectsStringFile;
 });

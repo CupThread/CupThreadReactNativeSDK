@@ -211,11 +211,13 @@ export class UploadValidationException extends FeedbackException {
    * - `file_size_required`: the attachment declared no positive byte size.
    * - `invalid_file_count`: a session was requested for 0 or more than 8 files.
    * - `invalid_field`: a filename or MIME type was blank.
+   * - `invalid_file_payload`: the `file` value was not a `Blob`/`File` or a `{ uri }` object with a non-empty string.
    */
-  readonly code: 'file_size_required' | 'invalid_file_count' | 'invalid_field';
+  readonly code:
+    'file_size_required' | 'invalid_file_count' | 'invalid_field' | 'invalid_file_payload';
 
   constructor(
-    code: 'file_size_required' | 'invalid_file_count' | 'invalid_field',
+    code: 'file_size_required' | 'invalid_file_count' | 'invalid_field' | 'invalid_file_payload',
     message: string
   ) {
     super(message);

@@ -112,7 +112,8 @@ export function resolveDeclaredAttachmentSize(option: UploadAttachmentOptions): 
   if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
     return Math.ceil(explicit);
   }
-  const payloadSize = option.file?.size;
+  const file = option.file;
+  const payloadSize = file && typeof file === 'object' && 'size' in file ? file.size : undefined;
   if (typeof payloadSize === 'number' && Number.isFinite(payloadSize) && payloadSize > 0) {
     return Math.ceil(payloadSize);
   }

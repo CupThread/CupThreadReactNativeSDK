@@ -152,7 +152,7 @@ interface UploadDeclaration {
   spec: Required<UploadSessionFileSpec>;
   size: number;
   kind: 'image' | 'r2';
-  file: any;
+  file: UploadAttachmentFile;
   filename: string;
   mimeType: string;
 }
@@ -427,6 +427,55 @@ async function executeWithTimeout<T>(
     }
   }
 }
+/**
+ * React Native picker payload streamed by the native multipart uploader.
+ */
+export type UploadAttachmentUriPayload = {
+  uri: string;
+  name?: string;
+  type?: string;
+};
+
+/**
+ * Accepted `file` shapes for {@link UploadAttachmentOptions}.
+ */
+export type UploadAttachmentFile = Blob | UploadAttachmentUriPayload;
+
+const INVALID_UPLOAD_FILE_PAYLOAD_MESSAGE =
+  'Each upload requires a file payload: pass a Blob/File or an object with a non-empty `uri` string.';
+
+function validateUploadAttachmentFile(file: unknown): UploadAttachmentFile {
+  if (!file || typeof file !== 'object') {
+    throw new UploadValidationException(
+      'invalid_file_payload',
+      INVALID_UPLOAD_FILE_PAYLOAD_MESSAGE
+    );
+  }
+
+  if ('uri' in file) {
+    const uri = (file as UploadAttachmentUriPayload).uri;
+    if (typeof uri === 'string' && uri.trim().length > 0) {
+      return file as UploadAttachmentUriPayload;
+    }
+    throw new UploadValidationException(
+      'invalid_file_payload',
+      INVALID_UPLOAD_FILE_PAYLOAD_MESSAGE
+    );
+  }
+
+  const blobSize = (file as Blob).size;
+  if (typeof blobSize === 'number' && Number.isFinite(blobSize)) {
+    return file as Blob;
+  }
+
+  throw new UploadValidationException('invalid_file_payload', INVALID_UPLOAD_FILE_PAYLOAD_MESSAGE);
+}
+
+function isUploadAttachmentUriPayload(
+  file: UploadAttachmentFile
+): file is UploadAttachmentUriPayload {
+  return typeof file === 'object' && file !== null && 'uri' in file;
+}
 
 /**
  * Options for uploading binary or media attachments via {@link FeedbackClient.uploadAttachment}.
@@ -452,7 +501,7 @@ export interface UploadAttachmentOptions {
    * File payload to upload.
    * In React Native, this can be an object containing `{ uri, name, type }` or a standard Blob/File.
    */
-  file: any;
+  file: UploadAttachmentFile;
 
   /**
    * Name of the file including file extension (e.g. `'crash-log.txt'`).
@@ -1364,7 +1413,7 @@ export class FeedbackClient {
         'Each upload requires a filename and a MIME type.'
       );
     }
-
+    const file = validateUploadAttachmentFile(option.file);
     const size = resolveDeclaredAttachmentSize(option);
     if (size === undefined) {
       throw new UploadValidationException(
@@ -1378,7 +1427,7 @@ export class FeedbackClient {
       spec: { filename, mimeType, sizeBytes: size, clientFileId: filename },
       size,
       kind,
-      file: option.file,
+      file,
       filename,
       mimeType,
     };
@@ -1509,15 +1558,16 @@ export class FeedbackClient {
    * hold real bytes send a `Blob`. `Content-Type` is left for fetch to set
    * with its multipart boundary.
    */
-  private uploadBody(declaration: UploadDeclaration): any {
+  private uploadBody(declaration: UploadDeclaration): FormData {
     const formData = new FormData();
     const { file, filename, mimeType } = declaration;
-    if (file && typeof file === 'object' && 'uri' in file) {
+    if (isUploadAttachmentUriPayload(file)) {
+      // React Native's FormData accepts a `{ uri, name, type }` part; DOM typings do not.
       formData.append('file', {
-        uri: (file as { uri: string }).uri,
+        uri: file.uri,
         name: filename,
         type: mimeType,
-      } as any);
+      } as unknown as Blob);
     } else {
       formData.append('file', file, filename);
     }

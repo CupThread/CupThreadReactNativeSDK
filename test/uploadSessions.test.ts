@@ -272,6 +272,72 @@ test('createUploadSession requires a positive size, a filename, and a MIME type'
   }
 });
 
+const INVALID_UPLOAD_FILE_CASES: Array<{ label: string; file: unknown }> = [
+  { label: 'plain uri string', file: 'file:///tmp/a.png' },
+  { label: 'undefined', file: undefined },
+  { label: 'null', file: null },
+  { label: 'number', file: 123 },
+  { label: 'empty uri', file: { uri: '' } },
+];
+
+test('uploadAttachment rejects an invalid file payload before any request (#434)', async () => {
+  const mocked = installUploadFetch();
+
+  try {
+    const client = makeClient();
+
+    for (const testCase of INVALID_UPLOAD_FILE_CASES) {
+      await assert.rejects(
+        client.uploadAttachment({
+          file: testCase.file as never,
+          filename: 'a.png',
+          mimeType: 'image/png',
+          size: 1234,
+        }),
+        (err: unknown) => {
+          assert.ok(err instanceof UploadValidationException, testCase.label);
+          assert.equal(err.code, 'invalid_file_payload', testCase.label);
+          return true;
+        }
+      );
+    }
+
+    assert.equal(mocked.requests.length, 0, 'invalid payloads must not reserve quota');
+  } finally {
+    mocked.restore();
+  }
+});
+
+test('uploadAttachments rejects an invalid file in a batch before any request (#434)', async () => {
+  const mocked = installUploadFetch();
+
+  try {
+    await assert.rejects(
+      makeClient().uploadAttachments(
+        [
+          makeBlobOptions('ok.png'),
+          {
+            file: 'file:///tmp/bad.png',
+            filename: 'bad.png',
+            mimeType: 'image/png',
+            size: 99,
+          } as never,
+        ],
+        { userToken: USER_TOKEN }
+      ),
+      (err: unknown) => {
+        assert.ok(err instanceof UploadValidationException);
+        assert.equal(err.code, 'invalid_file_payload');
+        return true;
+      }
+    );
+
+    assert.equal(mocked.requests.length, 0);
+  } finally {
+    mocked.restore();
+  }
+});
+
 test('createUploadSession rounds a fractional declared size up', async () => {
   const mocked = installUploadFetch();
 
