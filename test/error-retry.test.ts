@@ -833,8 +833,8 @@ test('useFeatureRequests clears a stale loadMoreError on the next successful pag
   assert.equal(harness.result.error, null);
   assert.equal(harness.result.items.length, 1, 'refresh shows the fresh page-0 list');
 });
-test('useFeatureRequests clears loadMoreError when the query changes even if the replacement page-0 has not landed', async () => {
-  let query = 'alpha';
+test('useFeatureRequests clears loadMoreError when the query changes to a failing page-0', async () => {
+  let query = '';
   const failLoadMore = true;
   const mockClient = {
     fetchFeatureRequests: async (opts: { query?: string; offset?: number }) => {
@@ -842,8 +842,9 @@ test('useFeatureRequests clears loadMoreError when the query changes even if the
         if (failLoadMore) throw new Error('pagination offline');
         return { requests: [makeMockItem('fr_p2', 2)], total: 4 };
       }
-      const q = typeof opts.query === 'string' ? opts.query : '';
-      return { requests: [makeMockItem(`fr_${q}`, 1)], total: 4 };
+      const q = typeof opts.query === 'string' ? opts.query.trim() : '';
+      if (q === 'beta') throw new Error('page 0 offline');
+      return { requests: [makeMockItem('fr_initial', 1)], total: 4 };
     },
   } as unknown as FeedbackClient;
 
@@ -854,6 +855,7 @@ test('useFeatureRequests clears loadMoreError when the query changes even if the
       query,
       pageSize: 2,
       debounceMs: 0,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
     })
   );
   await flush();
@@ -867,7 +869,8 @@ test('useFeatureRequests clears loadMoreError when the query changes even if the
   await flush();
 
   assert.equal(harness.result.loadMoreError, null);
-  assert.equal(harness.result.error, null);
+  assert.ok(harness.result.error instanceof Error);
+  assert.equal(harness.result.error.message, 'page 0 offline');
 });
 
 test('useFeatureRequests clears loadMoreError at the start of a manual refresh that fails', async () => {
