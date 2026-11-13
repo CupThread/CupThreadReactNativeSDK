@@ -107,12 +107,36 @@ export interface AttachmentBatchResult {
  * session reserves quota from this number, so both the pre-flight check here
  * and {@link FeedbackClient.uploadAttachment} use the same ceiling.
  */
+function hasBlobByteSize(file: object): file is Blob {
+  return typeof Blob !== 'undefined' && file instanceof Blob;
+}
+
+function readPayloadDeclaredByteSize(file: object): number | undefined {
+  if (!('size' in file)) {
+    return undefined;
+  }
+  const size = file.size;
+  return typeof size === 'number' && Number.isFinite(size) && size > 0
+    ? Math.ceil(size)
+    : undefined;
+}
+
+function readBlobByteSize(file: UploadAttachmentOptions['file']): number | undefined {
+  if (!file || typeof file !== 'object') {
+    return undefined;
+  }
+  if (hasBlobByteSize(file)) {
+    return readPayloadDeclaredByteSize(file);
+  }
+  return readPayloadDeclaredByteSize(file);
+}
+
 export function resolveDeclaredAttachmentSize(option: UploadAttachmentOptions): number | undefined {
   const explicit = option.size;
   if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
     return Math.ceil(explicit);
   }
-  const payloadSize = option.file?.size;
+  const payloadSize = readBlobByteSize(option.file);
   if (typeof payloadSize === 'number' && Number.isFinite(payloadSize) && payloadSize > 0) {
     return Math.ceil(payloadSize);
   }
