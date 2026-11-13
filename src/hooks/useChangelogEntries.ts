@@ -202,7 +202,8 @@ export function useChangelogEntries(
     loadMoreControllerRef.current?.abort();
 
     const identity = firstPageIdentityRef.current;
-    const identityChanged = identity.client !== client || identity.pageSize !== pageSize;
+    const clientChanged = identity.client !== client;
+    const identityChanged = clientChanged || identity.pageSize !== pageSize;
     firstPageIdentityRef.current = { client, pageSize };
     if (identityChanged) {
       // Drop the previous list's walk before the replacement starts: a cursor
@@ -213,6 +214,13 @@ export function useChangelogEntries(
       hasMoreRef.current = false;
       setHasMore(false);
       setLoadMoreError(null);
+      if (clientChanged) {
+        // The rendered rows belong to the previous app, so a failed
+        // replacement must not leave them on screen under the new client.
+        // A page-size change and a refresh/reload keep the same data source,
+        // so their failures still keep the stale-but-valid entries (#447).
+        setEntries([]);
+      }
     }
 
     const controller = new AbortController();

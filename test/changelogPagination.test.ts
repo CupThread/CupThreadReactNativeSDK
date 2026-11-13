@@ -761,6 +761,10 @@ test('useChangelogEntries clears the load-more error when a replacement first pa
       null,
       'a failed refresh must not keep the previous footer error'
     );
+    // Re-create the footer failure so reload() is verified on its own, not
+    // just inheriting the already-cleared state left by refresh().
+    await harness.result.loadMore();
+    assert.ok(harness.result.loadMoreError, 'the second loadMore failure must surface');
 
     await harness.result.reload();
     assert.ok(harness.result.error, 'failed reload must surface in error');
@@ -800,20 +804,22 @@ test('useChangelogEntries invalidates the previous cursor when client/page size 
     await harness.result.loadMore();
     assert.ok(harness.result.loadMoreError, 'loadMore failure must surface first');
 
-    // Swap the client and fail the replacement page 0. The previous cursor
-    // and footer error must not survive into the new list.
+    // Swap the client and fail the replacement page 0. The previous rows,
+    // cursor, and footer error must not survive into the new list.
     client = new FeedbackClient({
       baseUrl: 'https://api.cupthread.com',
       appKey: 'app_other_pagination_test',
     });
     pages.set(null, { status: 500, body: 'offline' });
-    const cursorRequestsBeforeSwap = fetchMock.requests.filter(
-      (request) => request.cursor === 'cur-2'
-    ).length;
     harness.rerender();
     await flush();
 
     assert.ok(harness.result.error, 'replacement first-page failure must surface in error');
+    assert.deepEqual(
+      harness.result.entries,
+      [],
+      'the previous client entries must be dropped from the new list'
+    );
     assert.equal(harness.result.hasMore, false, 'the previous list must not advertise more pages');
     assert.equal(
       harness.result.loadMoreError,
@@ -821,12 +827,79 @@ test('useChangelogEntries invalidates the previous cursor when client/page size 
       'the previous list failure must not survive the client change'
     );
 
-    // Retrying the footer must not carry the previous client's cursor.
+    // Retrying the footer must be a no-op: there is no cursor to follow.
+    const requestsAfterSwap = fetchMock.requests.length;
     await harness.result.loadMore();
     assert.equal(
-      fetchMock.requests.filter((request) => request.cursor === 'cur-2').length,
-      cursorRequestsBeforeSwap,
-      'loadMore must not follow the previous client cursor'
+      fetchMock.requests.length,
+      requestsAfterSwap,
+      'loadMore must not issue a request after the client change'
+    );
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('useChangelogEntries keeps entries and drops the cursor on a pageSize-only change (#447)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+    ['cur-2', { status: 500, body: 'server error' }],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    const client = makeClient();
+    let pageSize = 20;
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize }));
+    await flush();
+
+    await harness.result.loadMore();
+    assert.ok(harness.result.loadMoreError, 'loadMore failure must surface first');
+
+    // The replacement first page for the new page size fails. The client did
+    // not change, so the current rows stay visible, but the old cursor must
+    // not be reused for a list fetched with a different page size.
+    pages.set(null, { status: 500, body: 'offline' });
+    pageSize = 10;
+    harness.rerender();
+    await flush();
+
+    const page0Requests = fetchMock.requests.filter((request) => request.cursor === null);
+    assert.equal(
+      page0Requests[page0Requests.length - 1]?.limit,
+      '10',
+      'the replacement must be fetched with the new page size'
+    );
+    assert.deepEqual(
+      harness.result.entries.map((entry) => entry.id),
+      ['e1'],
+      'same-client entries stay visible when the page size changes'
+    );
+    assert.ok(harness.result.error, 'replacement first-page failure must surface in error');
+    assert.equal(harness.result.hasMore, false, 'the previous walk must be invalidated');
+    assert.equal(
+      harness.result.loadMoreError,
+      null,
+      'the previous list failure must not survive the page-size change'
+    );
+
+    const requestsAfterSwap = fetchMock.requests.length;
+    await harness.result.loadMore();
+    assert.equal(
+      fetchMock.requests.length,
+      requestsAfterSwap,
+      'loadMore must not issue a request after the page-size change'
     );
     harness.unmount();
   } finally {
