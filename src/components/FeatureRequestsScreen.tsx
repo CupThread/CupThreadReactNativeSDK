@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -108,8 +108,22 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     error: versionsError,
     reload: reloadVersions,
   } = useAsyncData(fetchVersions, { enabled: isEnabled || isLoadingConfig });
-
   const versions: AppVersion[] = versionsData ?? [];
+
+  useEffect(() => {
+    if (versionsData === null) return;
+    if (
+      selectedVersionId !== null &&
+      !versions.some((version) => version.id === selectedVersionId)
+    ) {
+      setSelectedVersionId(null);
+    }
+  }, [versionsData, versions, selectedVersionId]);
+
+  const effectiveVersionId = useMemo(() => {
+    if (selectedVersionId === null) return null;
+    return versions.some((version) => version.id === selectedVersionId) ? selectedVersionId : null;
+  }, [selectedVersionId, versions]);
 
   const {
     items,
@@ -129,7 +143,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     client,
     userToken,
     isTokenReady,
-    versionId: selectedVersionId,
+    versionId: effectiveVersionId,
     query: searchQuery,
     pageSize: 50,
     debounceMs: 250,
@@ -313,7 +327,8 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             onRetry={reloadVersions}
           />
         </View>
-      ) : versions.length > 0 ? (
+      ) : null}
+      {versions.length > 0 ? (
         <View style={styles.chipsContainer}>
           <FlatList
             horizontal
@@ -323,7 +338,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
             contentContainerStyle={styles.chipsList}
             renderItem={({ item: v }) => {
               const isSelected =
-                (v.id === 'all' && selectedVersionId === null) || selectedVersionId === v.id;
+                (v.id === 'all' && effectiveVersionId === null) || effectiveVersionId === v.id;
               return (
                 <TouchableOpacity
                   onPress={() => setSelectedVersionId(v.id === 'all' ? null : v.id)}
