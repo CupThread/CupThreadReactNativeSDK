@@ -127,9 +127,9 @@ export function useAsyncData<T>(
     try {
       const result = await fetcherRef.current(signal);
       if (signal?.aborted) return;
-
+      const hadLoadedBeforeFetch = hasLoadedRef.current;
       setData((prev) => {
-        if (mergeStaleRef.current && prev != null && !hasLoadedRef.current) {
+        if (mergeStaleRef.current && prev != null && !hadLoadedBeforeFetch) {
           return mergeStaleRef.current(prev, result);
         }
         if (localRevisionRef.current !== rev) {
