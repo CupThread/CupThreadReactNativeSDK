@@ -49,6 +49,13 @@ export interface UseAsyncDataResult<T> {
   error: Error | null;
 
   /**
+   * Whether at least one fetch for the current fetcher completed successfully.
+   * Local `setData` writes do not set this; it resets when the fetcher identity
+   * changes.
+   */
+  hasLoaded: boolean;
+
+  /**
    * Runs a full reload with `isLoading = true`. Aborts any in-flight request.
    * Used to implement retry buttons.
    */
@@ -97,6 +104,7 @@ export function useAsyncData<T>(
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [hasLoaded, setHasLoaded] = useState<boolean>(false);
 
   const controllerRef = useRef<AbortController | null>(null);
   const fetcherRef = useRef(fetcher);
@@ -118,14 +126,16 @@ export function useAsyncData<T>(
       const result = await fetcherRef.current(signal);
       if (signal?.aborted) return;
 
-      if (localRevisionRef.current !== rev) {
-        if (mergeStaleRef.current) {
-          setData((prev) => mergeStaleRef.current!(prev, result));
-        }
+      if (mergeStaleRef.current && localRevisionRef.current !== rev) {
+        setData((prev) => mergeStaleRef.current!(prev, result));
+      } else if (mergeStaleRef.current) {
+        setData((prev) => (prev != null ? mergeStaleRef.current!(prev, result) : result));
+      } else if (localRevisionRef.current !== rev) {
         // Stale write skipped when mergeStale is omitted
       } else {
         setData(result);
       }
+      setHasLoaded(true);
       setError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || signal?.aborted) return;
@@ -174,7 +184,7 @@ export function useAsyncData<T>(
       setIsRefreshing(false);
       return;
     }
-
+    setHasLoaded(false);
     setIsLoading(true);
     void reload();
 
@@ -189,5 +199,14 @@ export function useAsyncData<T>(
     };
   }, []);
 
-  return { data, isLoading, isRefreshing, error, reload, refresh, setData: wrappedSetData };
+  return {
+    data,
+    isLoading,
+    isRefreshing,
+    error,
+    hasLoaded,
+    reload,
+    refresh,
+    setData: wrappedSetData,
+  };
 }

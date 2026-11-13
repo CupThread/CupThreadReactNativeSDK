@@ -286,6 +286,44 @@ test('useAsyncData aborts an in-flight request when unmounted', async () => {
   assert.equal(aborted, true, 'unmount must abort the in-flight fetch');
 });
 
+test('useAsyncData: hasLoaded stays false until a fetch succeeds', async () => {
+  const failingFetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    throw new Error('fail');
+  };
+  const harness = renderTestHook(() => useAsyncData(failingFetcher));
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+  assert.ok(harness.result.error);
+});
+
+test('useAsyncData: setData does not mark hasLoaded', async () => {
+  const failingFetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    throw new Error('fail');
+  };
+  const harness = renderTestHook(() => useAsyncData(failingFetcher));
+  await flush();
+  harness.result.setData(['local-only']);
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+  assert.deepEqual(harness.result.data, ['local-only']);
+});
+
+test('useAsyncData: successful load sets hasLoaded and a later failed reload keeps it', async () => {
+  let shouldFail = false;
+  const fetcher = async (_signal: AbortSignal): Promise<string[]> => {
+    if (shouldFail) throw new Error('reload failed');
+    return ['ok'];
+  };
+  const harness = renderTestHook(() => useAsyncData(fetcher));
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  shouldFail = true;
+  await harness.result.reload();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  assert.deepEqual(harness.result.data, ['ok']);
+});
+
 // ---------------------------------------------------------------------------
 // useAsyncData: disabling while a refresh/reload is in flight must release
 // both loading flags (#158). The aborted operation's guarded `finally` skips

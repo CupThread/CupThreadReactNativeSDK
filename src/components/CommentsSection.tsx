@@ -145,6 +145,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     data: commentsPage,
     isLoading: isLoadingComments,
     error: loadError,
+    hasLoaded: commentsLoaded,
     reload: reloadComments,
     setData: setCommentsData,
   } = useAsyncData<ListFeatureRequestCommentsResult>(fetchCommentsPage, {
@@ -321,6 +322,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   };
 
   const activeComments = comments.filter((c) => !c.isHidden);
+  const showLoadError = loadError != null && !commentsLoaded;
   // The server `total` counts every visible comment on the thread, including
   // pages not loaded yet — prefer it whenever it exceeds what is on screen so
   // a truncated thread does not present itself as complete.
@@ -334,86 +336,93 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
 
       {isLoadingComments ? (
         <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
-      ) : activeComments.length === 0 && loadError ? (
-        <ErrorState
-          compact
-          message={strings.common.error}
-          retryLabel={strings.common.retry}
-          onRetry={() => {
-            reloadComments();
-          }}
-        />
-      ) : activeComments.length === 0 ? (
-        <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-          {strings.comments.emptyComments}
-        </Text>
       ) : (
-        <View style={styles.list}>
-          {activeComments.map((item) => {
-            const timeText = formatDate(item.createdAt, strings.common, locale);
-            return (
-              <View
-                key={item.id}
-                style={[
-                  styles.commentCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.cardBorder,
-                    marginLeft: item.parentId ? 20 : 0,
-                  },
-                ]}
-              >
-                <View style={styles.authorRow}>
-                  <Avatar
-                    url={item.authorAvatarUrl}
-                    name={
-                      typeof item.authorName === 'string' && item.authorName.trim()
-                        ? item.authorName.trim()
-                        : undefined
-                    }
-                    size={28}
-                  />
-                  <View style={styles.authorMeta}>
-                    <Text style={[styles.authorName, { color: colors.textPrimary }]}>
-                      {typeof item.authorName === 'string' && item.authorName.trim()
-                        ? item.authorName.trim()
-                        : strings.common.anonymous}
-                    </Text>
-                    {timeText ? (
-                      <Text style={[styles.timeText, { color: colors.textMuted }]}>{timeText}</Text>
-                    ) : null}
-                  </View>
-                </View>
-
-                {typeof item.replyToAuthorName === 'string' && item.replyToAuthorName.trim() ? (
-                  <Text style={[styles.replyNotice, { color: colors.primary }]}>
-                    {strings.comments.replyingTo(item.replyToAuthorName.trim())}
-                  </Text>
-                ) : null}
-
-                <MarkdownText content={item.body} style={{ fontSize: 13 }} />
-
-                {showComposer && (
-                  <TouchableOpacity
-                    onPress={() => setReplyTo(item)}
-                    style={styles.replyButton}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      typeof item.authorName === 'string' && item.authorName.trim()
-                        ? `${strings.comments.replyButton}: ${item.authorName.trim()}`
-                        : strings.comments.replyButton
-                    }
+        <>
+          {showLoadError ? (
+            <ErrorState
+              compact
+              message={strings.common.error}
+              retryLabel={strings.common.retry}
+              onRetry={() => {
+                reloadComments();
+              }}
+            />
+          ) : null}
+          {activeComments.length === 0 && !showLoadError ? (
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              {strings.comments.emptyComments}
+            </Text>
+          ) : activeComments.length > 0 ? (
+            <View style={styles.list}>
+              {activeComments.map((item) => {
+                const timeText = formatDate(item.createdAt, strings.common, locale);
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.commentCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.cardBorder,
+                        marginLeft: item.parentId ? 20 : 0,
+                      },
+                    ]}
                   >
-                    <Text style={[styles.replyButtonText, { color: colors.primary }]}>
-                      {strings.comments.replyButton}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
-        </View>
+                    <View style={styles.authorRow}>
+                      <Avatar
+                        url={item.authorAvatarUrl}
+                        name={
+                          typeof item.authorName === 'string' && item.authorName.trim()
+                            ? item.authorName.trim()
+                            : undefined
+                        }
+                        size={28}
+                      />
+                      <View style={styles.authorMeta}>
+                        <Text style={[styles.authorName, { color: colors.textPrimary }]}>
+                          {typeof item.authorName === 'string' && item.authorName.trim()
+                            ? item.authorName.trim()
+                            : strings.common.anonymous}
+                        </Text>
+                        {timeText ? (
+                          <Text style={[styles.timeText, { color: colors.textMuted }]}>
+                            {timeText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {typeof item.replyToAuthorName === 'string' && item.replyToAuthorName.trim() ? (
+                      <Text style={[styles.replyNotice, { color: colors.primary }]}>
+                        {strings.comments.replyingTo(item.replyToAuthorName.trim())}
+                      </Text>
+                    ) : null}
+
+                    <MarkdownText content={item.body} style={{ fontSize: 13 }} />
+
+                    {showComposer && (
+                      <TouchableOpacity
+                        onPress={() => setReplyTo(item)}
+                        style={styles.replyButton}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          typeof item.authorName === 'string' && item.authorName.trim()
+                            ? `${strings.comments.replyButton}: ${item.authorName.trim()}`
+                            : strings.comments.replyButton
+                        }
+                      >
+                        <Text style={[styles.replyButtonText, { color: colors.primary }]}>
+                          {strings.comments.replyButton}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </>
       )}
 
       {hasMorePages && !isLoadingComments && activeComments.length > 0 && (
