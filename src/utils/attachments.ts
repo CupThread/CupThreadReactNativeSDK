@@ -107,18 +107,8 @@ export interface AttachmentBatchResult {
  * session reserves quota from this number, so both the pre-flight check here
  * and {@link FeedbackClient.uploadAttachment} use the same ceiling.
  */
-function hasBlobByteSize(
-  file: object
-): file is { size: number; arrayBuffer?: () => Promise<ArrayBuffer> } {
-  if (typeof Blob !== 'undefined' && file instanceof Blob) {
-    return true;
-  }
-  if (!('size' in file) || !('arrayBuffer' in file)) {
-    return false;
-  }
-  const size = file.size;
-  const arrayBuffer = file.arrayBuffer;
-  return typeof size === 'number' && typeof arrayBuffer === 'function';
+function hasBlobByteSize(file: object): file is Blob {
+  return typeof Blob !== 'undefined' && file instanceof Blob;
 }
 
 function readBlobByteSize(file: UploadAttachmentOptions['file']): number | undefined {

@@ -471,13 +471,7 @@ function validateUploadAttachmentFile(file: unknown): UploadAttachmentFile {
 }
 
 function isUploadAttachmentBlob(file: object): file is Blob {
-  if (typeof Blob !== 'undefined' && file instanceof Blob) {
-    return true;
-  }
-  if ('arrayBuffer' in file && typeof file.arrayBuffer === 'function') {
-    return true;
-  }
-  return 'stream' in file && typeof file.stream === 'function';
+  return typeof Blob !== 'undefined' && file instanceof Blob;
 }
 
 function isUploadAttachmentUriPayload(
