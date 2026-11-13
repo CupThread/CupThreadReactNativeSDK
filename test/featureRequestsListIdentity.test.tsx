@@ -357,3 +357,76 @@ test('useFeatureRequests discards a load-more page that resolves after a client 
     renderer.unmount();
   }
 });
+
+test('useFeatureRequests clears the previous client rows while the hook is disabled (#458)', async () => {
+  const calls: string[] = [];
+  const clientA = {
+    fetchFeatureRequests: async () => {
+      calls.push('A');
+      return {
+        requests: [makeItem('a1', 'A row')],
+        total: 5,
+        nextCursor: 'cursor-a',
+        hasMore: true,
+      };
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    fetchFeatureRequests: async () => {
+      calls.push('B');
+      return { requests: [makeItem('b1', 'B row')], total: 1 };
+    },
+  } as unknown as FeedbackClient;
+
+  const latest: { current: UseFeatureRequestsResult | null } = { current: null };
+  const renderer = TestRenderer.create(
+    <HookProbe options={{ client: clientA, userToken: 'tok_swap', pageSize: 2 }} latest={latest} />
+  );
+  try {
+    await flush();
+    assert.deepEqual(
+      latest.current!.items.map((item) => item.id),
+      ['a1']
+    );
+    assert.equal(latest.current!.hasMore, true);
+
+    act(() => {
+      renderer.update(
+        <HookProbe
+          options={{ client: clientB, userToken: 'tok_swap', pageSize: 2, enabled: false }}
+          latest={latest}
+        />
+      );
+    });
+    await flush();
+
+    assert.deepEqual(calls, ['A'], 'a disabled hook must not fetch the new client');
+    assert.deepEqual(
+      latest.current!.items.map((item) => item.id),
+      [],
+      'the previous client rows must not stay exposed through items while disabled'
+    );
+    assert.equal(latest.current!.total, 0);
+    assert.equal(
+      latest.current!.hasMore,
+      false,
+      'the previous client cursor must not keep hasMore true while disabled'
+    );
+
+    act(() => {
+      renderer.update(
+        <HookProbe
+          options={{ client: clientB, userToken: 'tok_swap', pageSize: 2 }}
+          latest={latest}
+        />
+      );
+    });
+    await flush();
+    assert.deepEqual(
+      latest.current!.items.map((item) => item.id),
+      ['b1']
+    );
+  } finally {
+    renderer.unmount();
+  }
+});

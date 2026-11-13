@@ -743,23 +743,9 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   );
 
   useEffect(() => {
-    if (!isTokenReady || !enabled) {
-      // The previous effect's cleanup aborted only its own deferred
-      // controller; a manual refresh()/reload() may have replaced
-      // `loadControllerRef` with a live request the cleanup never saw. Abort
-      // it here so the hook cannot disable with a page-0 still on the wire,
-      // then clear the flags its guarded `finally` would otherwise skip
-      // (#137).
-      loadControllerRef.current?.abort();
-      loadMoreControllerRef.current?.abort();
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return;
-    }
-
-    loadControllerRef.current?.abort();
-    loadMoreControllerRef.current?.abort();
-
+    // Identity invalidation runs even while the hook is disabled or the token
+    // is still resolving (#458): the previous client's rows and walk must not
+    // stay exposed through `items` until the hook is re-enabled.
     const identity = listIdentityRef.current;
     const clientChanged = identity.client !== client;
     const identityChanged = clientChanged || identity.pageSize !== pageSize;
@@ -791,6 +777,23 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         settledItemMutationsRef.current.clear();
       }
     }
+
+    if (!isTokenReady || !enabled) {
+      // The previous effect's cleanup aborted only its own deferred
+      // controller; a manual refresh()/reload() may have replaced
+      // `loadControllerRef` with a live request the cleanup never saw. Abort
+      // it here so the hook cannot disable with a page-0 still on the wire,
+      // then clear the flags its guarded `finally` would otherwise skip
+      // (#137).
+      loadControllerRef.current?.abort();
+      loadMoreControllerRef.current?.abort();
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    loadControllerRef.current?.abort();
+    loadMoreControllerRef.current?.abort();
 
     const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     const isSearch = trimmedQuery.length > 0;
