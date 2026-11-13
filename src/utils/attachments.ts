@@ -111,17 +111,24 @@ function hasBlobByteSize(file: object): file is Blob {
   return typeof Blob !== 'undefined' && file instanceof Blob;
 }
 
-function readBlobByteSize(file: UploadAttachmentOptions['file']): number | undefined {
-  if (!file || typeof file !== 'object') {
-    return undefined;
-  }
-  if (!hasBlobByteSize(file)) {
+function readPayloadDeclaredByteSize(file: object): number | undefined {
+  if (!('size' in file)) {
     return undefined;
   }
   const size = file.size;
   return typeof size === 'number' && Number.isFinite(size) && size > 0
     ? Math.ceil(size)
     : undefined;
+}
+
+function readBlobByteSize(file: UploadAttachmentOptions['file']): number | undefined {
+  if (!file || typeof file !== 'object') {
+    return undefined;
+  }
+  if (hasBlobByteSize(file)) {
+    return readPayloadDeclaredByteSize(file);
+  }
+  return readPayloadDeclaredByteSize(file);
 }
 
 export function resolveDeclaredAttachmentSize(option: UploadAttachmentOptions): number | undefined {

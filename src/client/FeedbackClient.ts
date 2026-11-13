@@ -434,6 +434,11 @@ export type UploadAttachmentUriPayload = {
   uri: string;
   name?: string;
   type?: string;
+  /**
+   * Optional byte size forwarded by the native picker for pre-flight quota
+   * checks. When absent, size validation falls through to the upload seam.
+   */
+  size?: number;
 };
 
 /**
