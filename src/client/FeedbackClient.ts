@@ -40,6 +40,7 @@ import {
   InvalidConfigPayloadException,
   InvalidResponseException,
   MissingUnsubscribeTokenException,
+  PartialUploadBatchException,
   PaymentRequiredException,
   QuotaExceededException,
   RateLimitedException,
@@ -53,6 +54,7 @@ import {
 import { getRuntimePlatform, toWirePlatform } from '../utils/platform';
 import { iso8601Now } from '../utils/formatters';
 import { resolveDeclaredAttachmentSize } from '../utils/attachments';
+import { isAbortError } from '../utils/errors';
 import {
   assertValidUserAttributesSignature,
   buildUserAttributesCanonicalString,
@@ -1239,15 +1241,19 @@ export class FeedbackClient {
    * starts with no budget left fails with {@link RequestTimeoutException}
    * without a request.
    *
-   * The batch is transactional: the first failure aborts it and rejects with
-   * that error, and the descriptors already returned for earlier slots are not
-   * included in the rejection. Callers that need per-file isolation should use
-   * {@link FeedbackClient.createUploadSession} and retry the failed slots.
+   * The batch is transactional: the first failure aborts it and rejects. A
+   * slot failure in a multi-file batch throws
+   * {@link PartialUploadBatchException}, whose `uploaded` descriptors let a
+   * caller keep the bytes already stored and retry only the unfilled items; its
+   * prefix is empty when the first slot fails. A single-file batch rethrows its
+   * original error. Callers that need per-file isolation from the start should
+   * use {@link FeedbackClient.createUploadSession} and retry the failed slots.
    *
    * @param options - One entry per attachment (1–8 files per session).
    * @returns Uploaded descriptors in the same order as `options`.
    * @throws {@link UploadValidationException} If any entry declares no positive size or the batch is empty or longer than 8 entries.
    * @throws {@link UploadRejectedException} If the API rejects the session or any file.
+   * @throws {@link PartialUploadBatchException} If a slot fails after earlier slots in the same session were filled.
    *
    * @example
    * ```ts
@@ -1314,34 +1320,48 @@ export class FeedbackClient {
 
     const uploaded: FeedbackAttachment[] = [];
     for (let index = 0; index < declarations.length; index += 1) {
-      const declaration = declarations[index];
-      const slot = session.files[index];
-      if (!slot) {
-        throw new UnreadableUploadResponseException();
-      }
-      if (declaration.size > slot.maxSizeBytes) {
-        // No server body exists for a rejection this client decided on, so
-        // mirror the API's `{ error, code }` shape for `responseBody`.
-        throw new UploadRejectedException(
-          413,
-          'file_too_large',
-          JSON.stringify({
-            error: `File "${declaration.spec.filename}" exceeds the ${slot.maxSizeBytes}-byte slot limit.`,
-            code: 'file_too_large',
+      try {
+        const declaration = declarations[index];
+        const slot = session.files[index];
+        if (!slot) {
+          throw new UnreadableUploadResponseException();
+        }
+        if (declaration.size > slot.maxSizeBytes) {
+          // No server body exists for a rejection this client decided on, so
+          // mirror the API's `{ error, code }` shape for `responseBody`.
+          throw new UploadRejectedException(
+            413,
+            'file_too_large',
+            JSON.stringify({
+              error: `File "${declaration.spec.filename}" exceeds the ${slot.maxSizeBytes}-byte slot limit.`,
+              code: 'file_too_large',
+            })
+          );
+        }
+        assertUploadBudget();
+        uploaded.push(
+          await this.putUploadSlot({
+            slot,
+            sessionToken: session.sessionToken,
+            declaration,
+            signal,
+            timeoutMs,
+            deadlineAt,
           })
         );
+      } catch (error) {
+        // Cancellation is not a partial batch: the caller asked for the
+        // AbortError, and the descriptors already filled die with it. A
+        // single-file batch has no siblings to isolate, so its original error
+        // stays the item's own actionable error.
+        if (isAbortError(error) || declarations.length === 1) {
+          throw error;
+        }
+        // The session already reserved quota for every declared file, so even a
+        // first-slot failure is a partial batch: wrapping it tells the caller
+        // not to restart the whole chunk as if nothing had been reserved.
+        throw new PartialUploadBatchException(uploaded, index, error);
       }
-      assertUploadBudget();
-      uploaded.push(
-        await this.putUploadSlot({
-          slot,
-          sessionToken: session.sessionToken,
-          declaration,
-          signal,
-          timeoutMs,
-          deadlineAt,
-        })
-      );
     }
 
     return uploaded;

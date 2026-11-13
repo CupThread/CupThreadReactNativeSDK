@@ -11,6 +11,15 @@ import {
 import type { CommonStrings, FeedbackComposerStrings } from '../i18n/types';
 
 /**
+ * True when a caught value is an abort caused by host cancellation rather than
+ * a failing request. Aborts carry no actionable user-facing cause, and retrying
+ * them would spend another upload budget on work the caller already cancelled.
+ */
+export function isAbortError(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'name' in err && err.name === 'AbortError';
+}
+
+/**
  * Maps a caught error to a safe, localized string suitable for rendering to
  * end users.
  *
