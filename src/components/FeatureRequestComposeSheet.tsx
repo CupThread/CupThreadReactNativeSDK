@@ -318,8 +318,10 @@ export function FeatureRequestComposeSheet({
           warnInDev('[CupThread] FeatureRequestComposeSheet: onClose callback threw:', closeErr);
         }
       }
-    } catch (err: any) {
-      if (submitId === submitSeqRef.current) {
+    } catch (err: unknown) {
+      const isLatest = submitId === submitSeqRef.current;
+      const ownsForm = isLatest && openSessionRef.current === submitSession;
+      if (ownsForm) {
         setErrorMessage(
           userFacingErrorMessage(err, strings.featureRequestCompose.submitFailed, strings.common)
         );

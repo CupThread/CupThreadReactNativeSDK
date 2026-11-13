@@ -170,12 +170,22 @@ function createFeedbackHarness(options: {
     });
   };
 
+  const findCloseButton = () => {
+    const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+    const closeBtn = buttons.find((btn) => btn.props.accessibilityLabel === 'Close');
+    if (!closeBtn) {
+      throw new Error('Close button not found');
+    }
+    return closeBtn;
+  };
+
   return {
     renderer,
     submitCalls,
     findSubmitButton,
     findAddAttachmentButton,
     findRemoveAttachmentButtons,
+    findCloseButton,
     findTextInputs: () => renderer.root.findAllByType('TextInput' as any),
     setVisible: (visible: boolean) => {
       act(() => {
@@ -366,15 +376,16 @@ test(
       harness.setVisible(true);
       await flush();
 
-      // The stale attempt fails while the user is back on a fresh form. The
-      // failure must still be surfaced — suppressing it would silently lose
-      // the user's report — and the reopened form must stay interactive.
+      // The stale attempt fails after the form was dismissed and reopened.
+      // Ownership ended on dismissal, so the hidden failure must not paint
+      // onto the reopened form.
       firstSubmit.reject(new Error('network down'));
       await flush();
 
-      assert.ok(
+      assert.equal(
         collectText(harness.renderer).some((text) => text.includes('Failed to submit feedback')),
-        'the stale failure still surfaces its error in the reopened form'
+        false,
+        'stale failure must not surface after dismissal ended ownership'
       );
       assert.equal(
         Boolean(harness.findSubmitButton().props.disabled),
@@ -648,7 +659,6 @@ test(
         void harness.findSubmitButton().props.onPress();
       });
       await flush(2);
-
       harness.setVisible(false);
       await flush();
 
@@ -670,11 +680,55 @@ test(
   }
 );
 
+test(
+  'FeedbackComposer: closing via the close control calls onClose once and stale success does not close again',
+  renderTestOptions,
+  async () => {
+    alertCalls.length = 0;
+    const firstSubmit = defer<FeedbackSubmissionResult>();
+    let closeCalls = 0;
+    const harness = createFeedbackHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ submissionId: 'sub_2', forwardedToGithub: false }),
+      onClose: () => {
+        closeCalls++;
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      act(() => {
+        void harness.findCloseButton().props.onPress();
+      });
+      await flush();
+      harness.setVisible(false);
+      await flush();
+      assert.equal(closeCalls, 1, 'close control must invoke onClose exactly once');
+
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+      await flush();
+
+      assert.equal(closeCalls, 1, 'stale success must not invoke onClose again');
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ submissionId: 'sub_stale', forwardedToGithub: false });
+    }
+  }
+);
+
 interface SheetHarness {
   renderer: TestRenderer.ReactTestRenderer;
   submitCalls: FeatureRequestDraft[];
   findSubmitButton: () => TestRenderer.ReactTestInstance;
   findTextInputs: () => TestRenderer.ReactTestInstance[];
+  findCloseButton: () => TestRenderer.ReactTestInstance;
   setVisible: (visible: boolean) => void;
 }
 
@@ -731,10 +785,20 @@ function createSheetHarness(options: {
     return submitBtn;
   };
 
+  const findCloseButton = () => {
+    const buttons = renderer.root.findAllByType(TouchableOpacityStub as any);
+    const closeBtn = buttons.find((btn) => btn.props.accessibilityLabel === 'Close');
+    if (!closeBtn) {
+      throw new Error('Close button not found');
+    }
+    return closeBtn;
+  };
+
   return {
     renderer,
     submitCalls,
     findSubmitButton,
+    findCloseButton,
     findTextInputs: () => renderer.root.findAllByType('TextInput' as any),
     setVisible: (visible: boolean) => {
       act(() => {
@@ -970,6 +1034,48 @@ test(
 
       assert.equal(closeCalls, 0);
       assert.deepEqual(successContexts, [false]);
+      harness.renderer.unmount();
+    } finally {
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+    }
+  }
+);
+
+test(
+  'FeatureRequestComposeSheet: closing via the close control does not invoke onClose again on stale success',
+  renderTestOptions,
+  async () => {
+    const firstSubmit = defer<{ featureRequestId: string; pending: boolean }>();
+    let closeCalls = 0;
+    const harness = createSheetHarness({
+      submitFactory: (n) =>
+        n === 1
+          ? firstSubmit.promise
+          : Promise.resolve({ featureRequestId: 'fr_2', pending: false }),
+      onClose: () => {
+        closeCalls++;
+      },
+    });
+    await flush();
+
+    try {
+      act(() => {
+        void harness.findSubmitButton().props.onPress();
+      });
+      await flush(2);
+
+      act(() => {
+        void harness.findCloseButton().props.onPress();
+      });
+      await flush();
+      harness.setVisible(false);
+      await flush();
+      assert.equal(closeCalls, 1);
+
+      firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
+      await flush();
+
+      assert.equal(closeCalls, 1);
       harness.renderer.unmount();
     } finally {
       firstSubmit.resolve({ featureRequestId: 'fr_stale', pending: false });
