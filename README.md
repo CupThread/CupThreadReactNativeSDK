@@ -566,6 +566,8 @@ Supply a token in one of two ways:
 
 2. **Per-draft token.** Set `turnstileToken` on `FeedbackDraft` / `FeatureRequestDraft` to force a specific token; it takes precedence over the provider.
 
+The provider runs inside the same timeout and abort budget as the call it gates: `timeoutMs` for `submit` / `submitFeatureRequest`, and `uploadTimeoutMs` for upload session creation. A provider that never settles therefore rejects that call with `RequestTimeoutException` instead of hanging, and aborting the caller's signal settles it with an `AbortError`. The SDK races the returned promise, so the provider does not need to observe a signal itself; it should still settle promptly.
+
 If neither is configured, submissions against Turnstile-gated backends cannot succeed until the host supplies a token (or the app key is exempted server-side).
 
 ---

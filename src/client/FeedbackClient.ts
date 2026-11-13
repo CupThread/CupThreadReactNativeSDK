@@ -264,6 +264,18 @@ interface ExecuteWithTimeoutOptions {
 }
 
 /**
+ * Timeout and abort budget shared by the steps of one operation: the request
+ * itself and any host-provided async step it awaits first (a Turnstile
+ * provider, an identity read). `deadlineAt` is the absolute epoch-ms end of a
+ * shared batch budget; without it the step owns `timeoutMs`.
+ */
+interface OperationBudget {
+  timeoutMs: number;
+  signal?: AbortSignal;
+  deadlineAt?: number;
+}
+
+/**
  * Shared helper that wraps an asynchronous network operation with timeout and AbortSignal support.
  *
  * Automatically:
@@ -711,16 +723,56 @@ export class FeedbackClient {
   }
 
   /**
+   * Runs a host-provided asynchronous step (the Turnstile provider, the shared
+   * token store read) inside an operation's timeout and abort budget.
+   *
+   * @remarks
+   * Both steps may perform a network or native call, so they are part of the
+   * operation they gate. Racing the returned promise settles the operation when
+   * the budget elapses even though the provider receives no signal and may
+   * never observe the abort.
+   */
+  private async runWithinBudget<T>(
+    work: () => Promise<T>,
+    budget: OperationBudget,
+    timeoutMessage: string
+  ): Promise<T> {
+    const effectiveTimeoutMs = clampToDeadline(budget.timeoutMs, budget.deadlineAt);
+    return executeWithTimeout<T>(
+      {
+        timeoutMs: effectiveTimeoutMs,
+        reportedTimeoutMs: budget.timeoutMs,
+        signal: budget.signal,
+        timeoutMessage,
+      },
+      async (context) => context.race(work())
+    );
+  }
+
+  /**
    * Resolves the Turnstile token to attach to an intake submission: a
    * draft-level `turnstileToken` wins over the configured provider so hosts can
    * force a specific token per submission.
+   *
+   * @remarks
+   * The provider is billed against `budget`, the same timeout and abort budget
+   * as the request it gates, so a provider that never settles cannot make the
+   * submission or upload session hang past its documented budget.
    */
-  private async resolveTurnstileToken(explicit?: string): Promise<string | undefined> {
+  private async resolveTurnstileToken(
+    explicit?: string,
+    budget?: Partial<OperationBudget>
+  ): Promise<string | undefined> {
     const trimmedExplicit = typeof explicit === 'string' ? explicit.trim() : undefined;
     if (trimmedExplicit) return trimmedExplicit;
     const provider = this.config.turnstileTokenProvider;
     if (!provider) return undefined;
-    const token = await provider();
+    const timeoutMs = budget?.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const token = await this.runWithinBudget(
+      () => Promise.resolve(provider()),
+      { timeoutMs, signal: budget?.signal, deadlineAt: budget?.deadlineAt },
+      `Turnstile token provider timed out after ${timeoutMs}ms`
+    );
     return typeof token === 'string' && token.trim() ? token.trim() : undefined;
   }
 
@@ -801,7 +853,19 @@ export class FeedbackClient {
     const platform = toWirePlatform(
       draft.platform || this.config.defaultPlatform || getRuntimePlatform()
     );
-    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
+    // The provider and the identity fallback below are network/native steps the
+    // submission waits on, so they share its timeout and abort budget: a
+    // provider that never settles must not outlive `timeoutMs`.
+    const signal = extractSignal(resolvedOptions);
+    const timeoutMs =
+      extractTimeoutMs(resolvedOptions) ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadlineAt =
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken, {
+      timeoutMs,
+      signal,
+      deadlineAt,
+    });
     // Only session uploads can be submitted: the intake endpoint rejects raw
     // storage keys and URLs (`direct_attachment_forbidden`), so legacy
     // descriptors without an uploadId are omitted instead of failing the whole
@@ -834,7 +898,14 @@ export class FeedbackClient {
     // so a direct caller cannot trip `uploader_mismatch` by omission.
     const trimmedToken = typeof resolvedUserToken === 'string' ? resolvedUserToken.trim() : '';
     const submissionToken =
-      trimmedToken || (uploadIds.length > 0 ? await UserTokenStore.shared.getToken() : undefined);
+      trimmedToken ||
+      (uploadIds.length > 0
+        ? await this.runWithinBudget(
+            () => UserTokenStore.shared.getToken(),
+            { timeoutMs, signal, deadlineAt },
+            `Feedback submission identity resolution timed out after ${timeoutMs}ms`
+          )
+        : undefined);
 
     const payload = {
       appKey: this.config.appKey,
@@ -866,8 +937,11 @@ export class FeedbackClient {
       // (`uploader_mismatch`, `direct_attachment_forbidden`,
       // `already_finalized`, `scan_rejected`); keep those codes actionable.
       uploadRequest: uploadIds.length > 0,
-      signal: extractSignal(resolvedOptions),
-      timeoutMs: extractTimeoutMs(resolvedOptions),
+      signal,
+      timeoutMs,
+      // The provider step above draws from this same deadline, so the request
+      // cannot restart a full timeout after consuming most of the budget.
+      deadlineAt,
     });
     if (
       !res ||
@@ -951,9 +1025,20 @@ export class FeedbackClient {
     deadlineAt?: number
   ): Promise<UploadSession> {
     const specs = this.normalizeUploadFileSpecs(files);
-    const userToken = await this.resolveUploadUserToken(options.userToken);
-    const turnstileToken = await this.resolveTurnstileToken(options.turnstileToken);
     const timeoutMs = options.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+    // A batched upload passes its shared deadline in; a standalone session call
+    // owns the whole budget. Either way the identity read and the Turnstile
+    // provider are billed to it instead of running unbounded first.
+    const effectiveDeadlineAt =
+      deadlineAt ??
+      (Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined);
+    const budget: OperationBudget = {
+      timeoutMs,
+      signal: options.signal,
+      deadlineAt: effectiveDeadlineAt,
+    };
+    const userToken = await this.resolveUploadUserToken(options.userToken, budget);
+    const turnstileToken = await this.resolveTurnstileToken(options.turnstileToken, budget);
 
     const json = await this.request<CreateUploadSessionResponse>({
       method: 'POST',
@@ -970,7 +1055,7 @@ export class FeedbackClient {
       signal: options.signal,
       timeoutMs,
       timeoutMessage: `Upload session creation timed out after ${timeoutMs}ms`,
-      deadlineAt,
+      deadlineAt: effectiveDeadlineAt,
     });
 
     const session = json?.session;
@@ -1126,7 +1211,6 @@ export class FeedbackClient {
     // must not consume a reserved slot or any of the daily quota.
     const declarations = options.map((option) => this.describeUpload(option));
     const explicitToken = shared.userToken ?? options.find((option) => option.userToken)?.userToken;
-    const userToken = await this.resolveUploadUserToken(explicitToken);
     const signal = shared.signal ?? options.find((option) => option.signal)?.signal;
     const turnstileToken = shared.turnstileToken ?? options[0].turnstileToken;
 
@@ -1140,6 +1224,13 @@ export class FeedbackClient {
       DEFAULT_UPLOAD_TIMEOUT_MS;
     const deadlineAt =
       Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    // The identity read can await a storage adapter, so it is billed to that
+    // same deadline instead of running unbounded before the first request.
+    const userToken = await this.resolveUploadUserToken(explicitToken, {
+      timeoutMs,
+      signal,
+      deadlineAt,
+    });
     const assertUploadBudget = (): void => {
       if (deadlineAt !== undefined && deadlineAt - Date.now() <= 0) {
         // Fail before spending a request (and a reserved slot) on a call that
@@ -1289,10 +1380,18 @@ export class FeedbackClient {
    * store is the fallback that keeps a direct `uploadAttachment()` call and a
    * later `submit()` attributed to the same identity (SEC-28).
    */
-  private async resolveUploadUserToken(explicit?: string): Promise<string | undefined> {
+  private async resolveUploadUserToken(
+    explicit?: string,
+    budget?: Partial<OperationBudget>
+  ): Promise<string | undefined> {
     const trimmed = typeof explicit === 'string' ? explicit.trim() : '';
     if (trimmed) return trimmed;
-    return UserTokenStore.shared.getToken();
+    const timeoutMs = budget?.timeoutMs ?? this.config.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+    return this.runWithinBudget(
+      () => UserTokenStore.shared.getToken(),
+      { timeoutMs, signal: budget?.signal, deadlineAt: budget?.deadlineAt },
+      `Upload identity resolution timed out after ${timeoutMs}ms`
+    );
   }
 
   /**
@@ -1854,7 +1953,17 @@ export class FeedbackClient {
     }
     const requesterName =
       typeof draft.requesterName === 'string' ? draft.requesterName.trim() || undefined : undefined;
-    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken);
+    // The provider runs inside this submission's timeout and abort budget, so a
+    // stalled provider cannot outlive `timeoutMs`.
+    const signal = extractSignal(options);
+    const timeoutMs = extractTimeoutMs(options) ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadlineAt =
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const turnstileToken = await this.resolveTurnstileToken(draft.turnstileToken, {
+      timeoutMs,
+      signal,
+      deadlineAt,
+    });
     const res = await this.request<FeatureRequestSubmissionResult>({
       method: 'POST',
       path: '/api/v1/feature-requests',
@@ -1867,8 +1976,10 @@ export class FeedbackClient {
         ...(turnstileToken ? { turnstileToken } : {}),
       },
       accepted: [200, 201],
-      signal: extractSignal(options),
-      timeoutMs: extractTimeoutMs(options),
+      signal,
+      timeoutMs,
+      // Clamped against the provider's share of the budget above.
+      deadlineAt,
     });
     if (
       !res ||
