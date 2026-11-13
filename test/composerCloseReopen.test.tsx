@@ -88,6 +88,7 @@ interface FeedbackHarness {
   findSubmitButton: () => TestRenderer.ReactTestInstance;
   findAddAttachmentButton: () => TestRenderer.ReactTestInstance | null;
   findRemoveAttachmentButtons: () => TestRenderer.ReactTestInstance[];
+  findCloseButton: () => TestRenderer.ReactTestInstance;
   findTextInputs: () => TestRenderer.ReactTestInstance[];
   setVisible: (visible: boolean) => void;
 }
