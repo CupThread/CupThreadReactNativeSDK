@@ -28,7 +28,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import { MarkdownText } from './MarkdownText';
-import { userFacingErrorMessage } from '../utils/errors';
+import { isAbortError, userFacingErrorMessage } from '../utils/errors';
 
 /**
  * Props for configuring the {@link CommentsSection} thread component.
@@ -167,10 +167,24 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   const isLoadingMoreRef = useRef<boolean>(false);
   const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
+  const threadGenerationRef = useRef(0);
+  const clientIdentityRef = useRef(client);
+  useEffect(() => {
+    loadMoreControllerRef.current?.abort();
+    isLoadingMoreRef.current = false;
+    setIsLoadingMore(false);
+    hasWalkedRef.current = false;
+    setLoadMoreError(null);
+    threadGenerationRef.current += 1;
+    if (clientIdentityRef.current !== client) {
+      clientIdentityRef.current = client;
+      setCommentsData(null);
+    }
+  }, [client, featureRequestId, setCommentsData]);
+
   useEffect(() => {
     return () => loadMoreControllerRef.current?.abort();
   }, []);
-
   // A page can only be followed when the server reports more comments, the
   // page was non-empty, and it handed back a cursor to follow.
   const hasMorePages = Boolean(
@@ -185,6 +199,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     const controller = new AbortController();
     loadMoreControllerRef.current = controller;
 
+    const generation = threadGenerationRef.current;
     isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
     try {
@@ -193,35 +208,33 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
-      // Flip before the updater runs (never inside it): from here on the
-      // accumulated walk position outranks a stale page's metadata.
+      if (threadGenerationRef.current !== generation) return;
       hasWalkedRef.current = true;
       setCommentsData((prev) => {
         if (!prev) return prev;
         const seen = new Set(prev.comments.map((c) => c.id));
         const fresh = page.comments.filter((c) => !seen.has(c.id));
-        // A cursor that does not advance can never finish the walk: stop
-        // pagination on it instead of re-fetching the same page on every loadMore.
         const stalledCursor = page.nextCursor !== null && page.nextCursor === cursor;
         const nextCursor = stalledCursor ? null : page.nextCursor;
         return {
           comments: fresh.length > 0 ? [...prev.comments, ...fresh] : prev.comments,
           total: Math.max(prev.total, page.total),
-          // An empty page can never be followed by another one, even if a
-          // buggy server left `hasMore` set; neither can a page without a cursor
-          // or one whose cursor did not advance.
           hasMore:
             !stalledCursor && page.hasMore && page.comments.length > 0 && nextCursor !== null,
           nextCursor,
         };
       });
       setLoadMoreError(null);
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || controller.signal.aborted) return;
+    } catch (err: unknown) {
+      if (controller.signal.aborted) return;
+      if (isAbortError(err)) return;
+      if (threadGenerationRef.current !== generation) return;
       setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      isLoadingMoreRef.current = false;
-      setIsLoadingMore(false);
+      if (threadGenerationRef.current === generation) {
+        isLoadingMoreRef.current = false;
+        setIsLoadingMore(false);
+      }
     }
   }, [client, featureRequestId, commentsPage?.nextCursor, setCommentsData]);
 

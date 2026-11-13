@@ -93,6 +93,11 @@ class SwapStubClient extends FeedbackClient {
   fetchCalls: string[] = [];
   postCalls: PostCall[] = [];
   commentSources = new Map<string, FeatureRequestComment[]>();
+  paginatedSources = new Map<
+    string,
+    { base: FeatureRequestComment[]; more: FeatureRequestComment[]; cursor: string }
+  >();
+  deferredLoadMore?: ReturnType<typeof createDeferred<ListFeatureRequestCommentsResult>>;
   deferredFetches = new Map<
     string,
     ReturnType<typeof createDeferred<ListFeatureRequestCommentsResult>>
@@ -100,9 +105,34 @@ class SwapStubClient extends FeedbackClient {
   deferredPosts = new Map<string, ReturnType<typeof createDeferred<FeatureRequestComment>>>();
   fetchFailures = new Set<string>();
   postedComment = makeComment('c_new', { authorName: null, body: 'Freshly posted' });
-
-  override async listComments(featureRequestId: string): Promise<ListFeatureRequestCommentsResult> {
+  override async listComments(
+    featureRequestId: string,
+    opts?: { cursor?: string | null }
+  ): Promise<ListFeatureRequestCommentsResult> {
     this.fetchCalls.push(featureRequestId);
+    const paginated = this.paginatedSources.get(featureRequestId);
+    if (paginated) {
+      if (!opts?.cursor) {
+        return {
+          comments: paginated.base,
+          total: paginated.base.length + paginated.more.length,
+          hasMore: true,
+          nextCursor: paginated.cursor,
+        };
+      }
+      if (opts.cursor === paginated.cursor && this.deferredLoadMore) {
+        return this.deferredLoadMore.promise;
+      }
+      if (opts.cursor === paginated.cursor) {
+        return {
+          comments: paginated.more,
+          total: paginated.base.length + paginated.more.length,
+          hasMore: false,
+          nextCursor: null,
+        };
+      }
+    }
+
     const deferred = this.deferredFetches.get(featureRequestId);
     if (deferred) return deferred.promise;
     if (this.fetchFailures.has(featureRequestId)) throw new Error('network gone');
@@ -467,6 +497,117 @@ test(
     } finally {
       harness.restoreFetch();
       harness.renderer.unmount();
+    }
+  }
+);
+
+const { enStrings } = await import('../src/i18n');
+
+test(
+  'a client swap on the same request id invalidates stale load-more results (#451)',
+  renderTestOptions,
+  async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+    const clientA = new SwapStubClient({
+      baseUrl: 'https://api.cupthread.com/a',
+      appKey: 'app_comments_a',
+    });
+    clientA.paginatedSources.set('fr_A', {
+      base: [makeComment('c_a1', { body: 'Client A base' })],
+      more: [makeComment('c_a2', { body: 'Client A more' })],
+      cursor: 'cursor_a',
+    });
+
+    const clientB = new SwapStubClient({
+      baseUrl: 'https://api.cupthread.com/b',
+      appKey: 'app_comments_b',
+    });
+    clientB.paginatedSources.set('fr_A', {
+      base: [makeComment('c_b1', { body: 'Client B base' })],
+      more: [makeComment('c_b2', { body: 'Client B more' })],
+      cursor: 'cursor_b',
+    });
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client: clientA,
+          userToken: 'usr_tok_test',
+          commentSessionProvider: () => 'clerk_jwt_live',
+          children: React.createElement(CommentsSection, { featureRequestId: 'fr_A' }),
+        })
+      );
+    });
+    await flush(20);
+    try {
+      assert.deepEqual(clientA.fetchCalls, ['fr_A'], 'client A should fetch first comments page');
+      assert.ok(
+        collectText(renderer.root).includes('Client A base'),
+        'client A first page should load'
+      );
+      const loadMoreButton = findButtonByText(renderer.root, enStrings.comments.loadMore);
+      assert.ok(loadMoreButton, 'load more affordance should render for client A');
+
+      const pendingLoadMore = createDeferred<ListFeatureRequestCommentsResult>();
+      clientA.deferredLoadMore = pendingLoadMore;
+      await act(() => {
+        void loadMoreButton!.props.onPress();
+      });
+
+      await act(async () => {
+        renderer.update(
+          React.createElement(CupThreadProvider, {
+            client: clientB,
+            userToken: 'usr_tok_test',
+            commentSessionProvider: () => 'clerk_jwt_live',
+            children: React.createElement(CommentsSection, { featureRequestId: 'fr_A' }),
+          })
+        );
+      });
+      await flush(12);
+      assert.ok(
+        collectText(renderer.root).includes('Client B base'),
+        'client B first page must render after swap'
+      );
+
+      pendingLoadMore.resolve({
+        comments: [makeComment('c_a2', { body: 'Client A more' })],
+        total: 2,
+        hasMore: false,
+        nextCursor: null,
+      });
+      await flush(12);
+
+      const text = collectText(renderer.root);
+      assert.ok(
+        !text.includes('Client A more'),
+        'late client A load-more must not merge after client swap'
+      );
+      assert.ok(text.includes('Client B base'), 'client B page must remain after stale settlement');
+      assert.equal(clientB.fetchCalls.filter((id) => id === 'fr_A').length, 1);
+
+      const loadMoreAfterSwap = findButtonByText(renderer.root, enStrings.comments.loadMore);
+      assert.ok(loadMoreAfterSwap, 'client B pagination cursor should remain available');
+      const pendingB = createDeferred<ListFeatureRequestCommentsResult>();
+      clientB.deferredLoadMore = pendingB;
+      await act(() => {
+        void loadMoreAfterSwap!.props.onPress();
+      });
+      assert.equal(clientB.fetchCalls.filter((id) => id === 'fr_A').length, 2);
+      pendingB.resolve({
+        comments: [makeComment('c_b2', { body: 'Client B more' })],
+        total: 2,
+        hasMore: false,
+        nextCursor: null,
+      });
+      await flush(8);
+      assert.ok(collectText(renderer.root).includes('Client B more'));
+    } finally {
+      globalThis.fetch = originalFetch;
+      renderer.unmount();
     }
   }
 );
