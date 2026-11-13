@@ -3086,6 +3086,15 @@ export class FeedbackClient {
 
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const callerSignal = options.signal;
+    const timeoutMessage = options.timeoutMessage ?? `Request timed out after ${timeoutMs}ms`;
+    // A shared deadline already spent by an earlier step of the same operation
+    // (a provider, an identity read) must fail before fetch: clamping to the
+    // 1 ms minimum would still let the request reach the server after the
+    // documented budget, and the caller would see a timeout for a write that
+    // actually landed.
+    if (options.deadlineAt !== undefined && options.deadlineAt - Date.now() <= 0) {
+      throw new RequestTimeoutException(timeoutMs, timeoutMessage);
+    }
     const effectiveTimeoutMs = clampToDeadline(timeoutMs, options.deadlineAt);
 
     return executeWithTimeout<T>(
@@ -3093,7 +3102,7 @@ export class FeedbackClient {
         timeoutMs: effectiveTimeoutMs,
         reportedTimeoutMs: timeoutMs,
         signal: callerSignal,
-        timeoutMessage: options.timeoutMessage ?? `Request timed out after ${timeoutMs}ms`,
+        timeoutMessage,
       },
       async (context) => {
         let response: Response;
