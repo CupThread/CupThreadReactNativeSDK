@@ -347,6 +347,46 @@ test('useAsyncData: successful load sets hasLoaded and a later failed reload kee
   assert.equal(harness.result.hasLoaded, true);
   assert.deepEqual(harness.result.data, ['ok']);
 });
+test('useAsyncData: toggling enabled does not reset hasLoaded after a successful load', async () => {
+  let enabled = true;
+  const fetcher = async (_signal: AbortSignal): Promise<string[]> => ['ok'];
+  const harness = renderTestHook(() => useAsyncData(fetcher, { enabled }));
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+});
+
+test('useAsyncData: fetcher identity change resets hasLoaded even while disabled', async () => {
+  let enabled = false;
+  let activeFetcher = async (_signal: AbortSignal): Promise<string[]> => ['first'];
+  const harness = renderTestHook(() => useAsyncData(activeFetcher, { enabled }));
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+
+  enabled = false;
+  activeFetcher = async (_signal: AbortSignal): Promise<string[]> => ['second'];
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, false);
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.hasLoaded, true);
+  assert.deepEqual(harness.result.data, ['second']);
+});
 
 // ---------------------------------------------------------------------------
 // useAsyncData: disabling while a refresh/reload is in flight must release

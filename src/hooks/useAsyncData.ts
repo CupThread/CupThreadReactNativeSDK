@@ -178,6 +178,14 @@ export function useAsyncData<T>(
   const reload = useCallback(() => runWithController('initial'), [runWithController]);
   const refresh = useCallback(() => runWithController('refresh'), [runWithController]);
 
+  // Initial load, and reload when `enabled` flips on. Reset `hasLoaded` only
+  // when the fetcher identity changes (including while disabled) so stale data
+  // from an earlier load keeps its "loaded" semantics across re-enables.
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    setHasLoaded(false);
+  }, [fetcher]);
+
   // Initial load, and reload when the fetcher identity or `enabled` changes.
   useEffect(() => {
     if (!enabled) {
@@ -190,8 +198,6 @@ export function useAsyncData<T>(
       setIsRefreshing(false);
       return;
     }
-    hasLoadedRef.current = false;
-    setHasLoaded(false);
     setIsLoading(true);
     void reload();
 
