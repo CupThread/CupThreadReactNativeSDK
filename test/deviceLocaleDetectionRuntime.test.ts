@@ -5,7 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { frStrings, getLocaleStrings } from '../src/i18n';
+import {
+  frStrings,
+  getLocaleStrings,
+  resolveLocale,
+  resetDeviceLocaleCache,
+  setDeviceLocaleProvider,
+} from '../src/i18n';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEVICE_LOCALE_SOURCE = readFileSync(path.join(ROOT, 'src/i18n/deviceLocale.ts'), 'utf8');
@@ -34,10 +40,6 @@ function loadDeviceLocaleInVm(requireImpl: (id: string) => unknown): DeviceLocal
   return (sandbox.module as { exports: DeviceLocaleModule }).exports;
 }
 
-function resolveAutoLocale(getDeviceLocale: () => string | null): string {
-  return getDeviceLocale() ?? 'en';
-}
-
 test('getDeviceLocale reads mocked expo-localization getLocales through runtime require (#443)', () => {
   const mod = loadDeviceLocaleInVm((id) => {
     if (id === 'expo-localization') {
@@ -57,10 +59,13 @@ test('getDeviceLocale reads mocked expo-localization getLocales through runtime 
 
   mod.setDeviceLocaleProvider(null);
   mod.resetDeviceLocaleCache();
-
   assert.equal(mod.getDeviceLocale(), 'fr-FR');
-  assert.equal(resolveAutoLocale(mod.getDeviceLocale), 'fr-FR');
-  assert.equal(getLocaleStrings('fr-FR').feedbackComposer.title, frStrings.feedbackComposer.title);
+  setDeviceLocaleProvider(() => mod.getDeviceLocale());
+  assert.equal(resolveLocale('auto'), 'fr-FR');
+  const detected = resolveLocale('auto');
+  assert.equal(getLocaleStrings(detected).feedbackComposer.title, frStrings.feedbackComposer.title);
+  setDeviceLocaleProvider(null);
+  resetDeviceLocaleCache();
 });
 
 test('getDeviceLocale reads mocked expo-localization v10 locale export through runtime require (#443)', () => {
@@ -81,5 +86,8 @@ test('getDeviceLocale reads mocked expo-localization v10 locale export through r
   mod.resetDeviceLocaleCache();
 
   assert.equal(mod.getDeviceLocale(), 'pt-BR');
-  assert.equal(resolveAutoLocale(mod.getDeviceLocale), 'pt-BR');
+  setDeviceLocaleProvider(() => mod.getDeviceLocale());
+  assert.equal(resolveLocale('auto'), 'pt-BR');
+  setDeviceLocaleProvider(null);
+  resetDeviceLocaleCache();
 });

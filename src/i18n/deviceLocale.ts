@@ -18,8 +18,9 @@ let cachedBuiltinLocale: string | null | undefined;
  *
  * 1. The detector registered via {@link setDeviceLocaleProvider} (host- or
  *    test-provided; always consulted fresh so dynamic sources keep working).
- * 2. `expo-localization` — ubiquitous in Expo apps and reflects per-app
- *    language overrides.
+ * 2. `expo-localization` — top-level `getLocales()[].languageTag`, then
+ *    top-level `locale` (expo-localization 10.x), then legacy nested
+ *    `Localization` exports when present.
  * 3. `react-native-localize` — the common choice in bare React Native apps.
  * 4. React Native core: `SettingsManager` on iOS, `I18nManager` on Android,
  *    `navigator.language` on web.
