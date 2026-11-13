@@ -1,3 +1,5 @@
+import type { FeedbackAttachment } from '../types';
+
 /**
  * Base error class for all CupThread SDK operations.
  */
@@ -263,6 +265,40 @@ export class UploadRejectedException extends FeedbackException {
     this.status = status;
     this.code = code;
     this.responseBody = responseBody;
+  }
+}
+
+/**
+ * Thrown by {@link FeedbackClient.uploadAttachments} when a slot fails after
+ * the upload session was created.
+ *
+ * The batch stays transactional: the promise rejects, and callers must not
+ * treat the returned prefix as a successful batch. The descriptors are exposed
+ * so a caller can keep the bytes that are already stored and retry only the
+ * unfilled items, instead of re-uploading and re-reserving quota for the whole
+ * chunk. The prefix is empty when the first slot fails, because the session
+ * has still reserved quota for every declared file. A single-file batch has no
+ * siblings to isolate and rethrows its original error instead.
+ */
+export class PartialUploadBatchException extends FeedbackException {
+  /** Descriptors for the slots filled before {@link failedIndex}, in pick order. */
+  readonly uploaded: readonly FeedbackAttachment[];
+
+  /** Zero-based index in the batch of the slot whose fill failed. */
+  readonly failedIndex: number;
+
+  /** The slot, budget, cancellation, or transport error that stopped the batch. */
+  readonly cause: unknown;
+
+  constructor(uploaded: readonly FeedbackAttachment[], failedIndex: number, cause: unknown) {
+    super(
+      `Upload batch failed at attachment ${failedIndex + 1}; ` +
+        `${uploaded.length} earlier attachment(s) were already stored.`
+    );
+    this.name = 'PartialUploadBatchException';
+    this.uploaded = [...uploaded];
+    this.failedIndex = failedIndex;
+    this.cause = cause;
   }
 }
 

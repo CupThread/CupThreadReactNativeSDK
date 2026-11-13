@@ -1402,3 +1402,108 @@ test(
     renderer.unmount();
   }
 );
+
+test(
+  'FeedbackComposer: a picker cancellation during a batch does not retry the other items',
+  renderTestOptions,
+  async () => {
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    const pickerController = new AbortController();
+    const batch = defer<FeedbackAttachment[]>();
+    let perItemCalls = 0;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_picker_signal_batch_reject',
+    });
+    client.uploadAttachments = async (_options, shared) => {
+      uploadSignals.push(shared?.signal);
+      shared?.signal?.addEventListener(
+        'abort',
+        () => {
+          const abortError = new Error('The operation was aborted');
+          abortError.name = 'AbortError';
+          batch.reject(abortError);
+        },
+        { once: true }
+      );
+      return batch.promise;
+    };
+    client.uploadAttachment = async () => {
+      perItemCalls += 1;
+      return makeAttachment('retry');
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_picker_signal_batch_reject',
+          children: React.createElement(FeedbackComposer, {
+            visible: true,
+            isModal: false,
+            initialDraft: {
+              title: 'Bug report',
+              description: 'Something broke',
+              attachments: [],
+            },
+            onPickAttachment: async () => [
+              {
+                file: { uri: 'file:///tmp/cancel-a.png', size: 100 },
+                filename: 'cancel-a.png',
+                mimeType: 'image/png',
+                size: 100,
+                signal: pickerController.signal,
+              },
+              {
+                file: { uri: 'file:///tmp/cancel-b.png', size: 100 },
+                filename: 'cancel-b.png',
+                mimeType: 'image/png',
+                size: 100,
+              },
+            ],
+          }),
+        })
+      );
+    });
+    await flush();
+
+    const addBtn = renderer.root.findAllByType(TouchableOpacityStub as any).find((btn) => {
+      const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+      return style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4);
+    });
+    assert.ok(addBtn);
+
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(uploadSignals.length, 1);
+
+    pickerController.abort();
+    await flush();
+
+    assert.equal(uploadSignals[0]?.aborted, true, 'the cancelled batch signal aborts');
+    assert.equal(
+      perItemCalls,
+      0,
+      'a cancelled pick must not retry its siblings through per-item sessions'
+    );
+    assert.equal(
+      renderer.root.findAll((node) => {
+        const style = Array.isArray(node.props?.style) ? node.props.style : [node.props?.style];
+        return style?.some((s: any) => s && s.padding === 4);
+      }).length,
+      0,
+      'a cancelled batch must not append attachments'
+    );
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      false,
+      'the form becomes usable again once the cancelled batch settles'
+    );
+
+    renderer.unmount();
+  }
+);

@@ -10,6 +10,10 @@ import {
 } from '../src/utils/attachments';
 import type { FeedbackAttachment } from '../src/types';
 import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../src/client/FeedbackClient';
+import {
+  PartialUploadBatchException,
+  RequestTimeoutException,
+} from '../src/client/FeedbackException';
 
 function makeDescriptor(name: string): FeedbackAttachment {
   return {
@@ -689,6 +693,209 @@ test('uploadInSessionChunks fails a lone item from its session error without ret
   assert.equal(outcomes.length, 1);
   assert.equal(outcomes[0].ok, false);
   assert.equal(outcomes[0].ok ? null : outcomes[0].error, sessionRejection);
+});
+
+test('uploadInSessionChunks resumes a partial batch from the unfilled items', async () => {
+  const items = [
+    makeUploadOptions('stored'),
+    makeUploadOptions('pending-a'),
+    makeUploadOptions('pending-b'),
+  ];
+  const stored = makeDescriptor('stored');
+  const slotFailure = new Error('slot 2 rejected');
+  const perItem: string[] = [];
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw new PartialUploadBatchException([stored], 1, slotFailure);
+    },
+    upload: async (options) => {
+      perItem.push(options.filename);
+      if (options.filename === 'pending-b.png') {
+        throw new Error('still rejected');
+      }
+      return makeDescriptor(options.filename.replace('.png', ''));
+    },
+  });
+
+  assert.deepEqual(
+    perItem,
+    ['pending-a.png', 'pending-b.png'],
+    'slots filled by the batch session must not be uploaded again'
+  );
+  assert.deepEqual(makeOutcomeNames(outcomes), ['stored.png', 'pending-a.png', '<failed>']);
+  const failedOutcome = outcomes[2];
+  if (failedOutcome.ok) {
+    assert.fail('the third item must fail');
+  } else {
+    assert.ok(failedOutcome.error instanceof Error);
+    assert.equal(failedOutcome.error.message, 'still rejected');
+  }
+});
+
+test('uploadInSessionChunks does not retry a partial batch that exhausted the shared deadline', async () => {
+  const items = [
+    makeUploadOptions('stored'),
+    makeUploadOptions('pending-a'),
+    makeUploadOptions('pending-b'),
+  ];
+  const timeout = new RequestTimeoutException(250, 'Upload timed out after 250ms');
+  let perItemCalls = 0;
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw new PartialUploadBatchException([makeDescriptor('stored')], 1, timeout);
+    },
+    upload: async () => {
+      perItemCalls += 1;
+      return makeDescriptor('should-not-run');
+    },
+  });
+
+  assert.equal(perItemCalls, 0, 'a spent shared budget must not grant fresh per-item budgets');
+  assert.deepEqual(makeOutcomeNames(outcomes), ['stored.png', '<failed>', '<failed>']);
+  for (const outcome of outcomes.slice(1)) {
+    if (outcome.ok) {
+      assert.fail('items after the exhausted deadline must fail');
+    } else {
+      assert.equal(outcome.error, timeout);
+    }
+  }
+});
+
+test('uploadInSessionChunks reports a session-level timeout without retrying it', async () => {
+  const timeout = new RequestTimeoutException(250);
+  let perItemCalls = 0;
+
+  const outcomes = await uploadInSessionChunks(
+    [makeUploadOptions('one'), makeUploadOptions('two')],
+    {
+      chunkSize: MAX_UPLOAD_FILES,
+      uploadBatch: async () => {
+        throw timeout;
+      },
+      upload: async () => {
+        perItemCalls += 1;
+        return makeDescriptor('should-not-run');
+      },
+    }
+  );
+
+  assert.equal(perItemCalls, 0, 'a session-level timeout must not be retried per item');
+  assert.ok(
+    outcomes.every((outcome) => !outcome.ok && outcome.error === timeout),
+    'every item reports the shared timeout instead of a fresh upload attempt'
+  );
+});
+
+test('uploadInSessionChunks retries every item when the first slot failed post-reservation', async () => {
+  const items = [makeUploadOptions('one'), makeUploadOptions('two'), makeUploadOptions('three')];
+  const slotFailure = new Error('slot 1 rejected');
+  const perItem: string[] = [];
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw new PartialUploadBatchException([], 0, slotFailure);
+    },
+    upload: async (options) => {
+      perItem.push(options.filename);
+      if (options.filename === 'two.png') {
+        throw new Error('still rejected');
+      }
+      return makeDescriptor(options.filename.replace('.png', ''));
+    },
+  });
+
+  assert.deepEqual(
+    perItem,
+    ['one.png', 'two.png', 'three.png'],
+    'an empty stored prefix means every item is still unfilled, so each one is retried'
+  );
+  assert.deepEqual(makeOutcomeNames(outcomes), ['one.png', '<failed>', 'three.png']);
+});
+
+test('uploadInSessionChunks stops later chunks after a terminal failure', async () => {
+  const items = Array.from({ length: 10 }, (_, index) => makeUploadOptions(`file${index}`));
+  const timeout = new RequestTimeoutException(250, 'Upload timed out after 250ms');
+  const batchCalls: number[] = [];
+  let perItemCalls = 0;
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async (chunk) => {
+      batchCalls.push(chunk.length);
+      throw timeout;
+    },
+    upload: async () => {
+      perItemCalls += 1;
+      return makeDescriptor('should-not-run');
+    },
+  });
+
+  assert.deepEqual(batchCalls, [8], 'the second (2-file) chunk must never open a session');
+  assert.equal(perItemCalls, 0, 'a terminal failure must not retry inside the failed chunk');
+  assert.equal(outcomes.length, 10, 'every item still gets a positional outcome');
+  assert.ok(
+    outcomes.every((outcome) => !outcome.ok && outcome.error === timeout),
+    'the remaining chunk reports the shared timeout instead of a fresh attempt'
+  );
+});
+
+test('uploadInSessionChunks stops the fallback queue when an item aborts', async () => {
+  const items = Array.from({ length: 4 }, (_, index) => makeUploadOptions(`file${index}`));
+  const abort = new Error('The operation was aborted');
+  abort.name = 'AbortError';
+  const attempted: string[] = [];
+
+  // The runtime seam is optional; the cast exercises the fallback-only path.
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: 2,
+    upload: async (options: UploadAttachmentOptions) => {
+      attempted.push(options.filename);
+      throw abort;
+    },
+  } as unknown as Parameters<typeof uploadInSessionChunks>[1]);
+
+  assert.deepEqual(
+    attempted,
+    ['file0.png'],
+    'an aborted fallback item must not let later items or chunks start'
+  );
+  assert.equal(outcomes.length, 4, 'every item still gets a positional outcome');
+  assert.ok(
+    outcomes.every((outcome) => !outcome.ok && outcome.error === abort),
+    'the remaining items report the abort instead of opening fresh sessions'
+  );
+});
+
+test('uploadInSessionChunks stops partial retries when an unfilled item aborts', async () => {
+  const items = Array.from({ length: 4 }, (_, index) => makeUploadOptions(`file${index}`));
+  const abort = new Error('The operation was aborted');
+  abort.name = 'AbortError';
+  const stored = makeDescriptor('file0');
+  const attempted: string[] = [];
+
+  const outcomes = await uploadInSessionChunks(items, {
+    chunkSize: MAX_UPLOAD_FILES,
+    uploadBatch: async () => {
+      throw new PartialUploadBatchException([stored], 1, new Error('slot rejected'));
+    },
+    upload: async (options) => {
+      attempted.push(options.filename);
+      throw abort;
+    },
+  });
+
+  assert.deepEqual(attempted, ['file1.png'], 'the first unfilled abort ends the retry queue');
+  const first = outcomes[0];
+  assert.ok(first.ok && first.attachment === stored, 'the stored descriptor is preserved');
+  assert.ok(
+    outcomes.slice(1).every((outcome) => !outcome.ok && outcome.error === abort),
+    'the unfilled tail reports the abort instead of continuing'
+  );
 });
 
 // ---------------------------------------------------------------------------

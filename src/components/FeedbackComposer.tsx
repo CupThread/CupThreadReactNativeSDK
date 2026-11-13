@@ -398,6 +398,7 @@ export function FeedbackComposer({
           uploadId !== uploadSeqRef.current ||
           openSessionRef.current !== uploadSession ||
           controller.signal.aborted ||
+          isPickAborted() ||
           extraSignals.some((signal) => signal?.aborted === true) ||
           isSubmittingRef.current ||
           isSubmitting

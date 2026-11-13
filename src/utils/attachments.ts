@@ -1,5 +1,7 @@
 import type { FeedbackAttachment } from '../types';
 import type { UploadAttachmentOptions } from '../client/FeedbackClient';
+import { PartialUploadBatchException, RequestTimeoutException } from '../client/FeedbackException';
+import { isAbortError } from './errors';
 
 /**
  * A single attachment descriptor returned by a host attachment picker:
@@ -425,6 +427,15 @@ export interface SessionChunkedUploadSeams {
 }
 
 /**
+ * A shared-deadline timeout or host cancellation cannot be retried inside the
+ * same call: per-item retries would get a fresh upload budget and re-reserve
+ * quota for bytes that may already be stored.
+ */
+function isTerminalBatchFailure(error: unknown): boolean {
+  return error instanceof RequestTimeoutException || isAbortError(error);
+}
+
+/**
  * Uploads a pending batch through session-sized chunks with per-item
  * isolation for chunk-level rejections.
  *
@@ -452,6 +463,13 @@ export interface SessionChunkedUploadSeams {
  * than it was given items yields a failure outcome for the shortfall instead
  * of shifting every later position.
  *
+ * A partial batch failure ({@link PartialUploadBatchException}) is resumed, not
+ * restarted: descriptors for slots that were already filled are kept, and only
+ * the unfilled tail is retried. A shared-deadline timeout or host cancellation
+ * is terminal for the whole batch — it stops the remaining chunks and opens no
+ * new session, because retrying would grant fresh per-file budgets and
+ * re-reserve quota for work the host already gave up on.
+ *
  * Errors thrown by the seams themselves (e.g. a host cancellation guard) are
  * reported per item by the fallback, never escalated past this helper —
  * callers that must abort outright should enforce that inside their seams
@@ -474,19 +492,44 @@ export async function uploadInSessionChunks(
 
   for (let start = 0; start < safeBatch.length; start += chunkSize) {
     const chunk = safeBatch.slice(start, start + chunkSize);
-    if (typeof safeSeams.uploadBatch !== 'function') {
-      if (typeof safeSeams.upload === 'function') {
-        for (const options of chunk) {
-          try {
-            outcomes.push({ ok: true, attachment: await safeSeams.upload(options) });
-          } catch (itemError) {
-            outcomes.push({ ok: false, error: itemError });
+    const failLaterChunks = (failure: unknown): void => {
+      for (const _ of safeBatch.slice(start + chunk.length)) {
+        outcomes.push({ ok: false, error: failure });
+      }
+    };
+    // Retries items through their own sessions. A terminal item failure (abort
+    // or timeout) stops every later item and chunk, returning `true` so the
+    // caller ends the batch.
+    const retryItems = async (
+      items: readonly UploadAttachmentOptions[],
+      batchFailure?: unknown
+    ): Promise<boolean> => {
+      for (let index = 0; index < items.length; index += 1) {
+        if (typeof safeSeams.upload !== 'function') {
+          outcomes.push({
+            ok: false,
+            error: batchFailure ?? new Error('No upload function provided'),
+          });
+          continue;
+        }
+        try {
+          outcomes.push({ ok: true, attachment: await safeSeams.upload(items[index]) });
+        } catch (itemError) {
+          if (isTerminalBatchFailure(itemError)) {
+            for (const _ of items.slice(index)) {
+              outcomes.push({ ok: false, error: itemError });
+            }
+            failLaterChunks(itemError);
+            return true;
           }
+          outcomes.push({ ok: false, error: itemError });
         }
-      } else {
-        for (const _ of chunk) {
-          outcomes.push({ ok: false, error: new Error('No upload function provided') });
-        }
+      }
+      return false;
+    };
+    if (typeof safeSeams.uploadBatch !== 'function') {
+      if (await retryItems(chunk)) {
+        return outcomes;
       }
       continue;
     }
@@ -495,6 +538,37 @@ export async function uploadInSessionChunks(
     try {
       uploaded = await safeSeams.uploadBatch(chunk);
     } catch (error) {
+      if (error instanceof PartialUploadBatchException) {
+        // Slots before the failure are already stored: keep their descriptors
+        // and never send their bytes again. Only the unfilled tail is eligible
+        // for the per-item retry.
+        const stored = error.uploaded.slice(0, chunk.length);
+        for (const attachment of stored) {
+          outcomes.push({ ok: true, attachment });
+        }
+        const remaining = chunk.slice(stored.length);
+        if (isTerminalBatchFailure(error.cause)) {
+          for (const _ of remaining) {
+            outcomes.push({ ok: false, error: error.cause });
+          }
+          failLaterChunks(error.cause);
+          return outcomes;
+        }
+        if (await retryItems(remaining, error.cause)) {
+          return outcomes;
+        }
+        continue;
+      }
+      if (isTerminalBatchFailure(error)) {
+        // A timeout or cancellation burned the shared budget. Retrying this
+        // chunk or opening a later session would grant fresh budgets and
+        // re-reserve quota for work the host already gave up on.
+        for (const _ of chunk) {
+          outcomes.push({ ok: false, error });
+        }
+        failLaterChunks(error);
+        return outcomes;
+      }
       if (chunk.length === 1) {
         // A single-item chunk has no siblings to doom: its session-level
         // rejection is already the item's own actionable error, so the
@@ -506,16 +580,8 @@ export async function uploadInSessionChunks(
       // The session for this chunk was rejected wholesale. Retry its items
       // one by one so each file gets its own session and its own actionable
       // error, and valid siblings keep their descriptors.
-      for (const options of chunk) {
-        if (typeof safeSeams.upload !== 'function') {
-          outcomes.push({ ok: false, error });
-          continue;
-        }
-        try {
-          outcomes.push({ ok: true, attachment: await safeSeams.upload(options) });
-        } catch (itemError) {
-          outcomes.push({ ok: false, error: itemError });
-        }
+      if (await retryItems(chunk, error)) {
+        return outcomes;
       }
       continue;
     }

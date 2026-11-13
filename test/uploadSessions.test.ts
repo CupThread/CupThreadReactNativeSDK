@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import {
   AuthenticationRequiredException,
+  PartialUploadBatchException,
   RateLimitedException,
   RequestTimeoutException,
   TurnstileRequiredException,
@@ -1080,7 +1081,7 @@ test('uploadAttachments rejects an empty batch and one above the session limit',
   }
 });
 
-test('uploadAttachments stops at a rejected slot and keeps earlier results usable', async () => {
+test('uploadAttachments reports a partial batch when a later slot fails', async () => {
   const mocked = installUploadFetch({
     slots: ['upl_1', 'upl_2'],
     slotResponder: (uploadId) => {
@@ -1102,17 +1103,70 @@ test('uploadAttachments stops at a rejected slot and keeps earlier results usabl
       makeClient().uploadAttachments([makeBlobOptions('one.png'), makeBlobOptions('two.png')], {
         userToken: USER_TOKEN,
       }),
-      (err: any) => {
-        assert.ok(err instanceof UploadRejectedException);
-        assert.equal(err.code, 'unsupported_mime_type');
+      (err: unknown) => {
+        assert.ok(err instanceof PartialUploadBatchException);
+        assert.equal(err.failedIndex, 1, 'the second slot is the one that failed');
+        assert.deepEqual(
+          err.uploaded.map((attachment) => attachment.uploadId),
+          ['upl_1'],
+          'the filled prefix stays inspectable instead of being discarded'
+        );
+        const cause = err.cause;
+        assert.ok(cause instanceof UploadRejectedException);
+        assert.equal(cause.code, 'unsupported_mime_type');
         return true;
       }
     );
 
     assert.equal(
-      mocked.requests.some((request) => request.url.endsWith('/api/v1/uploads/upl_2')),
-      true,
-      'the failing slot must be attempted'
+      mocked.requests.filter((request) => request.url.endsWith('/api/v1/uploads/upl_2')).length,
+      1,
+      'the failing slot is attempted once'
+    );
+    assert.equal(
+      mocked.requests.filter((request) => request.url.endsWith('/api/v1/uploads/upl_1')).length,
+      1,
+      'the stored slot is never re-uploaded by the client'
+    );
+  } finally {
+    mocked.restore();
+  }
+});
+
+test('uploadAttachments wraps a first-slot failure in a multi-file batch as a partial batch', async () => {
+  const mocked = installUploadFetch({
+    slots: ['upl_1', 'upl_2'],
+    slotResponder: (uploadId) =>
+      new Response(
+        JSON.stringify({
+          uploadId,
+          error: 'bad type',
+          code: 'unsupported_mime_type',
+        }),
+        { status: 415, headers: { 'Content-Type': 'application/json' } }
+      ),
+  });
+
+  try {
+    await assert.rejects(
+      makeClient().uploadAttachments([makeBlobOptions('one.png'), makeBlobOptions('two.png')], {
+        userToken: USER_TOKEN,
+      }),
+      (err: unknown) => {
+        assert.ok(err instanceof PartialUploadBatchException);
+        assert.equal(err.failedIndex, 0, 'the first slot is the failing one');
+        assert.deepEqual(err.uploaded, [], 'no slot was stored before the failure');
+        const cause = err.cause;
+        assert.ok(cause instanceof UploadRejectedException);
+        assert.equal(cause.code, 'unsupported_mime_type');
+        return true;
+      }
+    );
+
+    assert.equal(
+      mocked.requests.filter((request) => request.url.endsWith('/api/v1/uploads/upl_2')).length,
+      0,
+      'a first-slot failure stops before the later slot is attempted'
     );
   } finally {
     mocked.restore();
@@ -1146,7 +1200,7 @@ test('a per-item retry after an aborted batch opens its own fresh session', asyn
       client.uploadAttachments([makeBlobOptions('one.png'), makeBlobOptions('two.png')], {
         userToken: USER_TOKEN,
       }),
-      (err: any) => err instanceof UploadRejectedException
+      (err: unknown) => err instanceof PartialUploadBatchException
     );
 
     const sessionCountBefore = mocked.requests.filter((request) =>
@@ -1295,10 +1349,17 @@ test('uploadAttachments bills session creation and every slot against one budget
         [makeBlobOptions('first.png'), makeBlobOptions('second.png')],
         { userToken: USER_TOKEN }
       ),
-      (err: any) => {
-        assert.ok(err instanceof RequestTimeoutException, `Expected a timeout, got ${err?.name}`);
+      (err: unknown) => {
+        assert.ok(
+          err instanceof PartialUploadBatchException,
+          `Expected a partial batch, got ${err instanceof Error ? err.name : String(err)}`
+        );
+        assert.equal(err.failedIndex, 1);
+        assert.equal(err.uploaded.length, 1, 'the first slot is preserved');
+        const cause = err.cause;
+        assert.ok(cause instanceof RequestTimeoutException);
         // The configured budget stays the reported value.
-        assert.equal(err.timeoutMs, budgetMs);
+        assert.equal(cause.timeoutMs, budgetMs);
         return true;
       }
     );
