@@ -78,6 +78,9 @@ function makeClient(): FeedbackClient {
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
+  // configure() now reconfigures the shared store in place, so every render
+  // test starts from a fresh singleton instead of inheriting a prior identity.
+  UserTokenStore.resetSharedForTests();
   globalThis.fetch = (async () => {
     throw new TypeError('network disabled in provider token-sync tests');
   }) as any;
@@ -404,6 +407,52 @@ test(
       requestedTokens[requestedTokens.length - 1],
       'user-1',
       'the next list fetch must carry the new identity'
+    );
+    renderer!.unmount();
+  }
+);
+
+test(
+  'provider follows configure() called after mount and later setToken() (#433)',
+  renderTestOptions,
+  async () => {
+    const observations: Observation[] = [];
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={makeClient()}>
+          <TokenProbe observations={observations} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    const initial = observations[observations.length - 1];
+    assert.equal(initial.ready, true);
+    assert.ok(initial.token.length > 0);
+
+    // A host configures storage late (for example once SecureStore is ready).
+    const store = UserTokenStore.configure(makeAsyncAdapter());
+    await flush();
+    assert.equal(
+      observations[observations.length - 1].token,
+      initial.token,
+      'configure() must keep the identity the provider already subscribed to'
+    );
+
+    const observationsBefore = observations.length;
+    await act(async () => {
+      await store.setToken('user-after-late-configure');
+    });
+    await flush();
+
+    const last = observations[observations.length - 1];
+    assert.equal(last.token, 'user-after-late-configure');
+    assert.equal(last.ready, true);
+    assert.ok(
+      observations.length > observationsBefore,
+      'the pre-configure subscription must still deliver identity switches'
     );
     renderer!.unmount();
   }

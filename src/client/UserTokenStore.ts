@@ -109,6 +109,16 @@ function isDevMode(): boolean {
  * Storage key used to persist the anonymous user identifier in key-value storage.
  */
 const STORAGE_KEY = 'cupthread_user_token_v1';
+/** One serialized write chain per adapter instance. */
+const persistenceWriteLocks = new WeakMap<TokenStorageAdapter, Promise<void>>();
+
+/** One serialized seen-changelog load chain per adapter instance. */
+const seenChangelogLoadLocks = new WeakMap<TokenStorageAdapter, Promise<unknown>>();
+
+/**
+ * Serializes seen-changelog loads per adapter so a stalled load on a retired
+ * adapter cannot block lookups against a newly configured one.
+ */
 
 /**
  * Manages device-level persistent anonymous user tokens for CupThread SDK interactions.
@@ -157,6 +167,24 @@ export class UserTokenStore {
    * In-flight token resolution promise to deduplicate concurrent calls.
    */
   private pendingGetToken: Promise<string> | null = null;
+  /**
+   * Epoch of the currently configured storage adapter. {@link UserTokenStore.configure}
+   * bumps it so reads that were already in flight against the previous adapter
+   * cannot adopt an identity or mark state on the new one.
+   */
+  private storageEpoch: number = 0;
+
+  /**
+   * Storage epoch that {@link UserTokenStore.pendingGetToken} was started for.
+   */
+  private pendingGetTokenEpoch: number = -1;
+  /**
+   * Epoch of token writes issued through {@link UserTokenStore.persistToken}.
+   * Explicit identity switches bump it so a slow provisional persist started by
+   * {@link UserTokenStore.configure} cannot revert storage after
+   * {@link UserTokenStore.setToken}.
+   */
+  private persistenceEpoch: number = 0;
 
   /**
    * Whether an explicit identity was installed via {@link UserTokenStore.setToken}
@@ -195,17 +223,17 @@ export class UserTokenStore {
   private seenChangelogsCache: Map<string, Set<string>> = new Map();
 
   /**
+   * Seen changelog entries captured from a previous configuration so a late
+   * `configure()` reconciles them with whatever the new adapter already holds
+   * rather than discarding them.
+   */
+  private staleSeenChangelogCache: Map<string, Set<string>> = new Map();
+
+  /**
    * In-flight seen changelog loads, keyed by storage key, so concurrent reads and
    * legacy migration resolve only once.
    */
   private pendingSeenChangelogLoads: Map<string, Promise<Set<string>>> = new Map();
-
-  /**
-   * Serializes seen-set loads across scopes so the legacy read, the scoped write,
-   * and the legacy-key removal cannot interleave between two apps.
-   */
-  private seenChangelogLoadLock: Promise<unknown> = Promise.resolve();
-
   /**
    * Storage key that older SDK versions used to persist seen changelog versions
    * without an app scope.
@@ -309,7 +337,19 @@ export class UserTokenStore {
   }
 
   /**
-   * Reconfigures the shared singleton with a custom storage adapter.
+   * Reconfigures the shared singleton in place with a custom storage adapter.
+   *
+   * @remarks
+   * The shared instance is preserved, so subscribers registered before the call
+   * keep receiving identity changes and an in-memory identity is never orphaned.
+   * The new adapter is read immediately: a persisted token is adopted (and
+   * subscribers are notified when it differs) unless an explicit identity was
+   * installed via {@link UserTokenStore.setToken} or
+   * {@link UserTokenStore.resetToken}, which stays authoritative and is
+   * persisted through the new adapter. A provisional in-memory token is not
+   * rotated when the adapter is empty; it is persisted once the read verifies
+   * that storage is empty. A failed read leaves it provisional and never
+   * overwrites the unknown persisted value.
    *
    * @param storage - Storage adapter instance.
    * @param options - Optional configuration, including the `appKey` that scopes per-app state.
@@ -330,8 +370,47 @@ export class UserTokenStore {
     storage: TokenStorageAdapter,
     options?: UserTokenStoreOptions
   ): UserTokenStore {
-    this._shared = new UserTokenStore(storage, options);
+    if (!this._shared) {
+      // First configuration: build directly on the adapter so an existing
+      // persisted token is restored without minting a provisional UUID first.
+      this._shared = new UserTokenStore(storage, options);
+      return this._shared;
+    }
+    this._shared.applyStorageConfiguration(storage, options);
     return this._shared;
+  }
+
+  /**
+   * Adopts a new adapter on this instance while preserving identity continuity:
+   * the cached token, explicit-identity lock, subscribers, and changelog seen
+   * caches all stay on the same object.
+   */
+  private applyStorageConfiguration(
+    storage: TokenStorageAdapter,
+    options?: UserTokenStoreOptions
+  ): void {
+    this.storage = storage || null;
+    this.appKey = normalizeAppKey(options?.appKey);
+    // Reads and failures from the previous adapter must not leak into this one.
+    this.storageEpoch += 1;
+    this.isAsyncStorage = false;
+    this.storageReadUnverified = false;
+    // Merge any previous in-memory seen sets into the stale overlay (preserving
+    // entries across repeated configure() calls before a scope is read again)
+    // and clear the active cache so the next lookup reads the new adapter.
+    for (const [key, entries] of this.seenChangelogsCache) {
+      const prior = this.staleSeenChangelogCache.get(key) ?? new Set<string>();
+      for (const entry of entries) prior.add(entry);
+      this.staleSeenChangelogCache.set(key, prior);
+    }
+    this.seenChangelogsCache.clear();
+    this.pendingSeenChangelogLoads.clear();
+    this.initToken(true);
+    if (this.identityLocked && this.cachedToken) {
+      // The new adapter must learn an explicit identity even when the initial
+      // read rejects or hangs; the read path is not the only persistence gate.
+      this.persistToken(this.cachedToken, this.persistenceEpoch);
+    }
   }
 
   /**
@@ -380,9 +459,15 @@ export class UserTokenStore {
   }
 
   /**
-   * Initializes token loading during instance construction without overwriting asynchronous storage.
+   * Initializes token loading from the configured adapter without overwriting
+   * an in-memory identity that storage has not verified yet.
+   *
+   * @param reconfigured - `true` when an already-used instance adopted a new
+   * adapter through {@link UserTokenStore.configure}. The existing in-memory
+   * token is then preserved (and persisted once the new adapter is verified
+   * empty) instead of being replaced by the constructor's initial-read policy.
    */
-  private initToken(): void {
+  private initToken(reconfigured = false): void {
     if (!this.storage) {
       if (!this.cachedToken) {
         this.cachedToken = generateUUID();
@@ -390,50 +475,163 @@ export class UserTokenStore {
       return;
     }
 
+    const epoch = this.storageEpoch;
+    let item: string | null | Promise<string | null>;
     try {
-      const item = this.storage.getItem(STORAGE_KEY);
-      // Check if adapter is asynchronous (returns a Promise)
-      if (item && typeof (item as any).then === 'function') {
-        this.isAsyncStorage = true;
-        // DO NOT generate a UUID or call setItem here!
-        // Doing so would overwrite the existing persistent token in storage.
-        (item as Promise<string | null>)
-          .then((resolved) => {
-            // An explicit setToken()/resetToken() that landed while this read
-            // was in flight is authoritative: never revert the identity to the
-            // stale persisted value. A still-empty cache (or a throwaway
-            // `.token` mint) still adopts the persisted token.
-            if (this.identityLocked) return;
-            if (resolved && typeof resolved === 'string' && resolved.trim().length > 0) {
-              const storedToken = resolved.trim();
-              const changed = this.cachedToken !== storedToken;
-              this.cachedToken = storedToken;
-              if (changed) {
-                this.emitChange();
-              }
-            }
-          })
-          .catch(() => {});
-        return;
-      }
-
-      // Synchronous adapter
-      if (typeof item === 'string' && item.trim().length > 0) {
-        this.cachedToken = item.trim();
-      } else {
-        this.cachedToken = generateUUID();
-        try {
-          this.storage.setItem(STORAGE_KEY, this.cachedToken);
-        } catch {
-          // ignore
-        }
-      }
+      item = this.storage.getItem(STORAGE_KEY);
     } catch {
       // A failed read is not verification that storage is empty: keep any
       // in-memory token provisional and never write over the unknown value.
       // The next `getToken()` read retries and adopts the persisted token.
       this.storageReadUnverified = true;
+      return;
     }
+
+    // Check if adapter is asynchronous (returns a Promise). Do not mint or
+    // write in that window: storage may already hold the real identity.
+    if (typeof item === 'object' && item !== null) {
+      this.isAsyncStorage = true;
+      item
+        .then((resolved) => {
+          // A newer configuration owns the adapter now: this read cannot
+          // describe the storage the store is actually using.
+          if (epoch !== this.storageEpoch) return;
+          this.applyStorageRead(resolved, reconfigured);
+        })
+        .catch(() => {
+          if (epoch !== this.storageEpoch) return;
+          this.storageReadUnverified = true;
+        });
+      return;
+    }
+
+    this.applyStorageRead(typeof item === 'string' ? item : null, reconfigured);
+  }
+
+  /**
+   * Applies one successful storage read.
+   *
+   * @remarks
+   * An explicit identity always wins. Otherwise a persisted token is adopted
+   * (and subscribers are notified when the identity changes). When the read
+   * verified that storage is empty, an existing in-memory token is preserved:
+   * on reconfiguration it is persisted as-is, and on a synchronous first read
+   * a new identity is minted only when no token exists yet. An asynchronous
+   * first read leaves minting to {@link UserTokenStore.getToken}, matching the
+   * existing bootstrap contract.
+   */
+  private applyStorageRead(resolved: string | null, reconfigured: boolean): void {
+    if (this.identityLocked) {
+      // setToken()/resetToken() is authoritative; make it durable in the
+      // adapter that is now configured instead of adopting the stored value.
+      if (reconfigured && this.cachedToken) {
+        this.persistToken(this.cachedToken);
+      }
+      return;
+    }
+
+    const storedToken = typeof resolved === 'string' ? resolved.trim() : '';
+    if (storedToken) {
+      const changed = this.cachedToken !== storedToken;
+      this.cachedToken = storedToken;
+      if (changed) {
+        this.emitChange();
+      }
+      return;
+    }
+
+    if (this.cachedToken) {
+      // Verified empty: keep the in-memory identity so reconfiguration cannot
+      // silently rotate a provisional token, and persist it now that writing
+      // cannot overwrite a persisted identity.
+      if (reconfigured) {
+        this.persistToken(this.cachedToken);
+      }
+      return;
+    }
+
+    if (!this.isAsyncStorage) {
+      this.cachedToken = generateUUID();
+      // Constructor-time sync adapters must persist immediately: otherwise two
+      // stores constructed back-to-back over the same adapter both observe an
+      // empty cache and mint different identities.
+      if (reconfigured) {
+        this.persistToken(this.cachedToken);
+      } else {
+        const storage = this.storage;
+        try {
+          storage?.setItem(STORAGE_KEY, this.cachedToken);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  /**
+   * Queues a token write behind any in-flight persistence for this store.
+   *
+   * @remarks
+   * The adapter and storage epoch are captured at enqueue time so a job
+   * scheduled before {@link UserTokenStore.configure} cannot write into the new
+   * adapter. At execution time the job re-checks both the persistence epoch and
+   * the cached token so an explicit {@link UserTokenStore.setToken} cannot be
+   * reverted by a stale provisional write.
+   */
+  private enqueuePersistedToken(
+    token: string,
+    persistenceEpoch: number,
+    storageEpoch: number,
+    storage: TokenStorageAdapter
+  ): Promise<void> {
+    return this.runWithPersistenceLock(storage, async () => {
+      if (this.storageEpoch !== storageEpoch) return;
+      if (this.persistenceEpoch !== persistenceEpoch || this.cachedToken !== token) return;
+      try {
+        await Promise.resolve(storage.setItem(STORAGE_KEY, token));
+      } catch {
+        // ignore
+      }
+      if (this.storageEpoch !== storageEpoch) return;
+      const latest = this.cachedToken;
+      if (!latest || latest === token) return;
+      // A newer explicit identity queued its own write; do not fight it here.
+      if (this.persistenceEpoch !== persistenceEpoch) return;
+      try {
+        await Promise.resolve(storage.setItem(STORAGE_KEY, latest));
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  /**
+   * Serializes persistence work for the active identity token.
+   */
+  private runWithPersistenceLock<T>(
+    storage: TokenStorageAdapter,
+    task: () => Promise<T>
+  ): Promise<T> {
+    const tail = persistenceWriteLocks.get(storage) ?? Promise.resolve();
+    const run = tail.then(task, task);
+    persistenceWriteLocks.set(
+      storage,
+      run.then(
+        () => undefined,
+        () => undefined
+      )
+    );
+    return run;
+  }
+
+  /**
+   * Enqueues a best-effort token write through the serialized persistence lock.
+   */
+  private persistToken(token: string, persistenceEpoch: number = this.persistenceEpoch): void {
+    const storage = this.storage;
+    if (!storage) return;
+    const storageEpoch = this.storageEpoch;
+    void this.enqueuePersistedToken(token, persistenceEpoch, storageEpoch, storage);
   }
 
   /**
@@ -473,11 +671,7 @@ export class UserTokenStore {
       // Only write synchronously if storage is synchronous and its contents
       // were verified to be empty — never over an unreadable persisted token.
       if (this.storage && !this.isAsyncStorage && !this.storageReadUnverified) {
-        try {
-          this.storage.setItem(STORAGE_KEY, fresh);
-        } catch {
-          // Sync persistence is best-effort; the in-memory token stays valid.
-        }
+        this.persistToken(fresh);
       }
     }
     return this.cachedToken;
@@ -508,11 +702,12 @@ export class UserTokenStore {
    * ```
    */
   public async getToken(): Promise<string> {
-    if (this.pendingGetToken) {
+    const epoch = this.storageEpoch;
+    if (this.pendingGetToken && this.pendingGetTokenEpoch === epoch) {
       return this.pendingGetToken;
     }
 
-    this.pendingGetToken = (async () => {
+    const pending = (async () => {
       // An identity installed via setToken()/resetToken() is authoritative:
       // never re-read storage past it. Checked up-front for calls made after
       // the explicit identity exists, and re-checked once more after the
@@ -526,6 +721,12 @@ export class UserTokenStore {
       if (this.storage) {
         try {
           const stored = await this.storage.getItem(STORAGE_KEY);
+          if (epoch !== this.storageEpoch) {
+            // configure() replaced the adapter while this read was in flight:
+            // the value describes storage this store no longer uses, so it
+            // must neither be adopted nor treated as verification.
+            return this.resolveInMemoryToken();
+          }
           storageVerified = true;
           this.storageReadUnverified = false;
           if (this.identityLocked && this.cachedToken) {
@@ -542,8 +743,11 @@ export class UserTokenStore {
           }
         } catch {
           // The read failed, so the persisted token is unknown: fall through
-          // with `storageVerified` false and never write over that value.
-          this.storageReadUnverified = true;
+          // with `storageVerified` false and never write over that value. A
+          // failure from the previous adapter is irrelevant to the new one.
+          if (epoch === this.storageEpoch) {
+            this.storageReadUnverified = true;
+          }
         }
       }
 
@@ -553,11 +757,8 @@ export class UserTokenStore {
       // read and adopt the stored identity.
       if (this.cachedToken) {
         if (this.storage && storageVerified) {
-          try {
-            await this.storage.setItem(STORAGE_KEY, this.cachedToken);
-          } catch {
-            // ignore
-          }
+          const storage = this.storage;
+          await this.enqueuePersistedToken(this.cachedToken, this.persistenceEpoch, epoch, storage);
         }
         return this.cachedToken;
       }
@@ -567,19 +768,34 @@ export class UserTokenStore {
       const newToken = generateUUID();
       this.cachedToken = newToken;
       if (this.storage && storageVerified) {
-        try {
-          await this.storage.setItem(STORAGE_KEY, newToken);
-        } catch {
-          // ignore
-        }
+        const storage = this.storage;
+        await this.enqueuePersistedToken(newToken, this.persistenceEpoch, epoch, storage);
       }
       this.emitChange();
       return newToken;
     })().finally(() => {
-      this.pendingGetToken = null;
+      if (this.pendingGetToken === pending) {
+        this.pendingGetToken = null;
+        this.pendingGetTokenEpoch = -1;
+      }
     });
 
-    return this.pendingGetToken;
+    this.pendingGetToken = pending;
+    this.pendingGetTokenEpoch = epoch;
+    return pending;
+  }
+
+  /**
+   * Returns the in-memory identity, minting and notifying only when none exists.
+   * Used when a storage read cannot be trusted because the configured adapter
+   * changed while it was in flight, so it neither adopts nor persists it.
+   */
+  private resolveInMemoryToken(): string {
+    if (this.cachedToken) return this.cachedToken;
+    const newToken = generateUUID();
+    this.cachedToken = newToken;
+    this.emitChange();
+    return newToken;
   }
 
   /**
@@ -610,11 +826,15 @@ export class UserTokenStore {
       throw new TypeError('Expected a non-empty string for token');
     }
     const previous = this.cachedToken;
+    this.persistenceEpoch += 1;
+    const persistenceEpoch = this.persistenceEpoch;
     this.identityLocked = true;
     this.cachedToken = trimmed;
     if (this.storage) {
+      const storage = this.storage;
+      const storageEpoch = this.storageEpoch;
       try {
-        await this.storage.setItem(STORAGE_KEY, trimmed);
+        await this.enqueuePersistedToken(trimmed, persistenceEpoch, storageEpoch, storage);
       } catch {
         // ignore
       }
@@ -645,11 +865,15 @@ export class UserTokenStore {
   public async resetToken(): Promise<string> {
     const previous = this.cachedToken;
     const newToken = generateUUID();
+    this.persistenceEpoch += 1;
+    const persistenceEpoch = this.persistenceEpoch;
     this.identityLocked = true;
     this.cachedToken = newToken;
     if (this.storage) {
+      const storage = this.storage;
+      const storageEpoch = this.storageEpoch;
       try {
-        await this.storage.setItem(STORAGE_KEY, newToken);
+        await this.enqueuePersistedToken(newToken, persistenceEpoch, storageEpoch, storage);
       } catch {
         // ignore
       }
@@ -778,6 +1002,7 @@ export class UserTokenStore {
       }
     }
 
+    this.staleSeenChangelogCache.delete(storageKey);
     this.seenChangelogsCache.set(storageKey, new Set<string>());
     if (this.storage) {
       try {
@@ -807,17 +1032,54 @@ export class UserTokenStore {
       return pending;
     }
 
-    const load = this.runWithSeenChangelogLock(() => this.loadSeenChangelogs(storageKey)).then(
-      (set) => {
-        this.seenChangelogsCache.set(storageKey, set);
+    const loadEpoch = this.storageEpoch;
+    const adapter = this.storage;
+    const load = this.runWithSeenChangelogLock(adapter, () =>
+      this.loadSeenChangelogs(adapter, storageKey)
+    ).then(async (set) => {
+      // configure() may have swapped adapters while this load ran: only the
+      // configuration that started it may reconcile and publish its result.
+      if (this.storageEpoch !== loadEpoch) {
         return set;
       }
-    );
+      const carry = this.staleSeenChangelogCache.get(storageKey);
+      if (carry && carry.size > 0) {
+        let mergedNew = false;
+        for (const entry of carry) {
+          if (!set.has(entry)) {
+            set.add(entry);
+            mergedNew = true;
+          }
+        }
+        this.trimSeenChangelogs(set);
+        if (mergedNew) {
+          await this.persistSeenChangelogs(storageKey, set);
+        }
+        if (this.storageEpoch !== loadEpoch) {
+          // Another configure() happened while reconciling; keep the carried
+          // entries in staleSeenChangelogCache so the new configuration
+          // still merges them on its next lookup.
+          return set;
+        }
+        this.staleSeenChangelogCache.delete(storageKey);
+      }
+      if (this.storageEpoch === loadEpoch) {
+        this.seenChangelogsCache.set(storageKey, set);
+      }
+      return set;
+    });
     this.pendingSeenChangelogLoads.set(storageKey, load);
     try {
       return await load;
     } finally {
-      this.pendingSeenChangelogLoads.delete(storageKey);
+      // Only the configuration that created this entry may delete it; a newer
+      // pending load for the same key must survive this load's completion.
+      if (
+        this.storageEpoch === loadEpoch &&
+        this.pendingSeenChangelogLoads.get(storageKey) === load
+      ) {
+        this.pendingSeenChangelogLoads.delete(storageKey);
+      }
     }
   }
 
@@ -825,11 +1087,19 @@ export class UserTokenStore {
    * Queues one seen-set load behind the previously queued one. Every load can
    * touch the shared legacy key, so they run one at a time.
    */
-  private runWithSeenChangelogLock<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.seenChangelogLoadLock.then(task, task);
-    this.seenChangelogLoadLock = run.then(
-      () => undefined,
-      () => undefined
+  private runWithSeenChangelogLock<T>(
+    adapter: TokenStorageAdapter | null,
+    task: () => Promise<T>
+  ): Promise<T> {
+    if (!adapter) return task();
+    const tail = seenChangelogLoadLocks.get(adapter) ?? Promise.resolve();
+    const run = tail.then(task, task);
+    seenChangelogLoadLocks.set(
+      adapter,
+      run.then(
+        () => undefined,
+        () => undefined
+      )
     );
     return run;
   }
@@ -838,12 +1108,21 @@ export class UserTokenStore {
    * Reads a seen set from storage, adopting the legacy unscoped blob the first
    * time a scoped set is read on an installation that predates app scoping.
    */
-  private async loadSeenChangelogs(storageKey: string): Promise<Set<string>> {
-    let raw = await this.readStorage(storageKey);
+  private async loadSeenChangelogs(
+    adapter: TokenStorageAdapter | null,
+    storageKey: string
+  ): Promise<Set<string>> {
+    if (!adapter) {
+      return new Set<string>();
+    }
+    let raw = await this.readStorageFrom(adapter, storageKey);
     let migratedFromLegacy = false;
 
     if (raw === null && storageKey !== UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY) {
-      const legacyRaw = await this.readStorage(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
+      const legacyRaw = await this.readStorageFrom(
+        adapter,
+        UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY
+      );
       if (legacyRaw !== null) {
         raw = legacyRaw;
         migratedFromLegacy = true;
@@ -856,32 +1135,59 @@ export class UserTokenStore {
 
     const persisted =
       migratedFromLegacy || shouldRewrite
-        ? await this.persistSeenChangelogs(storageKey, set)
+        ? await this.persistSeenChangelogsTo(adapter, storageKey, set)
         : false;
 
     if (migratedFromLegacy && persisted) {
       // Entries cannot be attributed to an app after the fact, so the first app
       // that reads adopts them and the legacy blob is dropped to prevent bleed.
       // Keep the blob when the scoped write failed, so the data is not lost.
-      if (this.storage) {
+      try {
+        if (adapter.removeItem) {
+          await adapter.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
+        } else {
+          await adapter.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
+        }
+      } catch {
+        // Blank the legacy key when removal fails, so another scope cannot adopt it.
         try {
-          if (this.storage.removeItem) {
-            await this.storage.removeItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY);
-          } else {
-            await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
-          }
+          await adapter.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
         } catch {
-          // Blank the legacy key when removal fails, so another scope cannot adopt it.
-          try {
-            await this.storage.setItem(UserTokenStore.LEGACY_CHANGELOG_SEEN_KEY, '[]');
-          } catch {
-            // ignore
-          }
+          // ignore
         }
       }
     }
 
     return set;
+  }
+
+  /**
+   * Reads one stored string from a specific adapter, treating adapter failures
+   * and non-string payloads as absent.
+   */
+  private async readStorageFrom(adapter: TokenStorageAdapter, key: string): Promise<string | null> {
+    try {
+      const value = await adapter.getItem(key);
+      return typeof value === 'string' ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Persists a seen set to a specific adapter, reporting whether the write landed.
+   */
+  private async persistSeenChangelogsTo(
+    adapter: TokenStorageAdapter,
+    storageKey: string,
+    seenSet: Set<string>
+  ): Promise<boolean> {
+    try {
+      await adapter.setItem(storageKey, JSON.stringify(Array.from(seenSet)));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -891,12 +1197,7 @@ export class UserTokenStore {
     if (!this.storage) {
       return null;
     }
-    try {
-      const value = await this.storage.getItem(key);
-      return typeof value === 'string' ? value : null;
-    } catch {
-      return null;
-    }
+    return this.readStorageFrom(this.storage, key);
   }
 
   /**
@@ -906,12 +1207,7 @@ export class UserTokenStore {
     if (!this.storage) {
       return false;
     }
-    try {
-      await this.storage.setItem(storageKey, JSON.stringify(Array.from(seenSet)));
-      return true;
-    } catch {
-      return false;
-    }
+    return this.persistSeenChangelogsTo(this.storage, storageKey, seenSet);
   }
 
   /**
