@@ -108,7 +108,7 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
     error: versionsError,
     reload: reloadVersions,
   } = useAsyncData(fetchVersions, { enabled: isEnabled || isLoadingConfig });
-  const versions: AppVersion[] = versionsData ?? [];
+  const versions = useMemo<AppVersion[]>(() => versionsData ?? [], [versionsData]);
 
   useEffect(() => {
     if (versionsData === null) return;

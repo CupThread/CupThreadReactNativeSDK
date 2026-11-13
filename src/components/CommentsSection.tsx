@@ -28,7 +28,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { formatDate } from '../utils/formatters';
 import { resolveEffectiveUserToken } from '../utils/userToken';
 import { MarkdownText } from './MarkdownText';
-import { userFacingErrorMessage } from '../utils/errors';
+import { isAbortError, userFacingErrorMessage } from '../utils/errors';
 
 /**
  * Props for configuring the {@link CommentsSection} thread component.
@@ -227,13 +227,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       setLoadMoreError(null);
     } catch (err: unknown) {
       if (controller.signal.aborted) return;
-      const errorName =
-        err instanceof DOMException
-          ? err.name
-          : typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string'
-            ? err.name
-            : '';
-      if (errorName === 'AbortError') return;
+      if (isAbortError(err)) return;
       if (threadGenerationRef.current !== generation) return;
       setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
     } finally {
