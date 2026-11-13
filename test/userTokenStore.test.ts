@@ -284,6 +284,136 @@ test('UserTokenStore: getToken() keeps the explicit identity after a failed stor
   );
 });
 
+test('UserTokenStore: a failed storage read never overwrites the persisted token (async adapter)', async () => {
+  const stored: Record<string, string> = { [TOKEN_KEY]: 'stable-token' };
+  let readFails = true;
+  const writes: Array<[string, string]> = [];
+  const adapter = {
+    getItem: async (key: string) => {
+      if (readFails) throw new Error('storage unavailable');
+      return stored[key] ?? null;
+    },
+    setItem: async (key: string, value: string) => {
+      writes.push([key, value]);
+      stored[key] = value;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+
+  const provisional = await store.getToken();
+  assert.ok(provisional, 'getToken() still resolves a usable identity');
+  assert.equal(writes.length, 0, 'a failed read must not persist a replacement token');
+  assert.equal(stored[TOKEN_KEY], 'stable-token', 'the persisted identity must stay untouched');
+
+  let changes = 0;
+  const unsubscribe = store.subscribe(() => {
+    changes++;
+  });
+
+  readFails = false;
+  const recovered = await store.getToken();
+  assert.equal(recovered, 'stable-token', 'the next read must adopt the stored identity');
+  assert.equal(store.token, 'stable-token');
+  assert.equal(writes.length, 0, 'adopting the stored token must not write');
+  assert.equal(changes, 1, 'adopting the stored identity notifies subscribers once');
+  unsubscribe();
+});
+
+test('UserTokenStore: a failed getToken() read after a .token mint does not persist the mint', async () => {
+  const stored: Record<string, string> = { [TOKEN_KEY]: 'stable-token' };
+  let readFails = true;
+  const writes: string[] = [];
+  const adapter = {
+    getItem: async (key: string) => {
+      if (readFails) throw new Error('storage locked');
+      return stored[key] ?? null;
+    },
+    setItem: async (key: string, value: string) => {
+      writes.push(value);
+      stored[key] = value;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  const minted = store.token; // provisional identity while the async load has failed
+  const provisional = await store.getToken();
+  assert.equal(provisional, minted, 'the in-memory identity stays stable');
+  assert.equal(writes.length, 0, 'the cached provisional token must not be persisted');
+  assert.equal(stored[TOKEN_KEY], 'stable-token');
+
+  readFails = false;
+  assert.equal(
+    await store.getToken(),
+    'stable-token',
+    'the stored identity is adopted once readable'
+  );
+  assert.equal(writes.length, 0);
+});
+
+test('UserTokenStore: a failed synchronous read does not persist a mint over the stored token', async () => {
+  let ready = false;
+  const stored: Record<string, string> = { [TOKEN_KEY]: 'stable-token' };
+  const writes: string[] = [];
+  const adapter = {
+    getItem: (key: string) => {
+      if (!ready) throw new Error('storage not ready');
+      return stored[key] ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      writes.push(value);
+      stored[key] = value;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  const provisional = store.token;
+  assert.ok(provisional);
+  assert.equal(writes.length, 0, '.token must not write over an unreadable persisted token');
+  assert.equal(stored[TOKEN_KEY], 'stable-token');
+
+  ready = true;
+  assert.equal(
+    await store.getToken(),
+    'stable-token',
+    'getToken() must retry the read and adopt the stored identity'
+  );
+  assert.equal(store.token, 'stable-token');
+  assert.equal(writes.length, 0);
+});
+
+test('UserTokenStore: a provisional token is persisted once storage is verified empty', async () => {
+  let ready = false;
+  const stored: Record<string, string> = {};
+  const writes: string[] = [];
+  const adapter = {
+    getItem: (key: string) => {
+      if (!ready) throw new Error('storage not ready');
+      return stored[key] ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      writes.push(value);
+      stored[key] = value;
+    },
+  };
+
+  const store = new UserTokenStore(adapter);
+  const provisional = store.token;
+  assert.equal(writes.length, 0, 'a failed read must not write');
+
+  ready = true;
+  assert.equal(await store.getToken(), provisional);
+  assert.deepEqual(writes, [provisional], 'the provisional identity is persisted exactly once');
+  assert.equal(stored[TOKEN_KEY], provisional);
+
+  assert.equal(await store.getToken(), provisional);
+  assert.deepEqual(
+    writes,
+    [provisional],
+    'later reads adopt the persisted token without rewriting it'
+  );
+});
+
 test('UserTokenStore notifies subscribers on explicit identity switches', async () => {
   const store = new UserTokenStore();
   let changes = 0;
