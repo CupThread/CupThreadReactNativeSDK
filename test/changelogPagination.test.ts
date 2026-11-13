@@ -727,6 +727,193 @@ test('useChangelogEntries keeps entries and offers retry after a failed load-mor
   }
 });
 
+test('useChangelogEntries clears the load-more error when a replacement first page fails (#437)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+    ['cur-2', { status: 500, body: 'server error' }],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    const client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    await harness.result.loadMore();
+    assert.ok(harness.result.loadMoreError, 'loadMore failure must surface first');
+
+    // The replacement first page fails: the only error left is `error`.
+    pages.set(null, { status: 500, body: 'refresh failed' });
+    await harness.result.refresh();
+    assert.ok(harness.result.error, 'failed refresh must surface in error');
+    assert.equal(
+      harness.result.loadMoreError,
+      null,
+      'a failed refresh must not keep the previous footer error'
+    );
+
+    await harness.result.reload();
+    assert.ok(harness.result.error, 'failed reload must surface in error');
+    assert.equal(
+      harness.result.loadMoreError,
+      null,
+      'a failed reload must not keep the previous footer error'
+    );
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('useChangelogEntries invalidates the previous cursor when client/page size changes (#437)', async () => {
+  const pages = new Map<string | null, { status: number; body?: unknown }>([
+    [
+      null,
+      {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+    ],
+    ['cur-2', { status: 500, body: 'server error' }],
+  ]);
+  const fetchMock = installChangelogFetch(pages);
+
+  try {
+    let client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    await harness.result.loadMore();
+    assert.ok(harness.result.loadMoreError, 'loadMore failure must surface first');
+
+    // Swap the client and fail the replacement page 0. The previous cursor
+    // and footer error must not survive into the new list.
+    client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_other_pagination_test',
+    });
+    pages.set(null, { status: 500, body: 'offline' });
+    const cursorRequestsBeforeSwap = fetchMock.requests.filter(
+      (request) => request.cursor === 'cur-2'
+    ).length;
+    harness.rerender();
+    await flush();
+
+    assert.ok(harness.result.error, 'replacement first-page failure must surface in error');
+    assert.equal(harness.result.hasMore, false, 'the previous list must not advertise more pages');
+    assert.equal(
+      harness.result.loadMoreError,
+      null,
+      'the previous list failure must not survive the client change'
+    );
+
+    // Retrying the footer must not carry the previous client's cursor.
+    await harness.result.loadMore();
+    assert.equal(
+      fetchMock.requests.filter((request) => request.cursor === 'cur-2').length,
+      cursorRequestsBeforeSwap,
+      'loadMore must not follow the previous client cursor'
+    );
+    harness.unmount();
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('useChangelogEntries discards an in-flight load-more after the client changes (#437)', async () => {
+  const originalFetch = globalThis.fetch;
+  let releaseStalePage: ((response: Response) => void) | null = null;
+  let page0Calls = 0;
+
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const target = url.toString();
+    const query = new URLSearchParams(target.split('?')[1] ?? '');
+    if (query.get('cursor')) {
+      // The project's TS lib target predates Promise.withResolvers.
+      return new Promise<Response>((resolve) => {
+        releaseStalePage = resolve;
+      });
+    }
+    page0Calls += 1;
+    if (page0Calls === 1) {
+      return new Response(
+        JSON.stringify({
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        entries: [makeEntry('n1', '2026-10-01T00:00:00.000Z')],
+        hasMore: false,
+        nextCursor: null,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as unknown as typeof fetch;
+
+  try {
+    let client = makeClient();
+    const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20 }));
+    await flush();
+
+    const pending = harness.result.loadMore();
+
+    client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_other_pagination_test',
+    });
+    harness.rerender();
+    await flush();
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['n1'],
+      'the new client list replaces the previous one'
+    );
+
+    // The previous client's page resolves late; its entries must be ignored.
+    await act(async () => {
+      releaseStalePage!(
+        new Response(
+          JSON.stringify({
+            entries: [makeEntry('e2', '2026-08-01T00:00:00.000Z')],
+            hasMore: false,
+            nextCursor: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+      await pending;
+    });
+
+    assert.deepEqual(
+      harness.result.entries.map((e) => e.id),
+      ['n1'],
+      'a stale load-more page must not be appended to the new list'
+    );
+    harness.unmount();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('useChangelogEntries refresh rewinds to the first page and re-arms pagination', async () => {
   const firstPage = {
     status: 200,
@@ -1459,6 +1646,70 @@ test(
       await settle();
 
       await waitForText(renderer, (t) => t === 'Release e2');
+      renderer.unmount();
+    } finally {
+      restore();
+    }
+  }
+);
+
+test(
+  'WhatsNewScreen drops the stale footer retry when a refresh fails (#437)',
+  renderTestOptions,
+  async () => {
+    const routes: Parameters<typeof installScreenFetch>[0] = {
+      page0: {
+        status: 200,
+        body: {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-2',
+        },
+      },
+      loadMore: { status: 500, body: 'server error' as unknown },
+    };
+    const restore = installScreenFetch(routes);
+
+    try {
+      const renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client: new FeedbackClient({
+            baseUrl: 'https://api.cupthread.com',
+            appKey: 'app_screen_test',
+          }),
+          children: React.createElement(WhatsNewScreen),
+        })
+      );
+      await waitForText(renderer, (t) => t === 'Release e1');
+      await waitForText(renderer, (t) => t === strings.changelog.loadMore);
+
+      const loadMoreButton = findPressable(renderer.root, strings.changelog.loadMore);
+      await act(async () => {
+        loadMoreButton.props.onPress();
+      });
+      await settle();
+      await waitForText(renderer, (t) => t === strings.common.retry);
+
+      // A pull-to-refresh whose first page fails replaces the footer failure
+      // with the refresh banner; the footer must not keep its retry label.
+      routes.page0 = { status: 500, body: 'refresh failed' };
+      const listProps = flatListProps[flatListProps.length - 1];
+      await act(async () => {
+        await listProps.refreshControl.props.onRefresh();
+      });
+      await settle();
+
+      const texts = collectTexts(renderer.root);
+      assert.ok(texts.includes('Release e1'), 'existing entries stay visible');
+      assert.equal(
+        texts.filter((text) => text === strings.common.retry).length,
+        1,
+        'only the refresh banner may offer retry'
+      );
+      assert.ok(
+        texts.includes(strings.changelog.loadMore),
+        'the populated list keeps its load-more affordance'
+      );
       renderer.unmount();
     } finally {
       restore();
