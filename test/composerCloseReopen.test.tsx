@@ -1112,3 +1112,293 @@ test(
     renderer.unmount();
   }
 );
+
+test(
+  'FeedbackComposer: closing while an attachment upload is pending clears the busy state when the draft is preserved',
+  renderTestOptions,
+  async () => {
+    const pendingUpload = defer<FeedbackAttachment[]>();
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    let closeCalls = 0;
+    let pickCount = 0;
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_close_pending_upload',
+    });
+    client.uploadAttachments = async (_options, shared) => {
+      uploadSignals.push(shared?.signal);
+      return pendingUpload.promise;
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_close_pending_upload',
+          children: React.createElement(FeedbackComposer, {
+            visible: true,
+            isModal: false,
+            preserveDraftOnClose: true,
+            initialDraft: {
+              title: 'Bug report',
+              description: 'Something broke',
+              attachments: [],
+            },
+            onClose: () => {
+              closeCalls += 1;
+            },
+            onPickAttachment: async () => {
+              pickCount += 1;
+              return {
+                file: { uri: 'file:///tmp/pending.png', size: 100 },
+                filename: 'pending.png',
+                mimeType: 'image/png',
+                size: 100,
+              };
+            },
+          }),
+        })
+      );
+    });
+    await flush();
+
+    const buttons = () =>
+      renderer.root.findAllByType(TouchableOpacityStub as any) as TestRenderer.ReactTestInstance[];
+    const findAddButton = () =>
+      buttons().find((btn) => {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        return style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4);
+      });
+    const findSubmitButton = () =>
+      buttons().find((btn) => {
+        const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+        return style.some((s: any) => s && s.marginTop === 22);
+      });
+
+    const addBtn = findAddButton();
+    const submitBtn = findSubmitButton();
+    assert.ok(addBtn);
+    assert.ok(submitBtn);
+
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(pickCount, 1);
+    assert.equal(uploadSignals.length, 1);
+    assert.equal(Boolean(addBtn.props.disabled), true, 'a pending upload disables add-attachment');
+
+    const closeBtn = buttons().find((btn) => btn.props.accessibilityLabel === 'Close');
+    assert.ok(closeBtn, 'composer renders a close button when onClose is provided');
+    act(() => {
+      void closeBtn.props.onPress();
+    });
+    await flush();
+
+    assert.equal(closeCalls, 1, 'closing still notifies the host');
+    assert.equal(uploadSignals[0]?.aborted, true, 'closing aborts the pending upload request');
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      false,
+      'closing a preserved-draft composer must release the upload spinner'
+    );
+    assert.equal(
+      Boolean(submitBtn.props.disabled),
+      false,
+      'closing a preserved-draft composer must re-enable Submit'
+    );
+
+    pendingUpload.resolve([makeAttachment('late-close')]);
+    await flush();
+    assert.equal(
+      renderer.root.findAll((node) => {
+        const style = Array.isArray(node.props?.style) ? node.props.style : [node.props?.style];
+        return style?.some((s: any) => s && s.padding === 4);
+      }).length,
+      0,
+      'an upload cancelled by close must not append an attachment'
+    );
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'FeedbackComposer: a picker-provided abort signal cancels the upload and discards its result',
+  renderTestOptions,
+  async () => {
+    const pendingUpload = defer<FeedbackAttachment[]>();
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    const pickerController = new AbortController();
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_picker_signal',
+    });
+    client.uploadAttachments = async (_options, shared) => {
+      uploadSignals.push(shared?.signal);
+      return pendingUpload.promise;
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_picker_signal',
+          children: React.createElement(FeedbackComposer, {
+            visible: true,
+            isModal: false,
+            initialDraft: {
+              title: 'Bug report',
+              description: 'Something broke',
+              attachments: [],
+            },
+            onPickAttachment: async () => ({
+              file: { uri: 'file:///tmp/picker-signal.png', size: 100 },
+              filename: 'picker-signal.png',
+              mimeType: 'image/png',
+              size: 100,
+              signal: pickerController.signal,
+            }),
+          }),
+        })
+      );
+    });
+    await flush();
+
+    const addBtn = renderer.root.findAllByType(TouchableOpacityStub as any).find((btn) => {
+      const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+      return style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4);
+    });
+    assert.ok(addBtn);
+
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(uploadSignals.length, 1);
+    assert.equal(
+      uploadSignals[0]?.aborted,
+      false,
+      'the session signal stays live before the picker cancels'
+    );
+
+    pickerController.abort();
+    await flush();
+    assert.equal(
+      uploadSignals[0]?.aborted,
+      true,
+      'the upload signal must follow the picker-provided signal'
+    );
+
+    pendingUpload.resolve([makeAttachment('picker-cancelled')]);
+    await flush();
+
+    assert.equal(
+      renderer.root.findAll((node) => {
+        const style = Array.isArray(node.props?.style) ? node.props.style : [node.props?.style];
+        return style?.some((s: any) => s && s.padding === 4);
+      }).length,
+      0,
+      'a picker-cancelled upload must not append its late result'
+    );
+    assert.equal(
+      Boolean(addBtn.props.disabled),
+      false,
+      'the form becomes usable again once the cancelled attempt settles'
+    );
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'FeedbackComposer: a batch upload signal honors each picker item cancellation',
+  renderTestOptions,
+  async () => {
+    const pendingUpload = defer<FeedbackAttachment[]>();
+    const uploadSignals: Array<AbortSignal | undefined> = [];
+    const firstItemController = new AbortController();
+
+    const client = new FeedbackClient({
+      baseUrl: 'https://api.cupthread.com',
+      appKey: 'app_test_picker_signal_batch',
+    });
+    client.uploadAttachments = async (_options, shared) => {
+      uploadSignals.push(shared?.signal);
+      return pendingUpload.promise;
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(CupThreadProvider, {
+          client,
+          userToken: 'usr_tok_picker_signal_batch',
+          children: React.createElement(FeedbackComposer, {
+            visible: true,
+            isModal: false,
+            initialDraft: {
+              title: 'Bug report',
+              description: 'Something broke',
+              attachments: [],
+            },
+            onPickAttachment: async () => [
+              {
+                file: { uri: 'file:///tmp/batch-a.png', size: 100 },
+                filename: 'batch-a.png',
+                mimeType: 'image/png',
+                size: 100,
+                signal: firstItemController.signal,
+              },
+              {
+                file: { uri: 'file:///tmp/batch-b.png', size: 100 },
+                filename: 'batch-b.png',
+                mimeType: 'image/png',
+                size: 100,
+              },
+            ],
+          }),
+        })
+      );
+    });
+    await flush();
+
+    const addBtn = renderer.root.findAllByType(TouchableOpacityStub as any).find((btn) => {
+      const style = Array.isArray(btn.props.style) ? btn.props.style : [btn.props.style];
+      return style.some((s: any) => s && s.paddingHorizontal === 10 && s.paddingVertical === 4);
+    });
+    assert.ok(addBtn);
+
+    act(() => {
+      void addBtn.props.onPress();
+    });
+    await flush(2);
+    assert.equal(uploadSignals.length, 1);
+
+    firstItemController.abort();
+    await flush();
+    assert.equal(
+      uploadSignals[0]?.aborted,
+      true,
+      'the shared batch signal must honor a single item cancellation'
+    );
+
+    pendingUpload.resolve([makeAttachment('batch-a'), makeAttachment('batch-b')]);
+    await flush();
+
+    assert.equal(
+      renderer.root.findAll((node) => {
+        const style = Array.isArray(node.props?.style) ? node.props.style : [node.props?.style];
+        return style?.some((s: any) => s && s.padding === 4);
+      }).length,
+      0,
+      'a cancelled batch must not append its late results'
+    );
+
+    renderer.unmount();
+  }
+);

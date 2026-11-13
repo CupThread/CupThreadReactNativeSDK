@@ -26,7 +26,12 @@ import type {
   SubmitSuccessContext,
 } from '../types';
 import { formatFileSize } from '../utils/formatters';
-import { processPickedAttachments, uploadInSessionChunks } from '../utils/attachments';
+import {
+  isUploadAttachmentOptions,
+  processPickedAttachments,
+  uploadInSessionChunks,
+} from '../utils/attachments';
+import { linkAbortSignals } from '../utils/abortSignals';
 import { MAX_UPLOAD_FILES, type UploadAttachmentOptions } from '../client/FeedbackClient';
 import { isSurfaceEnabled } from '../utils/featureFlags';
 import {
@@ -307,6 +312,10 @@ export function FeedbackComposer({
     prevVisibleRef.current = visible;
     if (wasVisible && !visible) {
       cancelInFlightAttachmentUpload();
+      // The upload was cancelled with the hidden form, so no request owns the
+      // spinner now. A composer that preserves its draft must not reopen with
+      // attachment and submit controls disabled by a dead attempt.
+      setIsUploadingAttachment(false);
     }
   }, [
     visible,
@@ -326,6 +335,10 @@ export function FeedbackComposer({
 
   const handleClose = useCallback(() => {
     cancelInFlightAttachmentUpload();
+    // A host can close the composer without toggling `visible` (embedded form,
+    // modal dismissed elsewhere). Clearing the flag here keeps the controls
+    // usable; the cancelled attempt's ownership-guarded `finally` cannot.
+    setIsUploadingAttachment(false);
     if (!preserveDraftOnClose) {
       resetForm(initialDraft);
     }
@@ -348,6 +361,12 @@ export function FeedbackComposer({
     const uploadSession = openSessionRef.current;
     const controller = new AbortController();
     uploadAbortRef.current = controller;
+    // A picker may return its own cancellation signal. It stays authoritative
+    // alongside the composer's session controller: either source aborting
+    // cancels the upload, and a cancelled pick can never append a late result.
+    // The list is declared outside `try` so `catch` can honor the same rule.
+    let pickSignals: Array<AbortSignal | undefined> = [];
+    const isPickAborted = () => pickSignals.some((signal) => signal?.aborted === true);
 
     try {
       setIsUploadingAttachment(true);
@@ -362,19 +381,24 @@ export function FeedbackComposer({
       }
 
       const items = Array.isArray(picked) ? picked : [picked];
+      pickSignals = items.map((item) =>
+        isUploadAttachmentOptions(item) ? item.signal : undefined
+      );
       const effectiveToken = await resolveEffectiveUserToken(userToken);
       if (
         uploadId !== uploadSeqRef.current ||
         openSessionRef.current !== uploadSession ||
-        controller.signal.aborted
+        controller.signal.aborted ||
+        isPickAborted()
       ) {
         return;
       }
-      const uploadSingle = async (options: UploadAttachmentOptions) => {
+      const assertUploadActive = (extraSignals: readonly (AbortSignal | undefined)[] = []) => {
         if (
           uploadId !== uploadSeqRef.current ||
           openSessionRef.current !== uploadSession ||
           controller.signal.aborted ||
+          extraSignals.some((signal) => signal?.aborted === true) ||
           isSubmittingRef.current ||
           isSubmitting
         ) {
@@ -382,34 +406,49 @@ export function FeedbackComposer({
           abortError.name = 'AbortError';
           throw abortError;
         }
-        return client.uploadAttachment({
-          ...options,
-          userToken: effectiveToken,
-          signal: controller.signal,
-        });
+      };
+      const uploadSingle = async (options: UploadAttachmentOptions) => {
+        assertUploadActive([options.signal]);
+        const linked = linkAbortSignals([controller.signal, options.signal]);
+        try {
+          return await client.uploadAttachment({
+            ...options,
+            userToken: effectiveToken,
+            signal: linked.signal,
+          });
+        } finally {
+          linked.dispose();
+        }
       };
       const { succeeded, failed, unsupported, rejected } = await processPickedAttachments(items, {
+        // Reject known-oversized picks before an upload session is reserved, so
+        // a doomed file never spends the upload timeout budget or user data.
         maxBytes: appConfig?.maxAttachmentBytes,
         upload: uploadSingle,
+        // One session for the whole pick: a multi-file pick reserves every slot
+        // in a single round trip instead of spending the upload budget per
+        // file. Sessions hold at most MAX_UPLOAD_FILES files, so a larger pick
+        // is chunked (10 files → 8 + 2), and a chunk the session API rejects
+        // wholesale (one bad MIME type or extension, quota, identity) falls
+        // back to the per-item seam — a single doomed file can no longer void
+        // its valid siblings.
         uploadBatch: async (batch) =>
           uploadInSessionChunks(batch, {
             chunkSize: MAX_UPLOAD_FILES,
             uploadBatch: async (chunk) => {
-              if (
-                uploadId !== uploadSeqRef.current ||
-                openSessionRef.current !== uploadSession ||
-                controller.signal.aborted ||
-                isSubmittingRef.current ||
-                isSubmitting
-              ) {
-                const abortError = new Error('The operation was aborted');
-                abortError.name = 'AbortError';
-                throw abortError;
+              const chunkSignals = chunk.map((item) => item.signal);
+              assertUploadActive(chunkSignals);
+              // `uploadAttachments` prefers the shared signal, so link every
+              // item signal into it instead of replacing them.
+              const linked = linkAbortSignals([controller.signal, ...chunkSignals]);
+              try {
+                return await client.uploadAttachments(chunk, {
+                  userToken: effectiveToken,
+                  signal: linked.signal,
+                });
+              } finally {
+                linked.dispose();
               }
-              return client.uploadAttachments(chunk, {
-                userToken: effectiveToken,
-                signal: controller.signal,
-              });
             },
             upload: uploadSingle,
           }),
@@ -419,6 +458,7 @@ export function FeedbackComposer({
         uploadId !== uploadSeqRef.current ||
         openSessionRef.current !== uploadSession ||
         controller.signal.aborted ||
+        isPickAborted() ||
         isSubmittingRef.current ||
         isSubmitting
       ) {
@@ -431,11 +471,15 @@ export function FeedbackComposer({
 
       const notices: string[] = [];
       if (rejected.length > 0) {
+        // The configured limit applies to the whole pick, so one message with
+        // the formatted ceiling explains every rejected item.
         notices.push(
           strings.feedbackComposer.attachmentTooLarge(formatFileSize(rejected[0].maxBytes))
         );
       }
       if (failed.length > 0) {
+        // A single failure has an actionable cause (missing size, unsupported
+        // type, oversized file); only aggregate several into a count.
         notices.push(
           failed.length === 1
             ? uploadErrorMessage(failed[0].error, strings.feedbackComposer, strings.common)
@@ -463,6 +507,7 @@ export function FeedbackComposer({
         uploadId === uploadSeqRef.current &&
         openSessionRef.current === uploadSession &&
         !controller.signal.aborted &&
+        !isPickAborted() &&
         !isSubmittingRef.current &&
         !isSubmitting
       ) {
