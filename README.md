@@ -360,7 +360,7 @@ await UserTokenStore.shared.resetToken();
 
 Notes:
 
-- Call these after `UserTokenStore.configure(...)`; there is no need to remount the provider.
+- `UserTokenStore.configure(...)` may be called before or after these switches, and even after `<CupThreadProvider>` has mounted (for example once an async adapter is ready). It reconfigures the shared store in place: subscribers, the in-memory identity, and an explicit `setToken()`/`resetToken()` identity survive, and there is no need to remount the provider. A persisted token from the new adapter is adopted (and subscribers are notified) when it differs, while a provisional in-memory identity is kept and persisted once the adapter is verified empty.
 - An explicit `userToken` prop on `<CupThreadProvider>` always wins; while it is set, store switches are ignored by SDK screens. Omit the prop if you plan to drive the identity through `setToken()`/`resetToken()`.
 - Outside a provider, always `await getToken()` before token-dependent calls (or gate on `useCupThreadTokenReadiness()` inside one) so early requests are not attributed to a throwaway identity.
 

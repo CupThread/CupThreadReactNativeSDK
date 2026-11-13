@@ -42,8 +42,31 @@ test('UserTokenStore resetToken generates new UUID', async () => {
   assert.equal(store.token, token2);
 });
 
+test('two synchronous constructors on the same adapter keep one identity', () => {
+  const mem: Record<string, string> = {};
+  const adapter = {
+    getItem: (key: string) => mem[key] ?? null,
+    setItem: (key: string, value: string) => {
+      mem[key] = value;
+    },
+  };
+
+  const first = new UserTokenStore(adapter);
+  const second = new UserTokenStore(adapter);
+  const firstToken = first.token;
+  const secondToken = second.token;
+
+  assert.equal(
+    firstToken,
+    secondToken,
+    'the first constructor must persist before the second reads'
+  );
+  assert.equal(mem[TOKEN_KEY], firstToken);
+});
+
 test('UserTokenStore uses custom storage adapter', async () => {
   const mem: Record<string, string> = {};
+
   const adapter = {
     getItem: (key: string) => mem[key] || null,
     setItem: (key: string, val: string) => {
@@ -1415,4 +1438,480 @@ test('UserTokenStore.warnUnpersistedChangelogSeen suppresses warning when proces
       delete process.env.NODE_ENV;
     }
   }
+});
+
+/** Runs a test against a fresh shared singleton and clears it afterwards. */
+async function withSharedStore(run: (store: UserTokenStore) => Promise<void>): Promise<void> {
+  UserTokenStore.resetSharedForTests();
+  try {
+    await run(UserTokenStore.shared);
+  } finally {
+    UserTokenStore.resetSharedForTests();
+  }
+}
+
+test('UserTokenStore.configure() reconfigures the shared instance in place (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    let notifications = 0;
+    let seen: string | null = null;
+    const unsubscribe = store.subscribe(() => {
+      notifications += 1;
+      seen = store.token;
+    });
+
+    const mem: Record<string, string> = {};
+    const configured = UserTokenStore.configure({
+      getItem: (key) => mem[key] ?? null,
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+
+    assert.equal(configured, store, 'configure() must keep the shared instance');
+    assert.equal(store.isPersistent, true);
+    await configured.getToken();
+    assert.equal(
+      mem[TOKEN_KEY],
+      provisional,
+      'the in-memory identity is persisted once the empty adapter is verified'
+    );
+
+    await configured.setToken('user-1');
+    assert.equal(notifications, 1, 'a subscriber registered before configure() must be notified');
+    assert.equal(seen, 'user-1');
+    assert.equal(store.token, 'user-1');
+    unsubscribe();
+  });
+});
+
+test('UserTokenStore.configure() keeps a provisional token when the new adapter is empty (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const mem: Record<string, string> = {};
+    const read = deferred<string | null>();
+    const writes: string[] = [];
+    UserTokenStore.configure({
+      getItem: () => read.promise,
+      setItem: (key: string, value: string) => {
+        writes.push(value);
+        mem[key] = value;
+      },
+    });
+
+    assert.equal(store.token, provisional, 'the read must not rotate the identity');
+    assert.equal(writes.length, 0, 'nothing may be written before the read verifies storage');
+
+    read.resolve(null);
+    await read.promise;
+    await store.getToken();
+
+    assert.equal(store.token, provisional, 'the in-memory identity must not be rotated');
+    assert.equal(mem[TOKEN_KEY], provisional, 'it is persisted once storage is verified empty');
+    assert.ok(writes.includes(provisional), 'the provisional identity must reach storage');
+  });
+});
+
+test('UserTokenStore.configure() adopts a persisted token and notifies subscribers (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const mem: Record<string, string> = { [TOKEN_KEY]: 'persisted-user' };
+    let notifications = 0;
+    let seen: string | null = null;
+    store.subscribe(() => {
+      notifications += 1;
+      seen = store.token;
+    });
+
+    UserTokenStore.configure({
+      getItem: (key) => mem[key] ?? null,
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+
+    assert.notEqual(store.token, provisional);
+    assert.equal(store.token, 'persisted-user');
+    assert.equal(notifications, 1);
+    assert.equal(seen, 'persisted-user');
+  });
+});
+
+test('UserTokenStore.configure() preserves an explicit identity over the new adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    await store.setToken('explicit-user');
+    const mem: Record<string, string> = { [TOKEN_KEY]: 'stale-persisted' };
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    UserTokenStore.configure({
+      getItem: (key) => mem[key] ?? null,
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+    await store.getToken();
+
+    assert.equal(store.token, 'explicit-user');
+    assert.equal(mem[TOKEN_KEY], 'explicit-user', 'the explicit identity becomes durable');
+    assert.equal(notifications, 0, 'configure() must not report an identity switch');
+  });
+});
+
+test('UserTokenStore.configure() keeps the token when the new adapter read fails (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const mem: Record<string, string> = { [TOKEN_KEY]: 'stable-persisted' };
+    let readFails = true;
+    let writes = 0;
+    UserTokenStore.configure({
+      getItem: (key) => {
+        if (readFails) throw new Error('storage unavailable');
+        return mem[key] ?? null;
+      },
+      setItem: (key, value) => {
+        writes += 1;
+        mem[key] = value;
+      },
+    });
+
+    assert.equal(store.token, provisional, 'a failed read must not rotate the identity');
+    assert.equal(writes, 0, 'a failed read must not write over the unknown value');
+    assert.equal(mem[TOKEN_KEY], 'stable-persisted');
+
+    readFails = false;
+    assert.equal(await store.getToken(), 'stable-persisted');
+    assert.equal(writes, 0, 'adopting the persisted token must not write');
+  });
+});
+
+test('UserTokenStore.configure() ignores an in-flight read from the previous adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const oldRead = deferred<string | null>();
+    UserTokenStore.configure({
+      getItem: () => oldRead.promise,
+      setItem: () => {},
+    });
+
+    const mem: Record<string, string> = { [TOKEN_KEY]: 'new-adapter-token' };
+    UserTokenStore.configure({
+      getItem: (key) => mem[key] ?? null,
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+    assert.equal(store.token, 'new-adapter-token');
+
+    oldRead.resolve('stale-old-adapter-token');
+    await flushMicrotasks();
+    assert.equal(store.token, 'new-adapter-token', 'the stale read must be ignored');
+  });
+});
+
+test('UserTokenStore.configure() prevents an in-flight getToken() from adopting the old adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const oldRead = deferred<string | null>();
+    UserTokenStore.configure({
+      getItem: () => oldRead.promise,
+      setItem: () => {},
+    });
+    const pending = store.getToken();
+
+    const mem: Record<string, string> = { [TOKEN_KEY]: 'new-adapter-token' };
+    UserTokenStore.configure({
+      getItem: (key) => mem[key] ?? null,
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+
+    oldRead.resolve('stale-old-adapter-token');
+    assert.equal(await pending, 'new-adapter-token');
+    assert.equal(store.token, 'new-adapter-token');
+  });
+});
+
+test('a slow provisional persist cannot revert setToken() after configure (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const mem: Record<string, string> = {};
+    const read = deferred<string | null>();
+    const writeGate = deferred<void>();
+    const writeOrder: string[] = [];
+
+    UserTokenStore.configure({
+      getItem: () => read.promise,
+      setItem: async (_key, value) => {
+        writeOrder.push(value);
+        if (value === provisional) {
+          await writeGate.promise;
+        }
+        mem[TOKEN_KEY] = value;
+      },
+    });
+
+    read.resolve(null);
+    await read.promise;
+    await flushMicrotasks();
+
+    const explicitPromise = store.setToken('explicit-user');
+    writeGate.resolve();
+    await explicitPromise;
+
+    assert.equal(store.token, 'explicit-user');
+    assert.equal(mem[TOKEN_KEY], 'explicit-user');
+    assert.ok(writeOrder.includes(provisional));
+    assert.equal(writeOrder[writeOrder.length - 1], 'explicit-user');
+  });
+});
+
+test('a slow getToken() persist cannot revert setToken() after configure (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const mem: Record<string, string> = {};
+    const getWriteStarted = deferred<void>();
+    const getWriteGate = deferred<void>();
+    const writeOrder: string[] = [];
+    let provisionalWrites = 0;
+
+    UserTokenStore.configure({
+      getItem: async () => null,
+      setItem: async (_key, value) => {
+        writeOrder.push(value);
+        if (value === provisional) {
+          provisionalWrites += 1;
+          if (provisionalWrites === 2) {
+            // Signal once getToken()'s own verified-empty persist is in flight.
+            getWriteStarted.resolve();
+            await getWriteGate.promise;
+          }
+        }
+        mem[TOKEN_KEY] = value;
+      },
+    });
+    await flushMicrotasks();
+
+    const getPromise = store.getToken();
+    await getWriteStarted.promise;
+
+    const setPromise = store.setToken('explicit-user');
+    getWriteGate.resolve();
+    await Promise.all([getPromise, setPromise]);
+
+    assert.equal(store.token, 'explicit-user');
+    assert.equal(mem[TOKEN_KEY], 'explicit-user');
+    assert.equal(provisionalWrites, 2, 'getToken() must have entered its own setItem');
+    assert.equal(writeOrder[writeOrder.length - 1], 'explicit-user');
+  });
+});
+
+test('a stalled write on a retired adapter cannot block the new adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const provisional = store.token;
+    const oldWrite = deferred<void>();
+    UserTokenStore.configure({
+      getItem: () => null,
+      setItem: async (_key, value) => {
+        if (value === provisional) {
+          await oldWrite.promise;
+        }
+      },
+    });
+    await flushMicrotasks();
+
+    const newMem: Record<string, string> = {};
+    UserTokenStore.configure({
+      getItem: (key) => newMem[key] ?? null,
+      setItem: (key, value) => {
+        newMem[key] = value;
+      },
+    });
+    await store.setToken('explicit-user');
+
+    assert.equal(store.token, 'explicit-user');
+    assert.equal(newMem[TOKEN_KEY], 'explicit-user');
+    oldWrite.resolve();
+  });
+});
+
+test('configure() persists an explicit identity even when the new adapter read rejects (#433)', async () => {
+  await withSharedStore(async (store) => {
+    await store.setToken('explicit-user');
+    const mem: Record<string, string> = {};
+    UserTokenStore.configure({
+      getItem: () => {
+        throw new Error('storage read failed');
+      },
+      setItem: (key, value) => {
+        mem[key] = value;
+      },
+    });
+    await store.getToken();
+
+    assert.equal(store.token, 'explicit-user');
+    assert.equal(mem[TOKEN_KEY], 'explicit-user');
+  });
+});
+
+test('configure() reconciles pre-configure seen state with persisted entries on the new adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    // Before configure(): mark 1.0.0 seen in memory.
+    await store.markChangelogSeen('1.0.0', 'app_a');
+    assert.equal(await store.hasSeenChangelog('1.0.0', 'app_a'), true);
+
+    const scopedKey = UserTokenStore.getSeenStorageKey('app_a');
+    const newMem: Record<string, string> = {
+      [scopedKey]: JSON.stringify(['2.0.0']),
+    };
+    UserTokenStore.configure({
+      getItem: (key) => newMem[key] ?? null,
+      setItem: (key, value) => {
+        newMem[key] = value;
+      },
+    });
+
+    assert.equal(
+      await store.hasSeenChangelog('2.0.0', 'app_a'),
+      true,
+      'persisted seen entries on the new adapter must be loaded'
+    );
+    assert.equal(
+      await store.hasSeenChangelog('1.0.0', 'app_a'),
+      true,
+      'entries seen before configure() must not reappear'
+    );
+    assert.deepEqual(
+      JSON.parse(newMem[scopedKey]),
+      ['2.0.0', '1.0.0'],
+      'reconciled union is persisted back to the new adapter'
+    );
+  });
+});
+
+test('configure() leaves an in-flight seen migration on its own adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const legacyKey = UserTokenStore.getSeenStorageKey();
+    const scopedKey = UserTokenStore.getSeenStorageKey('app_a');
+    const oldRead = deferred<string | null>();
+    const oldMem: Record<string, string> = { [legacyKey]: JSON.stringify(['legacy-entry']) };
+    UserTokenStore.configure({
+      getItem: (key) => (key === scopedKey ? Promise.resolve(null) : oldRead.promise),
+      setItem: (key, value) => {
+        oldMem[key] = value;
+      },
+      removeItem: (key) => {
+        delete oldMem[key];
+      },
+    });
+
+    const load = store.hasSeenChangelog('legacy-entry', 'app_a');
+    await flushMicrotasks();
+
+    const newMem: Record<string, string> = { [legacyKey]: JSON.stringify(['other-legacy']) };
+    UserTokenStore.configure({
+      getItem: (key) => newMem[key] ?? null,
+      setItem: (key, value) => {
+        newMem[key] = value;
+      },
+      removeItem: (key) => {
+        delete newMem[key];
+      },
+    });
+
+    oldRead.resolve(oldMem[legacyKey]);
+    assert.equal(await load, true, 'the migration completes against its own adapter');
+    assert.equal(
+      newMem[legacyKey],
+      JSON.stringify(['other-legacy']),
+      'the new adapter legacy blob stays untouched'
+    );
+    assert.equal(newMem[scopedKey], undefined, 'no migration writes into the new adapter');
+    assert.equal(
+      oldMem[scopedKey],
+      JSON.stringify(['legacy-entry']),
+      'the migrated set landed on the old adapter'
+    );
+    assert.equal(oldMem[legacyKey], undefined, 'the old adapter legacy blob is dropped');
+  });
+});
+
+test('configure() during seen reconciliation persistence preserves carried entries (#433)', async () => {
+  await withSharedStore(async (store) => {
+    await store.markChangelogSeen('1.0.0', 'app_a');
+    assert.equal(await store.hasSeenChangelog('1.0.0', 'app_a'), true);
+
+    const scopedKey = UserTokenStore.getSeenStorageKey('app_a');
+    const persistGate = deferred<void>();
+    const firstMem: Record<string, string> = {
+      [scopedKey]: JSON.stringify(['2.0.0']),
+    };
+    UserTokenStore.configure({
+      getItem: (key) => firstMem[key] ?? null,
+      setItem: async (key, value) => {
+        if (key === scopedKey) {
+          await persistGate.promise;
+        }
+        firstMem[key] = value;
+      },
+    });
+
+    const firstLookup = store.hasSeenChangelog('2.0.0', 'app_a');
+    await flushMicrotasks();
+
+    const secondMem: Record<string, string> = {
+      [scopedKey]: JSON.stringify(['3.0.0']),
+    };
+    UserTokenStore.configure({
+      getItem: (key) => secondMem[key] ?? null,
+      setItem: (key, value) => {
+        secondMem[key] = value;
+      },
+    });
+
+    persistGate.resolve();
+    assert.equal(await firstLookup, true);
+
+    assert.equal(
+      await store.hasSeenChangelog('1.0.0', 'app_a'),
+      true,
+      'carried pre-configure entry must survive a configure() mid-reconciliation'
+    );
+    assert.equal(await store.hasSeenChangelog('3.0.0', 'app_a'), true);
+    assert.deepEqual(JSON.parse(secondMem[scopedKey]), ['3.0.0', '1.0.0']);
+  });
+});
+
+test('a stalled seen-changelog read on a retired adapter cannot block the new adapter (#433)', async () => {
+  await withSharedStore(async (store) => {
+    const scopedKey = UserTokenStore.getSeenStorageKey('app_a');
+    const stalledRead = deferred<string | null>();
+    UserTokenStore.configure({
+      getItem: (key) => (key === scopedKey ? stalledRead.promise : null),
+      setItem: () => {},
+    });
+
+    const pendingOld = store.hasSeenChangelog('1.0.0', 'app_a');
+    await flushMicrotasks();
+
+    const newMem: Record<string, string> = {
+      [scopedKey]: JSON.stringify(['2.0.0']),
+    };
+    UserTokenStore.configure({
+      getItem: (key) => newMem[key] ?? null,
+      setItem: (key, value) => {
+        newMem[key] = value;
+      },
+    });
+
+    assert.equal(await store.hasSeenChangelog('2.0.0', 'app_a'), true);
+    stalledRead.resolve(JSON.stringify(['1.0.0']));
+    assert.equal(await pendingOld, true);
+    assert.equal(
+      await store.hasSeenChangelog('1.0.0', 'app_a'),
+      false,
+      'retired adapter load completion must not overwrite the new adapter cache'
+    );
+  });
 });
