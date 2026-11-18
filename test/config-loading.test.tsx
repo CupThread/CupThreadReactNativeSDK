@@ -420,3 +420,229 @@ test(
     }
   }
 );
+
+test(
+  'CupThreadProvider: swapping client clears appConfig and resets theme when replacement fetch fails (#461)',
+  renderTestOptions,
+  async () => {
+    console.warn = () => {};
+    const clientA = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_a' });
+    const clientB = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_b' });
+
+    const configA: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_a',
+      appKey: 'app_a',
+      name: 'App A',
+      sdk: { ...sampleConfig.sdk, theme: 'midnight' },
+    };
+
+    clientA.fetchAppConfig = async () => configA;
+    let clientBAttempts = 0;
+    clientB.fetchAppConfig = async () => {
+      clientBAttempts++;
+      throw new Error('Client B network failure');
+    };
+
+    let latestContext: ProbeContext | undefined;
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={clientA} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    assert.equal(latestContext?.appConfig?.name, 'App A');
+    assert.equal(latestContext?.themeName, 'midnight');
+
+    await act(async () => {
+      renderer!.update(
+        <CupThreadProvider client={clientB} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush(16);
+
+    assert.equal(clientBAttempts, 2, 'client B must attempt fetch and retry once');
+    assert.equal(latestContext?.isLoadingConfig, false);
+    assert.equal(latestContext?.appConfig, null);
+    assert.ok(latestContext?.configError !== null);
+    assert.match(latestContext?.configError?.message ?? '', /Client B network failure/);
+    assert.equal(latestContext?.themeName, 'system');
+
+    renderer!.unmount();
+  }
+);
+
+test(
+  'CupThreadProvider: swapping client A -> B where B succeeds replaces appConfig and theme (#461)',
+  renderTestOptions,
+  async () => {
+    const clientA = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_a' });
+    const clientB = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_b' });
+
+    const configA: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_a',
+      appKey: 'app_a',
+      name: 'App A',
+      sdk: { ...sampleConfig.sdk, theme: 'midnight' },
+    };
+    const configB: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_b',
+      appKey: 'app_b',
+      name: 'App B',
+      sdk: { ...sampleConfig.sdk, theme: 'light' },
+    };
+
+    clientA.fetchAppConfig = async () => configA;
+    clientB.fetchAppConfig = async () => configB;
+
+    let latestContext: ProbeContext | undefined;
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={clientA} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    assert.equal(latestContext?.appConfig?.name, 'App A');
+    assert.equal(latestContext?.themeName, 'midnight');
+
+    await act(async () => {
+      renderer!.update(
+        <CupThreadProvider client={clientB} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    assert.equal(latestContext?.isLoadingConfig, false);
+    assert.equal(latestContext?.configError, null);
+    assert.deepEqual(latestContext?.appConfig, configB);
+    assert.equal(latestContext?.themeName, 'light');
+
+    renderer!.unmount();
+  }
+);
+
+test(
+  'CupThreadProvider: failed refreshConfig on the same client retains last successful appConfig (#461)',
+  renderTestOptions,
+  async () => {
+    console.warn = () => {};
+    const client = makeClient();
+    let shouldFail = false;
+    client.fetchAppConfig = async () => {
+      if (shouldFail) {
+        throw new Error('Temporary refresh failure');
+      }
+      return sampleConfig;
+    };
+
+    let latestContext: ProbeContext | undefined;
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={client} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    assert.deepEqual(latestContext?.appConfig, sampleConfig);
+    assert.equal(latestContext?.themeName, 'midnight');
+
+    shouldFail = true;
+    await act(async () => {
+      await latestContext!.refreshConfig();
+    });
+    await flush();
+
+    assert.equal(latestContext?.isLoadingConfig, false);
+    assert.ok(latestContext?.configError !== null);
+    assert.deepEqual(latestContext?.appConfig, sampleConfig);
+    assert.equal(latestContext?.themeName, 'midnight');
+
+    renderer!.unmount();
+  }
+);
+
+test(
+  'CupThreadProvider: late response from previous client A after swap to B does not overwrite B (#461)',
+  renderTestOptions,
+  async () => {
+    const clientA = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_a' });
+    const clientB = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_b' });
+
+    const configA: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_a',
+      appKey: 'app_a',
+      name: 'App A',
+      sdk: { ...sampleConfig.sdk, theme: 'midnight' },
+    };
+    const configB: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_b',
+      appKey: 'app_b',
+      name: 'App B',
+      sdk: { ...sampleConfig.sdk, theme: 'dark' },
+    };
+
+    let resolveA!: (value: PublicAppConfig) => void;
+    // Intentionally ignore AbortSignal to verify request-id/client-ref isolation.
+    clientA.fetchAppConfig = () =>
+      new Promise<PublicAppConfig>((resolve) => {
+        resolveA = resolve;
+      });
+    clientB.fetchAppConfig = async () => configB;
+
+    let latestContext: ProbeContext | undefined;
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={clientA} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush(2);
+
+    await act(async () => {
+      renderer!.update(
+        <CupThreadProvider client={clientB} _retryDelayMs={5}>
+          <ConfigProbe onUpdate={(ctx) => (latestContext = ctx)} />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    assert.deepEqual(latestContext?.appConfig, configB);
+    assert.equal(latestContext?.themeName, 'dark');
+
+    // Late resolution from client A must be ignored.
+    resolveA(configA);
+    await flush();
+
+    assert.deepEqual(latestContext?.appConfig, configB);
+    assert.equal(latestContext?.themeName, 'dark');
+    assert.equal(latestContext?.configError, null);
+
+    renderer!.unmount();
+  }
+);
