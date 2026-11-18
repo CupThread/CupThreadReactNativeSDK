@@ -67,6 +67,9 @@ function logDevConfigWarning(err: unknown) {
 export interface ConfigFetchState {
   /**
    * Remote application settings and feature flags, or `null` while loading or after failure.
+   *
+   * Belongs to the active `client`: only same-client failures retain the last
+   * successful config; swapping `client` resets it to `null`.
    */
   appConfig: PublicAppConfig | null;
 
@@ -92,6 +95,8 @@ export type ConfigFetchEvent =
 
 /**
  * Pure transition helper computing the next config fetch state given an event.
+ * Preserves `appConfig` across same-client `'start'` and `'failure'` events;
+ * client swaps reset `appConfig` to `null` before dispatching `'start'`.
  */
 export function nextConfigState(prev: ConfigFetchState, event: ConfigFetchEvent): ConfigFetchState {
   switch (event.type) {
@@ -378,11 +383,18 @@ export function CupThreadProvider({
   // attributed to a throwaway identity.
   const [resolvedUserToken, setResolvedUserToken] = useState<string>(normalizedUserToken);
   const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(normalizedUserToken));
-  const [configState, setConfigState] = useState<ConfigFetchState>({
-    appConfig: null,
-    isLoadingConfig: true,
-    configError: null,
-  });
+  const [configSnapshot, setConfigSnapshot] = useState<{
+    owner: FeedbackClient;
+    state: ConfigFetchState;
+  }>(() => ({
+    owner: client,
+    state: {
+      appConfig: null,
+      isLoadingConfig: true,
+      configError: null,
+    },
+  }));
+  const configClientRef = useRef(client);
   const activeRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -418,34 +430,56 @@ export function CupThreadProvider({
     };
   }, [normalizedUserToken]);
 
+  const updateConfigState = useCallback(
+    (requestClient: FeedbackClient, event: ConfigFetchEvent) => {
+      setConfigSnapshot((prev) => {
+        const baseState: ConfigFetchState =
+          prev.owner === requestClient
+            ? prev.state
+            : { appConfig: null, isLoadingConfig: true, configError: null };
+        const nextState = nextConfigState(baseState, event);
+        if (nextState === prev.state && prev.owner === requestClient) {
+          return prev;
+        }
+        return {
+          owner: requestClient,
+          state: nextState,
+        };
+      });
+    },
+    []
+  );
+
   const loadConfig = useCallback(
     async (signal?: AbortSignal, options?: { maxRetries?: number; retryDelayMs?: number }) => {
+      const requestClient = client;
+      if (configClientRef.current !== requestClient) {
+        return;
+      }
       const requestId = ++activeRequestIdRef.current;
+      const isCurrentRequest = () =>
+        configClientRef.current === requestClient && requestId === activeRequestIdRef.current;
       const maxRetries = options?.maxRetries ?? 0;
       const retryDelayMs = options?.retryDelayMs ?? _retryDelayMs ?? 2000;
 
-      setConfigState((prev) => nextConfigState(prev, { type: 'start' }));
+      updateConfigState(requestClient, { type: 'start' });
 
       let attempt = 0;
       while (true) {
         try {
-          const config = await client.fetchAppConfig({ signal });
-          if (signal?.aborted || requestId !== activeRequestIdRef.current) {
-            if (signal?.aborted) {
-              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+          const config = await requestClient.fetchAppConfig({ signal });
+          if (signal?.aborted || !isCurrentRequest()) {
+            if (signal?.aborted && isCurrentRequest()) {
+              updateConfigState(requestClient, { type: 'abort' });
             }
             return;
           }
-          setConfigState((prev) => nextConfigState(prev, { type: 'success', config }));
+          updateConfigState(requestClient, { type: 'success', config });
           return;
         } catch (rawErr: any) {
-          if (
-            rawErr?.name === 'AbortError' ||
-            signal?.aborted ||
-            requestId !== activeRequestIdRef.current
-          ) {
-            if (rawErr?.name === 'AbortError' || signal?.aborted) {
-              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+          if (rawErr?.name === 'AbortError' || signal?.aborted || !isCurrentRequest()) {
+            if ((rawErr?.name === 'AbortError' || signal?.aborted) && isCurrentRequest()) {
+              updateConfigState(requestClient, { type: 'abort' });
             }
             return;
           }
@@ -455,20 +489,16 @@ export function CupThreadProvider({
             try {
               await delay(retryDelayMs, signal);
             } catch (delayErr: any) {
-              if (
-                delayErr?.name === 'AbortError' ||
-                signal?.aborted ||
-                requestId !== activeRequestIdRef.current
-              ) {
-                if (delayErr?.name === 'AbortError' || signal?.aborted) {
-                  setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+              if (delayErr?.name === 'AbortError' || signal?.aborted || !isCurrentRequest()) {
+                if ((delayErr?.name === 'AbortError' || signal?.aborted) && isCurrentRequest()) {
+                  updateConfigState(requestClient, { type: 'abort' });
                 }
                 return;
               }
             }
-            if (signal?.aborted || requestId !== activeRequestIdRef.current) {
-              if (signal?.aborted) {
-                setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+            if (signal?.aborted || !isCurrentRequest()) {
+              if (signal?.aborted && isCurrentRequest()) {
+                updateConfigState(requestClient, { type: 'abort' });
               }
               return;
             }
@@ -478,12 +508,12 @@ export function CupThreadProvider({
           const error = rawErr instanceof Error ? rawErr : new Error(String(rawErr));
           logDevConfigWarning(rawErr);
 
-          setConfigState((prev) => nextConfigState(prev, { type: 'failure', error }));
+          updateConfigState(requestClient, { type: 'failure', error });
           return;
         }
       }
     },
-    [client, _retryDelayMs]
+    [client, _retryDelayMs, updateConfigState]
   );
 
   const refreshConfig = useCallback(
@@ -494,14 +524,32 @@ export function CupThreadProvider({
   );
 
   useEffect(() => {
+    if (configClientRef.current !== client) {
+      configClientRef.current = client;
+      activeRequestIdRef.current += 1;
+      setConfigSnapshot({
+        owner: client,
+        state: {
+          appConfig: null,
+          isLoadingConfig: true,
+          configError: null,
+        },
+      });
+    }
     const controller = new AbortController();
     loadConfig(controller.signal, { maxRetries: 1 });
     return () => {
       controller.abort();
     };
-  }, [loadConfig]);
+  }, [client, loadConfig]);
 
-  const effectiveTheme: SdkTheme = explicitTheme || configState.appConfig?.sdk?.theme || 'system';
+  const effectiveConfigState: ConfigFetchState =
+    configSnapshot.owner === client
+      ? configSnapshot.state
+      : { appConfig: null, isLoadingConfig: true, configError: null };
+
+  const effectiveTheme: SdkTheme =
+    explicitTheme || effectiveConfigState.appConfig?.sdk?.theme || 'system';
 
   const colors = useMemo(() => {
     return getThemeColors(effectiveTheme, isDarkMode);
@@ -536,9 +584,9 @@ export function CupThreadProvider({
       commentSessionProvider: stableCommentSessionProvider,
       themeName: effectiveTheme,
       colors,
-      appConfig: configState.appConfig,
-      isLoadingConfig: configState.isLoadingConfig,
-      configError: configState.configError,
+      appConfig: effectiveConfigState.appConfig,
+      isLoadingConfig: effectiveConfigState.isLoadingConfig,
+      configError: effectiveConfigState.configError,
       locale: resolvedLocale,
       strings: resolvedStrings,
       refreshConfig,
@@ -550,9 +598,9 @@ export function CupThreadProvider({
       stableCommentSessionProvider,
       effectiveTheme,
       colors,
-      configState.appConfig,
-      configState.isLoadingConfig,
-      configState.configError,
+      effectiveConfigState.appConfig,
+      effectiveConfigState.isLoadingConfig,
+      effectiveConfigState.configError,
       resolvedLocale,
       resolvedStrings,
       refreshConfig,
