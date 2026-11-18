@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -236,6 +236,9 @@ export function FeedbackComposer({
     isSubmittingRef.current = false;
   }, []);
 
+  const prevClientRef = useRef(client);
+  const clientGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const prevVisibleRef = useRef(visible);
   const prevInitialDraftRef = useRef(initialDraft);
   const hasSubmittedRef = useRef(false);
@@ -260,7 +263,13 @@ export function FeedbackComposer({
     uploadSeqRef.current += 1;
   }, []);
 
-  useEffect(() => () => cancelInFlightAttachmentUpload(), [cancelInFlightAttachmentUpload]);
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelInFlightAttachmentUpload();
+    };
+  }, [cancelInFlightAttachmentUpload]);
 
   // Runs as a layout effect so the session token advances (and the reopen
   // reset lands) before the reopened form paints: a passive effect can be
@@ -269,6 +278,21 @@ export function FeedbackComposer({
   // settlement.
   useLayoutEffect(() => {
     const wasVisible = prevVisibleRef.current;
+    if (prevClientRef.current !== client) {
+      // Attachments carry uploadIds reserved under the previous client's appKey
+      // and in-flight operations belong to that client, so swapping clients
+      // must reset the entire session even when hidden or preserving drafts.
+      prevClientRef.current = client;
+      clientGenerationRef.current += 1;
+      openSessionRef.current += 1;
+      submitSeqRef.current += 1;
+      cancelInFlightAttachmentUpload();
+      hasSubmittedRef.current = false;
+      resetForm(initialDraft);
+      prevInitialDraftRef.current = initialDraft;
+      prevVisibleRef.current = visible;
+      return;
+    }
     if (!wasVisible && visible) {
       openSessionRef.current += 1;
       // The reopen decision (and the preserved-session state shape below) come
@@ -320,6 +344,7 @@ export function FeedbackComposer({
     }
     prevVisibleRef.current = visible;
   }, [
+    client,
     visible,
     preserveDraftOnClose,
     initialDraft,
@@ -361,6 +386,8 @@ export function FeedbackComposer({
     uploadAbortRef.current = null;
     const uploadId = ++uploadSeqRef.current;
     const uploadSession = openSessionRef.current;
+    const uploadClient = client;
+    const uploadClientGeneration = clientGenerationRef.current;
     const controller = new AbortController();
     uploadAbortRef.current = controller;
     // A picker may return its own cancellation signal. It stays authoritative
@@ -369,16 +396,18 @@ export function FeedbackComposer({
     // The list is declared outside `try` so `catch` can honor the same rule.
     let pickSignals: Array<AbortSignal | undefined> = [];
     const isPickAborted = () => pickSignals.some((signal) => signal?.aborted === true);
+    const isUploadSessionCurrent = () =>
+      uploadId === uploadSeqRef.current &&
+      openSessionRef.current === uploadSession &&
+      mountedRef.current &&
+      prevClientRef.current === uploadClient &&
+      clientGenerationRef.current === uploadClientGeneration &&
+      !controller.signal.aborted;
 
     try {
       setIsUploadingAttachment(true);
       const picked = await onPickAttachment();
-      if (
-        !picked ||
-        uploadId !== uploadSeqRef.current ||
-        openSessionRef.current !== uploadSession ||
-        controller.signal.aborted
-      ) {
+      if (!picked || !isUploadSessionCurrent()) {
         return;
       }
 
@@ -387,19 +416,12 @@ export function FeedbackComposer({
         isUploadAttachmentOptions(item) ? item.signal : undefined
       );
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      if (
-        uploadId !== uploadSeqRef.current ||
-        openSessionRef.current !== uploadSession ||
-        controller.signal.aborted ||
-        isPickAborted()
-      ) {
+      if (!isUploadSessionCurrent() || isPickAborted()) {
         return;
       }
       const assertUploadActive = (extraSignals: readonly (AbortSignal | undefined)[] = []) => {
         if (
-          uploadId !== uploadSeqRef.current ||
-          openSessionRef.current !== uploadSession ||
-          controller.signal.aborted ||
+          !isUploadSessionCurrent() ||
           isPickAborted() ||
           extraSignals.some((signal) => signal?.aborted === true) ||
           isSubmittingRef.current ||
@@ -414,7 +436,7 @@ export function FeedbackComposer({
         assertUploadActive([options.signal]);
         const linked = linkAbortSignals([controller.signal, options.signal]);
         try {
-          return await client.uploadAttachment({
+          return await uploadClient.uploadAttachment({
             ...options,
             userToken: effectiveToken,
             signal: linked.signal,
@@ -445,7 +467,7 @@ export function FeedbackComposer({
               // item signal into it instead of replacing them.
               const linked = linkAbortSignals([controller.signal, ...chunkSignals]);
               try {
-                return await client.uploadAttachments(chunk, {
+                return await uploadClient.uploadAttachments(chunk, {
                   userToken: effectiveToken,
                   signal: linked.signal,
                 });
@@ -457,14 +479,7 @@ export function FeedbackComposer({
           }),
       });
 
-      if (
-        uploadId !== uploadSeqRef.current ||
-        openSessionRef.current !== uploadSession ||
-        controller.signal.aborted ||
-        isPickAborted() ||
-        isSubmittingRef.current ||
-        isSubmitting
-      ) {
+      if (!isUploadSessionCurrent() || isPickAborted() || isSubmittingRef.current || isSubmitting) {
         return;
       }
 
@@ -507,9 +522,7 @@ export function FeedbackComposer({
         return;
       }
       if (
-        uploadId === uploadSeqRef.current &&
-        openSessionRef.current === uploadSession &&
-        !controller.signal.aborted &&
+        isUploadSessionCurrent() &&
         !isPickAborted() &&
         !isSubmittingRef.current &&
         !isSubmitting
@@ -520,11 +533,7 @@ export function FeedbackComposer({
       if (uploadAbortRef.current === controller) {
         uploadAbortRef.current = null;
       }
-      if (
-        uploadId === uploadSeqRef.current &&
-        openSessionRef.current === uploadSession &&
-        !controller.signal.aborted
-      ) {
+      if (isUploadSessionCurrent()) {
         setIsUploadingAttachment(false);
       }
     }
@@ -566,9 +575,15 @@ export function FeedbackComposer({
     setErrorMessage(null);
     const submitId = ++submitSeqRef.current;
     const submitSession = openSessionRef.current;
+    const submitClient = client;
+    const submitClientGeneration = clientGenerationRef.current;
+    const isSubmitClientCurrent = () =>
+      mountedRef.current &&
+      prevClientRef.current === submitClient &&
+      clientGenerationRef.current === submitClientGeneration;
 
     try {
-      const candidatePlatform = initialDraft?.platform || client.config.defaultPlatform;
+      const candidatePlatform = initialDraft?.platform || submitClient.config?.defaultPlatform;
       const resolvedPlatform = resolveAllowedPlatform(
         candidatePlatform,
         appConfig?.allowedPlatforms,
@@ -589,7 +604,13 @@ export function FeedbackComposer({
       };
 
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      const result = await client.submit(draft, effectiveToken);
+      if (!isSubmitClientCurrent() || submitId !== submitSeqRef.current) {
+        return;
+      }
+      const result = await submitClient.submit(draft, effectiveToken);
+      if (!isSubmitClientCurrent()) {
+        return;
+      }
       // A settlement may land after the composer was closed and reopened (or
       // after a newer submission started). It may only touch the shared busy
       // state and the form when it still owns them — otherwise it would wipe
@@ -633,6 +654,9 @@ export function FeedbackComposer({
         }
       }
     } catch (err: unknown) {
+      if (!isSubmitClientCurrent()) {
+        return;
+      }
       const isLatest = submitId === submitSeqRef.current;
       const ownsForm = isLatest && openSessionRef.current === submitSession;
       if (isLatest) {
@@ -647,7 +671,7 @@ export function FeedbackComposer({
       // A superseded failure leaves the newer submission in charge of the form
       // state; its own outcome will surface.
     } finally {
-      if (submitId === submitSeqRef.current) {
+      if (isSubmitClientCurrent() && submitId === submitSeqRef.current) {
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
