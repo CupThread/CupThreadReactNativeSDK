@@ -491,8 +491,10 @@ test('useFeatureRequests rejects client-bound applyItemChange callbacks after a 
 });
 
 test('useFeatureRequests scopes post-429 cooldown state to the active client budget (#477)', async () => {
+  let clientAFetches = 0;
   const clientA = {
     fetchFeatureRequests: async (): Promise<never> => {
+      clientAFetches += 1;
       throw new RateLimitedException(5_000);
     },
   } as unknown as FeedbackClient;
@@ -513,6 +515,7 @@ test('useFeatureRequests scopes post-429 cooldown state to the active client bud
   try {
     await flush();
     assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
 
     act(() => {
       renderer.update(<HookProbe options={options(clientB)} latest={latest} />);
@@ -533,6 +536,11 @@ test('useFeatureRequests scopes post-429 cooldown state to the active client bud
     });
     await flush();
     assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(
+      clientAFetches,
+      1,
+      'returning to A before its cooldown expires must not burn another search'
+    );
   } finally {
     renderer.unmount();
   }

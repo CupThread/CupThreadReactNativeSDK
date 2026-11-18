@@ -334,7 +334,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
-  const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
+  // Post-429 cooldowns belong to the search budget that raised them. A Set is
+  // kept in state so switching to a different budget hides the old notice
+  // reactively, and switching back while its timer is still running restores
+  // it without issuing another search.
+  const [rateLimitedBudgets, setRateLimitedBudgets] = useState<Set<SearchBudgetKey>>(
+    () => new Set()
+  );
   // Keyset cursor mode (#170): `null` while the current list came from (or
   // still targets) an offset-only server; a boolean once a page response
   // carried a `nextCursor`, mirroring the server's exact `hasMore`. The ref
@@ -348,8 +354,6 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // option changes after mount are ignored, as documented.
   const searchLimitersRef = useRef<Map<SearchBudgetKey, SearchRateLimiter>>(new Map());
   const cooldownTimersRef = useRef<Map<SearchBudgetKey, ReturnType<typeof setTimeout>>>(new Map());
-  const rateLimitedKeyRef = useRef<SearchBudgetKey | null>(null);
-
   const searchLimiterOptionsRef = useRef(searchRateLimiterOptions);
   const getSearchLimiter = useCallback((): SearchRateLimiter => {
     const key = getSearchBudgetKey(client);
@@ -450,6 +454,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       pendingItemMutationsRef.current.clear();
       settledItemMutationsRef.current.clear();
       lastSearchKeyRef.current = null;
+      // A failure from the previous client must not be shown above the
+      // replacement client's rows while its first load is pending.
+      setError(null);
+      setLoadMoreError(null);
       return;
     }
     // Retire token-tagged optimistic and settled entries immediately when the
@@ -478,10 +486,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       transform: (item: FeatureRequestItem) => FeatureRequestItem,
       meta?: VoteChangeMeta
     ) => {
+      const boundToken = mutationSession.token;
+      const boundUserToken = normalizedUserToken;
       // Callbacks captured by a component that unmounts on a client swap keep
       // their bound token forever. Reject them before any state or bookkeeping
       // change, including rollbacks, once a newer identity has committed.
-      if (committedSessionRef.current.token !== mutationSession.token) {
+      if (committedSessionRef.current.token !== boundToken) {
         return;
       }
       // A change dispatched under a different identity than the hook's
@@ -523,28 +533,33 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
         if (current) {
           settledItemMutationsRef.current.set(itemId, {
             item: transform(current),
-            userToken: userTokenRef.current,
+            userToken: boundUserToken,
             revision: localRevisionRef.current,
           });
         }
       }
-      setItems((prev) =>
-        prev.map((item) => {
+      setItems((prev) => {
+        // React may run this updater after a client swap has already committed
+        // a newer identity. Do not enroll a mutation for the replacement rows.
+        if (committedSessionRef.current.token !== boundToken) {
+          return prev;
+        }
+        return prev.map((item) => {
           if (item.id === itemId) {
             const updated = transform(item);
             if (!meta?.isRollback && !meta?.isFinal) {
               pendingItemMutationsRef.current.set(itemId, {
                 item: updated,
-                userToken: userTokenRef.current,
+                userToken: boundUserToken,
               });
             }
             return updated;
           }
           return item;
-        })
-      );
+        });
+      });
     },
-    [mutationSession.token]
+    [mutationSession.token, normalizedUserToken]
   );
 
   const wrappedSetItems: React.Dispatch<React.SetStateAction<FeatureRequestItem[]>> = useCallback(
@@ -590,9 +605,12 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const timer = cooldownTimersRef.current.get(key);
     if (timer) clearTimeout(timer);
     cooldownTimersRef.current.delete(key);
-    if (rateLimitedKeyRef.current !== key) return;
-    rateLimitedKeyRef.current = null;
-    setIsRateLimited(false);
+    setRateLimitedBudgets((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
   }, []);
 
   const clearActiveSearchCooldown = useCallback(() => {
@@ -604,8 +622,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       const key = getSearchBudgetKey(client);
       const limiter = getSearchLimiter();
       const cooldownMs = limiter.enterCooldown(retryAfterMs);
-      rateLimitedKeyRef.current = key;
-      setIsRateLimited(true);
+      setRateLimitedBudgets((prev) => new Set(prev).add(key));
       const existingTimer = cooldownTimersRef.current.get(key);
       if (existingTimer) clearTimeout(existingTimer);
       cooldownTimersRef.current.set(
@@ -1264,8 +1281,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   // Cursor mode exposes the server's exact hasMore; offset mode keeps the
   // legacy `items.length < total` heuristic.
   const hasMore = cursorHasMore !== null ? cursorHasMore : items.length < total;
-  const isRateLimitedForClient =
-    rateLimitedKeyRef.current === getSearchBudgetKey(client) && isRateLimited;
+  const isRateLimitedForClient = rateLimitedBudgets.has(getSearchBudgetKey(client));
 
   return {
     items,

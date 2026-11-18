@@ -504,7 +504,7 @@ test(
     const providerElement = (client: FeedbackClient, item: FeatureRequestItem) =>
       React.createElement(CupThreadProvider, {
         client,
-        userToken: client === clientA ? 'tok_a' : 'tok_b',
+        userToken: 'tok_shared',
         commentSessionProvider,
         children: detailElement(item),
       });
@@ -538,22 +538,15 @@ test(
     assert.equal(composerInput()?.props.value, 'draft from client A');
 
     // First commit: only the client changes. The replacement item arrives a
-    // commit later, so a same-id item from clientB must still be adopted.
+    // commit later; until then the detail must not render A's item against B.
     await act(async () => {
       renderer.update(providerElement(clientB, itemA));
     });
     await settle();
 
-    texts = collectTexts(renderer.root);
-    assert.ok(texts.includes('Comment from Client B'), 'comments must follow the client swap');
-    assert.equal(texts.includes('Comment from Client A'), false, 'must not leak clientA comments');
-    assert.deepEqual(clientBListCalls, ['req-1']);
-    assert.equal(composerInput()?.props.value, '', 'composer draft must not survive a client swap');
-    assert.equal(
-      Boolean(renderer.root.findByType(VoteButton).props.error),
-      false,
-      'prior clientA vote error must be cleared on client swap'
-    );
+    assert.equal(renderer.root.findAllByType(VoteButton).length, 0, 'no stale vote actions');
+    assert.equal(composerInput(), undefined, 'no stale comment composer');
+    assert.deepEqual(clientBListCalls, [], 'clientB must not receive clientA item id');
 
     // Second commit: clientB's item finally arrives with the same id.
     await act(async () => {
@@ -566,7 +559,25 @@ test(
     assert.equal(texts.includes('Client A Title'), false, 'must not retain itemA title');
     assert.equal(renderer.root.findByType(VoteButton).props.voteCount, 9);
     assert.equal(renderer.root.findByType(VoteButton).props.hasVoted, true);
+    assert.ok(texts.includes('Comment from Client B'), 'comments must follow the client swap');
+    assert.equal(texts.includes('Comment from Client A'), false, 'must not leak clientA comments');
+    assert.equal(
+      Boolean(renderer.root.findByType(VoteButton).props.error),
+      false,
+      'prior clientA vote error must be cleared on client swap'
+    );
     assert.deepEqual(clientBListCalls, ['req-1'], 'same-id refresh must not remount the thread');
+    assert.equal(composerInput()?.props.value, '', 'composer draft must not survive a client swap');
+
+    // Third commit: returning to A opens a new client epoch, so A's same-id
+    // item must be adopted even though the client instance is the original one.
+    await act(async () => {
+      renderer.update(providerElement(clientA, itemA));
+    });
+    await settle();
+    texts = collectTexts(renderer.root);
+    assert.ok(texts.includes('Client A Title'), 'same-id item from new A epoch must be adopted');
+    assert.equal(texts.includes('Client B Title'), false, 'clientB item must not persist');
 
     renderer.unmount();
   }

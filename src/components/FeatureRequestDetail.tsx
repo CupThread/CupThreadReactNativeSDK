@@ -129,21 +129,24 @@ export function FeatureRequestDetail({
   const [clientEpoch, setClientEpoch] = useState<number>(0);
   const [lastInitialId, setLastInitialId] = useState<string>(safeItemId);
   const [lastPropItem, setLastPropItem] = useState<FeatureRequestItem | null>(safeItem);
-  const [itemBaselineClient, setItemBaselineClient] = useState(client);
+  const [itemBaselineEpoch, setItemBaselineEpoch] = useState<number>(0);
   const propItemChanged = lastPropItem !== safeItem;
   const idChanged = lastInitialId !== safeItemId;
-  const shouldAdoptItem = idChanged || (itemBaselineClient !== client && propItemChanged);
+  const nextEpoch = lastClient !== client ? clientEpoch + 1 : clientEpoch;
+  // The epoch, not the client object, identifies the item's origin: A -> B -> A
+  // is a new session even though the client instance is the original one.
+  const shouldAdoptItem = idChanged || (itemBaselineEpoch !== nextEpoch && propItemChanged);
   if (lastClient !== client || idChanged || shouldAdoptItem) {
     if (lastClient !== client) {
       setLastClient(client);
-      setClientEpoch((epoch) => epoch + 1);
+      setClientEpoch(nextEpoch);
     }
     if (idChanged) {
       setLastInitialId(safeItemId);
     }
     if (shouldAdoptItem) {
       setItem(safeItem);
-      setItemBaselineClient(client);
+      setItemBaselineEpoch(nextEpoch);
     }
   }
   if (propItemChanged) {
@@ -168,10 +171,17 @@ export function FeatureRequestDetail({
       knownItemsClientRef.current = client;
       knownItemsRef.current.clear();
     }
-    if (item && typeof item.id === 'string' && item.id.trim().length > 0) {
+    if (
+      item &&
+      typeof item.id === 'string' &&
+      item.id.trim().length > 0 &&
+      // A still-displayed item from the previous client must not be cached
+      // after the snapshot map was cleared for the replacement client.
+      itemBaselineEpoch === clientEpoch
+    ) {
       knownItemsRef.current.set(item.id, item);
     }
-  }, [client, item]);
+  }, [client, item, itemBaselineEpoch, clientEpoch]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -214,7 +224,10 @@ export function FeatureRequestDetail({
     clearVoteError();
   }, [client, safeItemId, clearVoteError]);
 
-  if (!visible || !safeItem || !item) {
+  // Until the active client's item is adopted, the retained item belongs to a
+  // previous client. Rendering it would send comments and votes for that id to
+  // the replacement client, so close the detail instead.
+  if (!visible || !safeItem || !item || itemBaselineEpoch !== clientEpoch) {
     return null;
   }
 
