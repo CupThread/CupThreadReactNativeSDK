@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { FeedbackClient } from '../src/client/FeedbackClient';
+import { RateLimitedException } from '../src/client/FeedbackException';
 import {
   useFeatureRequests,
   type UseFeatureRequestsOptions,
@@ -426,6 +427,171 @@ test('useFeatureRequests clears the previous client rows while the hook is disab
       latest.current!.items.map((item) => item.id),
       ['b1']
     );
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests rejects client-bound applyItemChange callbacks after a swap (#477)', async () => {
+  const sharedRow = (title: string, voteCount: number) => makeItem('shared', title, { voteCount });
+  const clientA = {
+    fetchFeatureRequests: async () => ({ requests: [sharedRow('A row', 1)], total: 1 }),
+  } as unknown as FeedbackClient;
+  const clientB = {
+    fetchFeatureRequests: async () => ({ requests: [sharedRow('B row', 7)], total: 1 }),
+  } as unknown as FeedbackClient;
+
+  const latest: { current: UseFeatureRequestsResult | null } = { current: null };
+  const renderer = TestRenderer.create(
+    <HookProbe options={{ client: clientA, userToken: 'tok_shared' }} latest={latest} />
+  );
+  try {
+    await flush();
+    const applyFromFirstASession = latest.current!.applyItemChange;
+
+    act(() => {
+      renderer.update(
+        <HookProbe options={{ client: clientB, userToken: 'tok_shared' }} latest={latest} />
+      );
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'B row');
+
+    act(() => {
+      applyFromFirstASession('shared', (row) => ({ ...row, title: 'stale', voteCount: 999 }));
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'B row');
+    assert.equal(latest.current!.items[0].voteCount, 7);
+
+    // A -> B -> A must not revive a callback bound to the first A session:
+    // the token, not the client identity, identifies a mutation session.
+    act(() => {
+      renderer.update(
+        <HookProbe options={{ client: clientA, userToken: 'tok_shared' }} latest={latest} />
+      );
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].title, 'A row');
+
+    act(() => {
+      applyFromFirstASession('shared', (row) => ({ ...row, voteCount: 999 }));
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].voteCount, 1);
+
+    act(() => {
+      latest.current!.applyItemChange('shared', (row) => ({ ...row, voteCount: 2 }));
+    });
+    await flush();
+    assert.equal(latest.current!.items[0].voteCount, 2);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests scopes post-429 cooldown state to the active client budget (#477)', async () => {
+  let clientAFetches = 0;
+  const clientA = {
+    fetchFeatureRequests: async (): Promise<never> => {
+      clientAFetches += 1;
+      throw new RateLimitedException(5_000);
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    fetchFeatureRequests: async () => ({ requests: [makeItem('b1', 'B row')], total: 1 }),
+  } as unknown as FeedbackClient;
+  const options = (client: FeedbackClient): UseFeatureRequestsOptions => ({
+    client,
+    userToken: 'tok_search',
+    query: 'needle',
+    pageSize: 2,
+    debounceMs: 0,
+    searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 5_000 },
+  });
+
+  const latest: { current: UseFeatureRequestsResult | null } = { current: null };
+  const renderer = TestRenderer.create(<HookProbe options={options(clientA)} latest={latest} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
+
+    act(() => {
+      renderer.update(<HookProbe options={options(clientB)} latest={latest} />);
+    });
+    await flush();
+    assert.deepEqual(
+      latest.current!.items.map((item) => item.id),
+      ['b1']
+    );
+    assert.equal(
+      latest.current!.isRateLimited,
+      false,
+      "another client's cooldown must not surface on this client's rows"
+    );
+
+    act(() => {
+      renderer.update(<HookProbe options={options(clientA)} latest={latest} />);
+    });
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(
+      clientAFetches,
+      1,
+      'returning to A before its cooldown expires must not burn another search'
+    );
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useFeatureRequests retains both A and B cooldowns after A -> B -> A (#477)', async () => {
+  let clientAFetches = 0;
+  let clientBFetches = 0;
+  const clientA = {
+    fetchFeatureRequests: async (): Promise<never> => {
+      clientAFetches += 1;
+      throw new RateLimitedException(5_000);
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    fetchFeatureRequests: async (): Promise<never> => {
+      clientBFetches += 1;
+      throw new RateLimitedException(5_000);
+    },
+  } as unknown as FeedbackClient;
+  const options = (client: FeedbackClient): UseFeatureRequestsOptions => ({
+    client,
+    userToken: 'tok_both_429',
+    query: 'needle',
+    pageSize: 2,
+    debounceMs: 0,
+    searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 5_000 },
+  });
+
+  const latest: { current: UseFeatureRequestsResult | null } = { current: null };
+  const renderer = TestRenderer.create(<HookProbe options={options(clientA)} latest={latest} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
+
+    act(() => {
+      renderer.update(<HookProbe options={options(clientB)} latest={latest} />);
+    });
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientBFetches, 1);
+
+    // A's own cooldown is still active even though B's key was the last one
+    // stored; returning to A must show its notice without another request.
+    act(() => {
+      renderer.update(<HookProbe options={options(clientA)} latest={latest} />);
+    });
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
   } finally {
     renderer.unmount();
   }
