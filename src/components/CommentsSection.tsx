@@ -170,6 +170,13 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
   const loadMoreControllerRef = useRef<AbortController | null>(null);
   const threadGenerationRef = useRef(0);
   const clientIdentityRef = useRef(client);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useEffect(() => {
     loadMoreControllerRef.current?.abort();
     isLoadingMoreRef.current = false;
@@ -180,6 +187,16 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     if (clientIdentityRef.current !== client) {
       clientIdentityRef.current = client;
       setCommentsData(null);
+      // Composer state and the submit lock belong to the same thread
+      // generation as the loaded list. A post started on the previous client
+      // must not leave an armed reply, error, sign-in gate, draft, or lock on
+      // the replacement client's thread.
+      setCommentText('');
+      setReplyTo(null);
+      setError(null);
+      setRequiresSignIn(false);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   }, [client, featureRequestId, setCommentsData]);
 
@@ -266,18 +283,24 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
     if (isSubmittingRef.current) return;
     if (commentText.trim().length === 0 || !isTokenReady || !commentSessionProvider) return;
 
+    const generation = threadGenerationRef.current;
+    const activeClient = client;
+    const activeProvider = commentSessionProvider;
+    const activeUserToken = userToken;
     isSubmittingRef.current = true;
     try {
       setIsSubmitting(true);
       setError(null);
 
-      const sessionToken = await commentSessionProvider();
+      const sessionToken = await activeProvider();
+      if (!mountedRef.current || threadGenerationRef.current !== generation) return;
       if (typeof sessionToken !== 'string' || !sessionToken.trim()) {
         setRequiresSignIn(true);
         return;
       }
 
-      const effectiveToken = await resolveEffectiveUserToken(userToken);
+      const effectiveToken = await resolveEffectiveUserToken(activeUserToken);
+      if (!mountedRef.current || threadGenerationRef.current !== generation) return;
       const draft: CommentDraft = {
         body: commentText.trim(),
         parentId: replyTo?.id || undefined,
@@ -288,9 +311,10 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
             : undefined,
       };
 
-      const newComment = await client.postComment(featureRequestId, draft, effectiveToken, {
+      const newComment = await activeClient.postComment(featureRequestId, draft, effectiveToken, {
         sessionToken: sessionToken.trim(),
       });
+      if (!mountedRef.current || threadGenerationRef.current !== generation) return;
       // A post may complete before the thread's own fetch resolves (data still
       // null): seed a page holding only the new comment so the pending first
       // page merges around it via `mergePage` when it lands.
@@ -309,6 +333,7 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       setCommentText('');
       setReplyTo(null);
     } catch (err: any) {
+      if (!mountedRef.current || threadGenerationRef.current !== generation) return;
       if (err instanceof AuthenticationRequiredException) {
         // Keep the draft so the text survives until the host signs the user in.
         setRequiresSignIn(true);
@@ -316,8 +341,10 @@ function CommentThread({ featureRequestId }: CommentsSectionProps) {
       }
       setError(userFacingErrorMessage(err, strings.comments.postFailed, strings.common));
     } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      if (mountedRef.current && threadGenerationRef.current === generation) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 
