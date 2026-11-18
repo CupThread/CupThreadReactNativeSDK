@@ -1592,12 +1592,13 @@ test('useAsyncData: reload() from useLayoutEffect on disabled fetcher swap is no
     triggerOnSwap: boolean;
   }) {
     const result = useAsyncData(fetcher, { enabled: false });
+    const { reload } = result;
     latest.current = result;
     React.useLayoutEffect(() => {
       if (triggerOnSwap) {
-        void result.reload();
+        void reload();
       }
-    }, [fetcher, triggerOnSwap, result.reload]);
+    }, [fetcher, triggerOnSwap, reload]);
     return null;
   }
 
