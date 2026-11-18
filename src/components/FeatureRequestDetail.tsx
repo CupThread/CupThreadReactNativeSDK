@@ -121,18 +121,33 @@ export function FeatureRequestDetail({
   // adjustment, same semantics as key={item.id}: a different id resets the
   // whole screen, while a same-id prop refresh (fresh object from host data)
   // keeps the current state, including optimistic vote changes.
+  //
+  // A client swap is special: the replacement client's item can arrive a
+  // commit later. Keep the baseline client that supplied the current item
+  // until a new prop object arrives, then adopt it even when the id matches.
   const [lastClient, setLastClient] = useState(client);
   const [clientEpoch, setClientEpoch] = useState<number>(0);
   const [lastInitialId, setLastInitialId] = useState<string>(safeItemId);
-  if (lastClient !== client || lastInitialId !== safeItemId) {
+  const [lastPropItem, setLastPropItem] = useState<FeatureRequestItem | null>(safeItem);
+  const [itemBaselineClient, setItemBaselineClient] = useState(client);
+  const propItemChanged = lastPropItem !== safeItem;
+  const idChanged = lastInitialId !== safeItemId;
+  const shouldAdoptItem = idChanged || (itemBaselineClient !== client && propItemChanged);
+  if (lastClient !== client || idChanged || shouldAdoptItem) {
     if (lastClient !== client) {
       setLastClient(client);
       setClientEpoch((epoch) => epoch + 1);
     }
-    if (lastInitialId !== safeItemId) {
+    if (idChanged) {
       setLastInitialId(safeItemId);
     }
-    setItem(safeItem);
+    if (shouldAdoptItem) {
+      setItem(safeItem);
+      setItemBaselineClient(client);
+    }
+  }
+  if (propItemChanged) {
+    setLastPropItem(safeItem);
   }
 
   // Latest snapshot per request id. A vote settlement can arrive after this

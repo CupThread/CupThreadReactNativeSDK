@@ -74,12 +74,40 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
-const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
-const { RoadmapBoardScreen } = await import('../src/components/RoadmapBoardScreen');
-const { FeatureRequestDetail } = await import('../src/components/FeatureRequestDetail');
-const { FeatureRequestComposeSheet } = await import('../src/components/FeatureRequestComposeSheet');
-const { VoteButton } = await import('../src/components/VoteButton');
+type SdkModules = {
+  CupThreadProvider: (typeof import('../src/theme/CupThreadThemeProvider'))['CupThreadProvider'];
+  FeatureRequestsScreen: (typeof import('../src/components/FeatureRequestsScreen'))['FeatureRequestsScreen'];
+  RoadmapBoardScreen: (typeof import('../src/components/RoadmapBoardScreen'))['RoadmapBoardScreen'];
+  FeatureRequestDetail: (typeof import('../src/components/FeatureRequestDetail'))['FeatureRequestDetail'];
+  FeatureRequestComposeSheet: (typeof import('../src/components/FeatureRequestComposeSheet'))['FeatureRequestComposeSheet'];
+  VoteButton: (typeof import('../src/components/VoteButton'))['VoteButton'];
+};
+
+// Do not import components that load React Native when module mocks are
+// unavailable: the tests below are skipped in that mode, but an import here
+// would fail before node:test can register the skips.
+const sdkModules = supportsModuleMocks
+  ? ({
+      CupThreadProvider: (await import('../src/theme/CupThreadThemeProvider')).CupThreadProvider,
+      FeatureRequestsScreen: (await import('../src/components/FeatureRequestsScreen'))
+        .FeatureRequestsScreen,
+      RoadmapBoardScreen: (await import('../src/components/RoadmapBoardScreen')).RoadmapBoardScreen,
+      FeatureRequestDetail: (await import('../src/components/FeatureRequestDetail'))
+        .FeatureRequestDetail,
+      FeatureRequestComposeSheet: (await import('../src/components/FeatureRequestComposeSheet'))
+        .FeatureRequestComposeSheet,
+      VoteButton: (await import('../src/components/VoteButton')).VoteButton,
+    } satisfies SdkModules)
+  : ({} as SdkModules);
+
+const {
+  CupThreadProvider,
+  FeatureRequestsScreen,
+  RoadmapBoardScreen,
+  FeatureRequestDetail,
+  FeatureRequestComposeSheet,
+  VoteButton,
+} = sdkModules;
 
 const screenTestOptions: TestOptions = supportsModuleMocks
   ? {}
@@ -152,17 +180,24 @@ test(
     });
     const itemB = makeItem('req_b1', 'Client B Feature');
 
+    const clientAFetchCalls: Array<{ versionId?: string; query?: string }> = [];
     const clientBFetchCalls: Array<{ versionId?: string; query?: string }> = [];
     const clientBCommentCalls: string[] = [];
 
     const clientA = {
       fetchAppConfig: async () => makeBaseConfig(),
       fetchVersions: async () => [versionA],
-      fetchFeatureRequests: async (): Promise<ListFeatureRequestsResult> => ({
-        requests: [itemA],
-        total: 1,
-        hasMore: false,
-      }),
+      fetchFeatureRequests: async (opts?: {
+        versionId?: string;
+        query?: string;
+      }): Promise<ListFeatureRequestsResult> => {
+        clientAFetchCalls.push({ versionId: opts?.versionId, query: opts?.query });
+        return {
+          requests: [itemA],
+          total: 1,
+          hasMore: false,
+        };
+      },
       listComments: async (): Promise<ListFeatureRequestCommentsResult> => ({
         comments: [],
         total: 0,
@@ -173,7 +208,7 @@ test(
 
     const clientB = {
       fetchAppConfig: async () => makeBaseConfig(),
-      fetchVersions: async () => [],
+      fetchVersions: async () => [versionA],
       fetchFeatureRequests: async (opts?: {
         versionId?: string;
         query?: string;
@@ -216,6 +251,10 @@ test(
       searchInput.props.onChangeText('alpha-filter');
     });
     await settle(6, 50);
+    assert.ok(
+      clientAFetchCalls.some((call) => call.versionId === 'ver_a' && call.query === 'alpha-filter'),
+      'clientA must receive the active version and query before the swap'
+    );
 
     // Open FeatureRequestDetail for itemA
     const cardButton = renderer.root
@@ -455,17 +494,24 @@ test(
       },
     } as unknown as FeedbackClient;
 
-    const renderer = TestRenderer.create(
+    const commentSessionProvider = async () => 'comment-token';
+    const detailElement = (item: FeatureRequestItem) =>
+      React.createElement(FeatureRequestDetail, {
+        item,
+        visible: true,
+        onClose: () => {},
+      });
+    const providerElement = (client: FeedbackClient, item: FeatureRequestItem) =>
       React.createElement(CupThreadProvider, {
-        client: clientA,
-        userToken: 'tok_a',
-        children: React.createElement(FeatureRequestDetail, {
-          item: itemA,
-          visible: true,
-          onClose: () => {},
-        }),
-      })
-    );
+        client,
+        userToken: client === clientA ? 'tok_a' : 'tok_b',
+        commentSessionProvider,
+        children: detailElement(item),
+      });
+    const composerInput = () =>
+      renderer.root.findAllByType(TextInputStub).find((node) => node.props.multiline === true);
+
+    const renderer = TestRenderer.create(providerElement(clientA, itemA));
     await settle();
 
     // Trigger a vote error on clientA
@@ -481,35 +527,46 @@ test(
     assert.equal(Boolean(renderer.root.findByType(VoteButton).props.error), true);
     assert.deepEqual(clientAListCalls, ['req-1']);
 
-    // Swap to clientB with same id 'req-1'
+    // Leave a composer draft before swapping clients: the draft must not leak
+    // into the replacement client's thread.
+    const draftInputA = composerInput();
+    assert.ok(draftInputA, 'expected clientA comment composer');
     await act(async () => {
-      renderer.update(
-        React.createElement(CupThreadProvider, {
-          client: clientB,
-          userToken: 'tok_b',
-          children: React.createElement(FeatureRequestDetail, {
-            item: itemB,
-            visible: true,
-            onClose: () => {},
-          }),
-        })
-      );
+      draftInputA.props.onChangeText('draft from client A');
+    });
+    await settle();
+    assert.equal(composerInput()?.props.value, 'draft from client A');
+
+    // First commit: only the client changes. The replacement item arrives a
+    // commit later, so a same-id item from clientB must still be adopted.
+    await act(async () => {
+      renderer.update(providerElement(clientB, itemA));
     });
     await settle();
 
     texts = collectTexts(renderer.root);
-    assert.ok(texts.includes('Client B Title'), 'should render itemB title');
-    assert.equal(texts.includes('Client A Title'), false, 'must not retain itemA title');
-    assert.equal(renderer.root.findByType(VoteButton).props.voteCount, 9);
-    assert.equal(renderer.root.findByType(VoteButton).props.hasVoted, true);
+    assert.ok(texts.includes('Comment from Client B'), 'comments must follow the client swap');
+    assert.equal(texts.includes('Comment from Client A'), false, 'must not leak clientA comments');
+    assert.deepEqual(clientBListCalls, ['req-1']);
+    assert.equal(composerInput()?.props.value, '', 'composer draft must not survive a client swap');
     assert.equal(
       Boolean(renderer.root.findByType(VoteButton).props.error),
       false,
       'prior clientA vote error must be cleared on client swap'
     );
-    assert.deepEqual(clientBListCalls, ['req-1']);
-    assert.ok(texts.includes('Comment from Client B'), 'should render clientB comments');
-    assert.equal(texts.includes('Comment from Client A'), false, 'must not leak clientA comments');
+
+    // Second commit: clientB's item finally arrives with the same id.
+    await act(async () => {
+      renderer.update(providerElement(clientB, itemB));
+    });
+    await settle();
+
+    texts = collectTexts(renderer.root);
+    assert.ok(texts.includes('Client B Title'), 'same-id item from clientB must be adopted');
+    assert.equal(texts.includes('Client A Title'), false, 'must not retain itemA title');
+    assert.equal(renderer.root.findByType(VoteButton).props.voteCount, 9);
+    assert.equal(renderer.root.findByType(VoteButton).props.hasVoted, true);
+    assert.deepEqual(clientBListCalls, ['req-1'], 'same-id refresh must not remount the thread');
 
     renderer.unmount();
   }
