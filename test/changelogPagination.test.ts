@@ -1572,7 +1572,9 @@ test('useChangelogEntries: client swap resets isLoadingMore and ignores late loa
   harness.unmount();
 });
 
-test('useChangelogEntries: disabling resets in-flight isLoadingMore (#473)', async () => {
+test('useChangelogEntries: disabling resets in-flight isLoadingMore and late settlement does not clear re-enabled loadMore (#473)', async () => {
+  const pendingLoadMores: Array<(page: ListPublicChangelogResult) => void> = [];
+  let loadMoreCalls = 0;
   const client = {
     listChangelog: async (opts?: { cursor?: string | null }) => {
       if (!opts?.cursor) {
@@ -1582,7 +1584,10 @@ test('useChangelogEntries: disabling resets in-flight isLoadingMore (#473)', asy
           nextCursor: 'cur-1',
         };
       }
-      return new Promise<ListPublicChangelogResult>(() => {});
+      loadMoreCalls += 1;
+      return new Promise<ListPublicChangelogResult>((resolve) => {
+        pendingLoadMores.push(resolve);
+      });
     },
   } as unknown as FeedbackClient;
 
@@ -1590,14 +1595,56 @@ test('useChangelogEntries: disabling resets in-flight isLoadingMore (#473)', asy
   const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20, enabled }));
   await flush();
 
-  void harness.result.loadMore();
+  const firstLoadMore = harness.result.loadMore();
   await flush();
   assert.equal(harness.result.isLoadingMore, true);
+  assert.equal(loadMoreCalls, 1);
 
   enabled = false;
   harness.rerender();
   await flush();
   assert.equal(harness.result.isLoadingMore, false, 'disabling must clear isLoadingMore');
+
+  enabled = true;
+  harness.rerender();
+  await flush();
+
+  const secondLoadMore = harness.result.loadMore();
+  await flush();
+  assert.equal(harness.result.isLoadingMore, true);
+  assert.equal(loadMoreCalls, 2);
+
+  // Settle the old (aborted) request while the new one is still pending.
+  pendingLoadMores[0]({
+    entries: [makeEntry('e2-stale', '2026-09-02T00:00:00.000Z')],
+    hasMore: false,
+    nextCursor: null,
+  });
+  await firstLoadMore;
+  await flush();
+  assert.equal(
+    harness.result.isLoadingMore,
+    true,
+    'late settlement of aborted loadMore must not clear re-enabled loadMore isLoadingMore'
+  );
+
+  // Duplicate loadMore must remain blocked while the second request is in flight.
+  void harness.result.loadMore();
+  await flush();
+  assert.equal(loadMoreCalls, 2);
+
+  pendingLoadMores[1]({
+    entries: [makeEntry('e2', '2026-09-02T00:00:00.000Z')],
+    hasMore: false,
+    nextCursor: null,
+  });
+  await secondLoadMore;
+  await flush();
+  assert.equal(harness.result.isLoadingMore, false);
+  assert.deepEqual(
+    harness.result.entries.map((e) => e.id),
+    ['e1', 'e2']
+  );
 
   harness.unmount();
 });
