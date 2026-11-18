@@ -509,3 +509,281 @@ test('useToggleVote drops pre-roundtrip vote after tok_a -> tok_b -> tok_a and p
     renderer.unmount();
   }
 });
+
+test('useToggleVote keeps committed session active when a replacement userToken render suspends before commit (#459)', async () => {
+  const deferredVoteA = createDeferred<VoteResult>();
+  const suspendGate = createDeferred<void>();
+  let suspendResolved = false;
+  void suspendGate.promise.then(() => {
+    suspendResolved = true;
+  });
+
+  const client = {
+    castVote: () => deferredVoteA.promise,
+  } as unknown as FeedbackClient;
+
+  let currentItem = makeItem('fr_1', 'Dark mode', { voteCount: 5, hasVoted: false });
+  const applyChange: VoteChangeApplier = (_id, transform) => {
+    currentItem = transform(currentItem);
+  };
+
+  const latestCommitted: {
+    current: { token: string; vote: UseToggleVoteResult } | null;
+  } = { current: null };
+  const renderedTokens: string[] = [];
+
+  function CommittedProbe({ userToken }: { userToken: string }) {
+    const vote = useToggleVote(client, userToken, applyChange);
+    renderedTokens.push(userToken);
+    React.useLayoutEffect(() => {
+      latestCommitted.current = { token: userToken, vote };
+    });
+    return null;
+  }
+
+  function SuspendingSibling({ shouldSuspend }: { shouldSuspend: boolean }) {
+    if (shouldSuspend && !suspendResolved) {
+      throw suspendGate.promise;
+    }
+    return null;
+  }
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    renderer = TestRenderer.create(
+      <React.Suspense fallback={null}>
+        <CommittedProbe userToken="tok_a" />
+        <SuspendingSibling shouldSuspend={false} />
+      </React.Suspense>,
+      { unstable_isConcurrent: true } as unknown as TestRenderer.TestRendererOptions
+    );
+  });
+
+  try {
+    assert.equal(latestCommitted.current?.token, 'tok_a');
+
+    // Start an in-flight vote under committed tok_a.
+    act(() => {
+      latestCommitted.current!.vote.toggleVote(currentItem);
+    });
+    assert.equal(latestCommitted.current!.vote.isVoting('fr_1'), true);
+    assert.equal(currentItem.hasVoted, true);
+    assert.equal(currentItem.voteCount, 6);
+    renderedTokens.length = 0;
+
+    // Begin a concurrent transition to tok_b that suspends after CommittedProbe
+    // renders tok_b, leaving tok_a as the committed tree.
+    act(() => {
+      React.startTransition(() => {
+        renderer.update(
+          <React.Suspense fallback={null}>
+            <CommittedProbe userToken="tok_b" />
+            <SuspendingSibling shouldSuspend={true} />
+          </React.Suspense>
+        );
+      });
+    });
+
+    assert.ok(
+      renderedTokens.includes('tok_b'),
+      'work-in-progress tok_b render ran before SuspendingSibling suspended'
+    );
+    assert.equal(
+      latestCommitted.current?.token,
+      'tok_a',
+      'tok_a remains the committed session while tok_b is suspended'
+    );
+
+    // Settle tok_a's request before tok_b commits: tok_a must reconcile and
+    // clear isVoting rather than stranding pendingIds.
+    await act(async () => {
+      deferredVoteA.resolve({ voted: true, voteCount: 12 });
+    });
+    await flush();
+
+    assert.equal(latestCommitted.current?.token, 'tok_a');
+    assert.equal(latestCommitted.current!.vote.isVoting('fr_1'), false);
+    assert.equal(currentItem.hasVoted, true);
+    assert.equal(currentItem.voteCount, 12);
+
+    // Unsuspend tok_b and verify it commits with a clean session.
+    await act(async () => {
+      suspendGate.resolve();
+    });
+    await flush();
+
+    assert.equal(latestCommitted.current?.token, 'tok_b');
+    assert.equal(latestCommitted.current!.vote.isVoting('fr_1'), false);
+    assert.equal(latestCommitted.current!.vote.voteError, null);
+  } finally {
+    act(() => {
+      renderer.unmount();
+    });
+  }
+});
+
+test('useToggleVote paired with useFeatureRequests retires pending entry across tok_a -> tok_b -> tok_a when A vote rejects (#459)', async () => {
+  const tokAVoteAttempts: Array<ReturnType<typeof createDeferred<VoteResult>>> = [];
+  const tokBFetches: Array<
+    ReturnType<typeof createDeferred<{ requests: FeatureRequestItem[]; total: number }>>
+  > = [];
+  const tokAFetches: Array<
+    ReturnType<typeof createDeferred<{ requests: FeatureRequestItem[]; total: number }>>
+  > = [];
+
+  const client = {
+    fetchFeatureRequests: ({ userToken }: { userToken?: string }) => {
+      if (userToken === 'tok_b') {
+        const d = createDeferred<{ requests: FeatureRequestItem[]; total: number }>();
+        tokBFetches.push(d);
+        return d.promise;
+      }
+      const d = createDeferred<{ requests: FeatureRequestItem[]; total: number }>();
+      tokAFetches.push(d);
+      return d.promise;
+    },
+    castVote: () => {
+      const d = createDeferred<VoteResult>();
+      tokAVoteAttempts.push(d);
+      return d.promise;
+    },
+  } as unknown as FeedbackClient;
+
+  const latest: {
+    current: { requests: UseFeatureRequestsResult; vote: UseToggleVoteResult } | null;
+  } = { current: null };
+
+  function PairedTokenProbe({ userToken }: { userToken: string }) {
+    const requests = useFeatureRequests({
+      client,
+      userToken,
+      searchRateLimiterOptions: { minSpacingMs: 0 },
+    });
+    const vote = useToggleVote(client, userToken, requests.applyItemChange);
+    latest.current = { requests, vote };
+    return null;
+  }
+
+  const renderer = TestRenderer.create(<PairedTokenProbe userToken="tok_a" />);
+  try {
+    await flush(2);
+    await act(async () => {
+      tokAFetches[0]!.resolve({
+        requests: [makeItem('fr_1', 'Dark mode', { voteCount: 5, hasVoted: false })],
+        total: 1,
+      });
+    });
+    await flush();
+    assert.equal(latest.current!.requests.items[0].hasVoted, false);
+    assert.equal(latest.current!.requests.items[0].voteCount, 5);
+
+    // Tap vote under tok_a (attempt #0 stays in flight).
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 6);
+    assert.equal(latest.current!.vote.isVoting('fr_1'), true);
+
+    // Switch tok_a -> tok_b (tok_b fetch never resolves) and back tok_b -> tok_a.
+    act(() => {
+      renderer.update(<PairedTokenProbe userToken="tok_b" />);
+    });
+    act(() => {
+      renderer.update(<PairedTokenProbe userToken="tok_a" />);
+    });
+    await flush(2);
+
+    // Reject the pre-roundtrip tok_a vote, then resolve the new tok_a page-0 fetch:
+    // the rejected A vote must not survive in pendingItemMutationsRef or overlay
+    // onto the server row.
+    await act(async () => {
+      tokAVoteAttempts[0]!.reject(new Error('first tok_a vote rejected'));
+    });
+    await act(async () => {
+      tokAFetches[1]!.resolve({
+        requests: [makeItem('fr_1', 'Dark mode', { voteCount: 5, hasVoted: false })],
+        total: 1,
+      });
+    });
+    await flush();
+
+    assert.equal(latest.current!.vote.voteError, null);
+    assert.equal(latest.current!.vote.getVoteError('fr_1'), null);
+    assert.equal(
+      latest.current!.requests.items[0].hasVoted,
+      false,
+      'rejected pre-roundtrip tok_a vote must not stay overlaid on the next tok_a fetch'
+    );
+    assert.equal(latest.current!.requests.items[0].voteCount, 5);
+
+    // Also verify a newer tap in the current tok_a session keeps its own
+    // pending entry when an older roundtrip vote rejects mid-flight.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    assert.equal(tokAVoteAttempts.length, 2);
+
+    act(() => {
+      renderer.update(<PairedTokenProbe userToken="tok_b" />);
+    });
+    act(() => {
+      renderer.update(<PairedTokenProbe userToken="tok_a" />);
+    });
+    await flush(2);
+    await act(async () => {
+      tokAFetches[2]!.resolve({
+        requests: [makeItem('fr_1', 'Dark mode', { voteCount: 5, hasVoted: false })],
+        total: 1,
+      });
+    });
+    await flush();
+
+    // Start a fresh tap (attempt #2) in the active tok_a session while attempt #1
+    // from before the roundtrip is still unsettled.
+    act(() => {
+      latest.current!.vote.toggleVote(latest.current!.requests.items[0]);
+    });
+    assert.equal(tokAVoteAttempts.length, 3);
+    assert.equal(latest.current!.vote.isVoting('fr_1'), true);
+
+    // Start a concurrent refresh, then reject stale attempt #1 before the refresh resolves.
+    let refreshPromise!: Promise<void>;
+    act(() => {
+      refreshPromise = latest.current!.requests.refresh();
+    });
+    await act(async () => {
+      tokAVoteAttempts[1]!.reject(new Error('stale roundtrip vote rejected'));
+    });
+    await act(async () => {
+      tokAFetches[3]!.resolve({
+        requests: [makeItem('fr_1', 'Dark mode', { voteCount: 5, hasVoted: false })],
+        total: 1,
+      });
+      await refreshPromise;
+    });
+    await flush();
+
+    assert.equal(
+      latest.current!.vote.isVoting('fr_1'),
+      true,
+      'stale rejection must not release the newer tap lock'
+    );
+    assert.equal(
+      latest.current!.requests.items[0].hasVoted,
+      true,
+      'stale rejection must not remove the newer tap optimistic entry'
+    );
+    assert.equal(latest.current!.requests.items[0].voteCount, 6);
+
+    await act(async () => {
+      tokAVoteAttempts[2]!.resolve({ voted: true, voteCount: 6 });
+    });
+    await flush();
+    assert.equal(latest.current!.vote.isVoting('fr_1'), false);
+    assert.equal(latest.current!.requests.items[0].hasVoted, true);
+    assert.equal(latest.current!.requests.items[0].voteCount, 6);
+  } finally {
+    renderer.unmount();
+  }
+});

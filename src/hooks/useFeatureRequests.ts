@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DEFAULT_FEATURE_REQUESTS_PAGE_SIZE, type FeedbackClient } from '../client/FeedbackClient';
 import { RateLimitedException } from '../client/FeedbackException';
 import type { FeatureRequestItem } from '../types';
@@ -372,10 +372,51 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const pendingItemMutationsRef = useRef<Map<string, PendingItemMutation>>(new Map());
   const settledItemMutationsRef = useRef<Map<string, SettledItemMutation>>(new Map());
 
-  // The identity of the most recent render, read by the mutation appliers
-  // (which are stable callbacks and must not close over the prop).
+  // Key of the last successfully loaded search (trimmed query + versionId).
+  // Duplicate suppression: re-firing the effect with the same key must not
+  // burn another search against the server's per-IP rate budget.
+  const lastSearchKeyRef = useRef<string | null>(null);
+
+  // The committed identity, read by the mutation appliers (which are stable
+  // callbacks and must not close over the prop) and used to retire optimistic
+  // entries immediately when `client` or `userToken` changes (#184, #459).
   const userTokenRef = useRef<string>(normalizedUserToken);
-  userTokenRef.current = normalizedUserToken;
+  const committedSessionRef = useRef({ client, userToken: normalizedUserToken });
+
+  useLayoutEffect(() => {
+    userTokenRef.current = normalizedUserToken;
+    const prev = committedSessionRef.current;
+    const clientChanged = prev.client !== client;
+    const tokenChanged = prev.userToken !== normalizedUserToken;
+    if (!clientChanged && !tokenChanged) {
+      return;
+    }
+    committedSessionRef.current = { client, userToken: normalizedUserToken };
+    if (clientChanged) {
+      pendingItemMutationsRef.current.clear();
+      settledItemMutationsRef.current.clear();
+      lastSearchKeyRef.current = null;
+      return;
+    }
+    // Retire token-tagged optimistic and settled entries immediately when the
+    // token changes so an A -> B -> A switch where B never reconciles cannot
+    // overlay a stale/rejected A vote onto the next A fetch (#459).
+    let retiredPending = false;
+    for (const [id, entry] of pendingItemMutationsRef.current) {
+      if (entry.userToken !== normalizedUserToken) {
+        pendingItemMutationsRef.current.delete(id);
+        retiredPending = true;
+      }
+    }
+    for (const [id, entry] of settledItemMutationsRef.current) {
+      if (entry.userToken !== normalizedUserToken) {
+        settledItemMutationsRef.current.delete(id);
+      }
+    }
+    if (retiredPending) {
+      lastSearchKeyRef.current = null;
+    }
+  }, [client, normalizedUserToken]);
 
   const applyItemChange = useCallback(
     (
@@ -484,11 +525,6 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     },
     []
   );
-
-  // Key of the last successfully loaded search (trimmed query + versionId).
-  // Duplicate suppression: re-firing the effect with the same key must not
-  // burn another search against the server's per-IP rate budget.
-  const lastSearchKeyRef = useRef<string | null>(null);
 
   const enterSearchCooldown = useCallback((retryAfterMs?: number | null) => {
     const limiter = searchLimiterRef.current!;

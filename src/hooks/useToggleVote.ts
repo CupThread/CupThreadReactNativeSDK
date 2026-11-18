@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { FeedbackClient } from '../client/FeedbackClient';
 import type { FeatureRequestItem, VoteResult, VoteWarning } from '../types';
 
@@ -285,14 +285,12 @@ export function useToggleVote(
   applyChange: VoteChangeApplier,
   options?: UseToggleVoteOptions
 ): UseToggleVoteResult {
+  const onVoteError = options?.onVoteError;
+  const onVoteWarning = options?.onVoteWarning;
+
   const applyChangeRef = useRef(applyChange);
-  applyChangeRef.current = applyChange;
-
-  const onVoteErrorRef = useRef(options?.onVoteError);
-  onVoteErrorRef.current = options?.onVoteError;
-
-  const onVoteWarningRef = useRef(options?.onVoteWarning);
-  onVoteWarningRef.current = options?.onVoteWarning;
+  const onVoteErrorRef = useRef(onVoteError);
+  const onVoteWarningRef = useRef(onVoteWarning);
 
   const shipNotifyEmail =
     typeof options?.shipNotifyEmail === 'string'
@@ -301,11 +299,11 @@ export function useToggleVote(
 
   const normalizedUserToken = typeof userToken === 'string' ? userToken.trim() : '';
 
-  // Most recently rendered (client, normalizedUserToken) pair, read by stable
-  // callbacks and async continuations so session switches invalidate stale
-  // in-flight settlements immediately (#459).
+  // Most recently committed (client, normalizedUserToken) pair, read by stable
+  // callbacks and async continuations so committed session switches invalidate
+  // stale in-flight settlements immediately without leaking uncommitted
+  // suspended renders (#459).
   const latestSessionPropsRef = useRef({ client, userToken: normalizedUserToken });
-  latestSessionPropsRef.current = { client, userToken: normalizedUserToken };
 
   const sessionRef = useRef<VoteSession | null>(null);
   if (sessionRef.current === null) {
@@ -341,7 +339,18 @@ export function useToggleVote(
     return current;
   }, [client, normalizedUserToken]);
 
-  useEffect(() => {
+  // Publish callback refs and the active session identity synchronously on
+  // commit rather than during render: a concurrent/suspended render for a new
+  // token must not clobber the still-committed session's in-flight settlement.
+  useLayoutEffect(() => {
+    applyChangeRef.current = applyChange;
+    onVoteErrorRef.current = onVoteError;
+    onVoteWarningRef.current = onVoteWarning;
+  }, [applyChange, onVoteError, onVoteWarning]);
+
+  useLayoutEffect(() => {
+    latestSessionPropsRef.current = { client, userToken: normalizedUserToken };
+
     const current = sessionRef.current!;
     if (current.client !== client || current.userToken !== normalizedUserToken) {
       const next = resolveActiveSession();
@@ -531,6 +540,11 @@ export function useToggleVote(
             }
           },
           (err: unknown) => {
+            // Stale-session rejections are ignored so they cannot surface errors
+            // or overwrite rows in a newer session; `useFeatureRequests` retires
+            // token-tagged pending entries on commit whenever `userToken` or
+            // `client` changes so an A -> B -> A roundtrip never keeps a
+            // rejected A optimistic entry alive (#459).
             if (!isTapSessionCurrent()) return;
 
             // The rollback also ends the optimistic-vote lifecycle: hosts that

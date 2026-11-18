@@ -89,6 +89,9 @@ function renderTestHook<T>(hookFn: () => T) {
         pendingEffects.push({ idx, effect, deps });
       }
     },
+    useLayoutEffect(effect: () => void | (() => void), deps?: any[]) {
+      dispatcher.useEffect(effect, deps);
+    },
   };
 
   let currentResult: T;

@@ -136,6 +136,9 @@ function renderTestHook<T>(hookFn: () => T) {
         });
       }
     },
+    useLayoutEffect(effect: () => void | (() => void), deps?: any[]) {
+      dispatcher.useEffect(effect, deps);
+    },
   };
 
   let currentResult: T;
