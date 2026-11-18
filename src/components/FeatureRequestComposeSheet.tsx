@@ -161,6 +161,9 @@ export function FeatureRequestComposeSheet({
     isSubmittingRef.current = false;
   }, []);
 
+  const prevClientRef = useRef(client);
+  const clientGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const prevVisibleRef = useRef(visible);
   const prevInitialDraftRef = useRef(initialDraft);
   const hasSubmittedRef = useRef(false);
@@ -172,6 +175,13 @@ export function FeatureRequestComposeSheet({
   // state or form of a newer submission that started after a reopen.
   const submitSeqRef = useRef(0);
 
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Runs as a layout effect so the session token advances (and the reopen
   // reset lands) before the reopened form paints: a passive effect can be
   // deferred past first paint, and a submit tapped in that window would
@@ -179,6 +189,19 @@ export function FeatureRequestComposeSheet({
   // settlement.
   useLayoutEffect(() => {
     const wasVisible = prevVisibleRef.current;
+    if (prevClientRef.current !== client) {
+      // In-flight submits and drafts belong to the previous client, so swapping
+      // clients resets the sheet even while hidden or preserving drafts.
+      prevClientRef.current = client;
+      clientGenerationRef.current += 1;
+      openSessionRef.current += 1;
+      submitSeqRef.current += 1;
+      hasSubmittedRef.current = false;
+      resetForm(initialDraft);
+      prevInitialDraftRef.current = initialDraft;
+      prevVisibleRef.current = visible;
+      return;
+    }
     if (!wasVisible && visible) {
       openSessionRef.current += 1;
       // The reopen decision (and the preserved-session state shape below) come
@@ -213,6 +236,7 @@ export function FeatureRequestComposeSheet({
     }
     prevVisibleRef.current = visible;
   }, [
+    client,
     visible,
     preserveDraftOnClose,
     initialDraft,
@@ -251,6 +275,12 @@ export function FeatureRequestComposeSheet({
     setIsSubmitting(true);
     const submitId = ++submitSeqRef.current;
     const submitSession = openSessionRef.current;
+    const submitClient = client;
+    const submitClientGeneration = clientGenerationRef.current;
+    const isSubmitClientCurrent = () =>
+      mountedRef.current &&
+      prevClientRef.current === submitClient &&
+      clientGenerationRef.current === submitClientGeneration;
 
     try {
       const draft: FeatureRequestDraft = {
@@ -261,7 +291,13 @@ export function FeatureRequestComposeSheet({
       };
 
       const effectiveToken = await resolveEffectiveUserToken(userToken);
-      const result = await client.submitFeatureRequest(draft, effectiveToken);
+      if (!isSubmitClientCurrent() || submitId !== submitSeqRef.current) {
+        return;
+      }
+      const result = await submitClient.submitFeatureRequest(draft, effectiveToken);
+      if (!isSubmitClientCurrent()) {
+        return;
+      }
       // A settlement may land after the composer was closed and reopened (or
       // after a newer submission started). It may only touch the shared busy
       // state and the form when it still owns them — otherwise it would wipe
@@ -319,6 +355,9 @@ export function FeatureRequestComposeSheet({
         }
       }
     } catch (err: unknown) {
+      if (!isSubmitClientCurrent()) {
+        return;
+      }
       const isLatest = submitId === submitSeqRef.current;
       const ownsForm = isLatest && openSessionRef.current === submitSession;
       if (ownsForm) {
@@ -329,7 +368,7 @@ export function FeatureRequestComposeSheet({
       // A superseded failure leaves the newer submission in charge of the form
       // state; its own outcome will surface.
     } finally {
-      if (submitId === submitSeqRef.current) {
+      if (isSubmitClientCurrent() && submitId === submitSeqRef.current) {
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
