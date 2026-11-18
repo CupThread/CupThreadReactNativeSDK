@@ -97,6 +97,19 @@ export function FeatureRequestsScreen({ onBack, headerTitle }: FeatureRequestsSc
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
   const [showCompose, setShowCompose] = useState<boolean>(false);
+  const [prevClient, setPrevClient] = useState(client);
+
+  // Reset screen-scoped filters and modals synchronously during render when
+  // the active client swaps so downstream hooks never issue requests on the
+  // new client with the previous client's versionId/searchQuery or keep
+  // stale detail/compose modals mounted.
+  if (prevClient !== client) {
+    setPrevClient(client);
+    setSelectedVersionId(null);
+    setSearchQuery('');
+    setSelectedItem(null);
+    setShowCompose(false);
+  }
 
   const fetchVersions = useCallback(
     (signal: AbortSignal) => client.fetchVersions({ signal }),

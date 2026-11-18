@@ -121,9 +121,17 @@ export function FeatureRequestDetail({
   // adjustment, same semantics as key={item.id}: a different id resets the
   // whole screen, while a same-id prop refresh (fresh object from host data)
   // keeps the current state, including optimistic vote changes.
+  const [lastClient, setLastClient] = useState(client);
+  const [clientEpoch, setClientEpoch] = useState<number>(0);
   const [lastInitialId, setLastInitialId] = useState<string>(safeItemId);
-  if (lastInitialId !== safeItemId) {
-    setLastInitialId(safeItemId);
+  if (lastClient !== client || lastInitialId !== safeItemId) {
+    if (lastClient !== client) {
+      setLastClient(client);
+      setClientEpoch((epoch) => epoch + 1);
+    }
+    if (lastInitialId !== safeItemId) {
+      setLastInitialId(safeItemId);
+    }
     setItem(safeItem);
   }
 
@@ -132,6 +140,7 @@ export function FeatureRequestDetail({
   // longer holds the request that was voted on. The snapshot keeps the host
   // reconciliation independent of this component's lifecycle.
   const knownItemsRef = useRef<Map<string, FeatureRequestItem>>(new Map());
+  const knownItemsClientRef = useRef(client);
   const onVoteChangeRef = useRef(onVoteChange);
   const mountedRef = useRef(true);
 
@@ -140,10 +149,14 @@ export function FeatureRequestDetail({
   }, [onVoteChange]);
 
   useEffect(() => {
+    if (knownItemsClientRef.current !== client) {
+      knownItemsClientRef.current = client;
+      knownItemsRef.current.clear();
+    }
     if (item && typeof item.id === 'string' && item.id.trim().length > 0) {
       knownItemsRef.current.set(item.id, item);
     }
-  }, [item]);
+  }, [client, item]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -184,7 +197,7 @@ export function FeatureRequestDetail({
 
   useEffect(() => {
     clearVoteError();
-  }, [safeItemId, clearVoteError]);
+  }, [client, safeItemId, clearVoteError]);
 
   if (!visible || !safeItem || !item) {
     return null;
@@ -290,10 +303,10 @@ export function FeatureRequestDetail({
             </View>
           )}
 
-          {/* key={item.id} remounts the thread on a documented item swap, so
-              the composer and the list are guaranteed fresh even if
-              CommentsSection's internal id reset were bypassed. */}
-          <CommentsSection key={item.id} featureRequestId={item.id} />
+          {/* key={`${clientEpoch}:${item.id}`} remounts the thread on client
+              or item swaps, so the composer and the list are guaranteed fresh
+              even if CommentsSection's internal resets were bypassed. */}
+          <CommentsSection key={`${clientEpoch}:${item.id}`} featureRequestId={item.id} />
         </ScrollView>
       </SafeAreaView>
     </Modal>

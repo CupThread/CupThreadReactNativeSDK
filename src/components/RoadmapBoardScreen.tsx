@@ -107,6 +107,16 @@ export function RoadmapBoardScreen({ onBack, headerTitle }: RoadmapBoardScreenPr
 
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<FeatureRequestItem | null>(null);
+  const [prevClient, setPrevClient] = useState(client);
+
+  // Reset board-scoped selection and detail modal synchronously during render
+  // when the active client swaps so stale items or column IDs never carry
+  // over to the replacement client.
+  if (prevClient !== client) {
+    setPrevClient(client);
+    setSelectedColumnId(null);
+    setSelectedItem(null);
+  }
 
   const {
     items: requests,
