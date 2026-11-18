@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -37,10 +37,11 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
 
   const [data, setData] = useState<PublicUserProfileResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown | null>(null);
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
   const [isNotFound, setIsNotFound] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
+  const prevOwnerRef = useRef({ client, userId });
 
   const profile =
     data?.profile && typeof data.profile === 'object' && !Array.isArray(data.profile)
@@ -48,6 +49,13 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
       : null;
 
   useEffect(() => {
+    const ownerChanged =
+      prevOwnerRef.current.client !== client || prevOwnerRef.current.userId !== userId;
+    prevOwnerRef.current = { client, userId };
+    if (ownerChanged) {
+      setData(null);
+    }
+
     const controller = new AbortController();
     setIsLoading(true);
     setError(null);
@@ -72,7 +80,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
           setIsNotFound(true);
           return;
         }
-        setError(userFacingErrorMessage(err, strings.userProfile.loadFailed, strings.common));
+        setError(err ?? new Error('Unknown error'));
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -83,7 +91,7 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
     return () => {
       controller.abort();
     };
-  }, [client, userId, reloadKey, strings.userProfile.loadFailed, strings.common]);
+  }, [client, userId, reloadKey]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -111,10 +119,12 @@ export function UserProfileScreen({ userId, onBack, headerTitle }: UserProfileSc
             {strings.userProfile.notFound}
           </Text>
         </View>
-      ) : isRateLimited || error ? (
+      ) : isRateLimited || error !== null ? (
         <View style={styles.center}>
           <Text style={[styles.errorText, { color: colors.textPrimary }]}>
-            {isRateLimited ? strings.userProfile.rateLimited : error}
+            {isRateLimited
+              ? strings.userProfile.rateLimited
+              : userFacingErrorMessage(error, strings.userProfile.loadFailed, strings.common)}
           </Text>
           <TouchableOpacity
             onPress={() => setReloadKey((key) => key + 1)}

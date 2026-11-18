@@ -4,7 +4,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { FeedbackClient } from '../src/client/FeedbackClient';
 import { RateLimitedException, UnexpectedStatusException } from '../src/client/FeedbackException';
-import { enStrings } from '../src/i18n';
+import { enStrings, esStrings } from '../src/i18n';
 
 const supportsModuleMocks = typeof (test as any).mock?.module === 'function';
 
@@ -1218,5 +1218,201 @@ test(
     } finally {
       fetchMock.restore();
     }
+  }
+);
+
+test(
+  'UserProfileScreen does not refetch when locale or strings references change (#471)',
+  screenTestOptions,
+  async () => {
+    let fetchCount = 0;
+    const client = {
+      fetchUserProfile: async () => {
+        fetchCount += 1;
+        return {
+          profile: {
+            clerkUserId: 'u_locale',
+            displayName: 'Locale Tester',
+            avatarUrl: null,
+            bio: 'Testing locale switches',
+            websiteUrl: null,
+            createdAt: '2025-01-01T00:00:00.000Z',
+          },
+          publicApps: [],
+          recentComments: [],
+        };
+      },
+    } as unknown as FeedbackClient;
+
+    const renderer = TestRenderer.create(
+      React.createElement(CupThreadProvider, {
+        client,
+        locale: 'en',
+        children: React.createElement(UserProfileScreen, { userId: 'u_locale' }),
+      })
+    );
+    await settle();
+    assert.equal(fetchCount, 1);
+    assert.ok(collectTexts(renderer.root).includes(enStrings.userProfile.activityTitle));
+
+    await act(async () => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client,
+          locale: 'es',
+          strings: { common: { retry: 'Reintentar ahora' } },
+          children: React.createElement(UserProfileScreen, { userId: 'u_locale' }),
+        })
+      );
+    });
+    await settle();
+
+    assert.equal(
+      fetchCount,
+      1,
+      'changing locale or inline strings must not re-run fetchUserProfile'
+    );
+    const texts = collectTexts(renderer.root);
+    assert.ok(texts.includes('Locale Tester'));
+    assert.ok(
+      texts.includes(esStrings.userProfile.activityTitle),
+      'localized labels must update to the new locale without refetching'
+    );
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'UserProfileScreen updates generic error copy when locale changes without refetching (#471)',
+  screenTestOptions,
+  async () => {
+    let fetchCount = 0;
+    const client = {
+      fetchUserProfile: async () => {
+        fetchCount += 1;
+        throw new UnexpectedStatusException(500, 'Internal Server Error');
+      },
+    } as unknown as FeedbackClient;
+
+    const renderer = TestRenderer.create(
+      React.createElement(CupThreadProvider, {
+        client,
+        locale: 'en',
+        children: React.createElement(UserProfileScreen, { userId: 'u_err' }),
+      })
+    );
+    await settle();
+    assert.equal(fetchCount, 1);
+    assert.ok(collectTexts(renderer.root).includes(enStrings.userProfile.loadFailed));
+
+    await act(async () => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client,
+          locale: 'es',
+          children: React.createElement(UserProfileScreen, { userId: 'u_err' }),
+        })
+      );
+    });
+    await settle();
+
+    assert.equal(fetchCount, 1, 'locale change must not trigger a retry request');
+    const texts = collectTexts(renderer.root);
+    assert.ok(
+      texts.includes(esStrings.userProfile.loadFailed),
+      'rendered error copy must react to the new locale'
+    );
+    assert.equal(texts.includes(enStrings.userProfile.loadFailed), false);
+
+    renderer.unmount();
+  }
+);
+
+test(
+  'UserProfileScreen clears previous profile data when userId or client changes (#471)',
+  screenTestOptions,
+  async () => {
+    const clientA = {
+      fetchUserProfile: async (id: string) => {
+        if (id === 'u_a') {
+          return {
+            profile: {
+              clerkUserId: 'u_a',
+              displayName: 'Alice Profile',
+              avatarUrl: null,
+              bio: 'Alice Bio',
+              websiteUrl: null,
+              createdAt: '2025-01-01T00:00:00.000Z',
+            },
+            publicApps: [],
+            recentComments: [],
+          };
+        }
+        throw new RateLimitedException(10);
+      },
+    } as unknown as FeedbackClient;
+
+    const clientB = {
+      fetchUserProfile: async () => {
+        throw new UnexpectedStatusException(500, 'Server Error');
+      },
+    } as unknown as FeedbackClient;
+
+    const renderer = TestRenderer.create(
+      React.createElement(CupThreadProvider, {
+        client: clientA,
+        locale: 'en',
+        children: React.createElement(UserProfileScreen, { userId: 'u_a' }),
+      })
+    );
+    await settle();
+    assert.ok(collectTexts(renderer.root).includes('Alice Profile'));
+
+    // Swap userId to u_b (429 rate limited): Alice's profile must be cleared.
+    await act(async () => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client: clientA,
+          locale: 'en',
+          children: React.createElement(UserProfileScreen, { userId: 'u_b' }),
+        })
+      );
+    });
+    await settle();
+    let texts = collectTexts(renderer.root);
+    assert.ok(texts.includes(enStrings.userProfile.rateLimited));
+    assert.equal(texts.includes('Alice Profile'), false);
+    assert.equal(texts.includes('Alice Bio'), false);
+
+    // Load u_a again, then swap client to clientB (500): Alice's profile must be cleared.
+    await act(async () => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client: clientA,
+          locale: 'en',
+          children: React.createElement(UserProfileScreen, { userId: 'u_a' }),
+        })
+      );
+    });
+    await settle();
+    assert.ok(collectTexts(renderer.root).includes('Alice Profile'));
+
+    await act(async () => {
+      renderer.update(
+        React.createElement(CupThreadProvider, {
+          client: clientB,
+          locale: 'en',
+          children: React.createElement(UserProfileScreen, { userId: 'u_a' }),
+        })
+      );
+    });
+    await settle();
+    texts = collectTexts(renderer.root);
+    assert.ok(texts.includes(enStrings.userProfile.loadFailed));
+    assert.equal(texts.includes('Alice Profile'), false);
+    assert.equal(texts.includes('Alice Bio'), false);
+
+    renderer.unmount();
   }
 );
