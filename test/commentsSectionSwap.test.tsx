@@ -611,3 +611,265 @@ test(
     }
   }
 );
+
+async function renderClientSwapHarness(
+  sessionProvider: () => string | Promise<string> = () => 'jwt'
+) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response('not found', { status: 404 })) as any;
+
+  const clientA = new SwapStubClient({
+    baseUrl: 'https://api.cupthread.com/a',
+    appKey: 'app_comments_client_a',
+  });
+  const clientB = new SwapStubClient({
+    baseUrl: 'https://api.cupthread.com/b',
+    appKey: 'app_comments_client_b',
+  });
+  const aComment = makeComment('c_swap_a', { authorName: 'Alice', body: 'Client A comment' });
+  const bComment = makeComment('c_swap_b', { authorName: 'Bob', body: 'Client B comment' });
+  clientA.commentSources.set('fr_A', [aComment]);
+  clientB.commentSources.set('fr_A', [bComment]);
+
+  const buildElement = (
+    client: SwapStubClient,
+    provider: () => string | Promise<string> = sessionProvider
+  ) =>
+    React.createElement(CupThreadProvider, {
+      client,
+      userToken: 'usr_tok_test',
+      commentSessionProvider: provider,
+      children: React.createElement(CommentsSection, { featureRequestId: 'fr_A' }),
+    });
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(buildElement(clientA));
+  });
+  await flush();
+
+  return {
+    renderer,
+    clientA,
+    clientB,
+    aComment,
+    bComment,
+    buildElement,
+    restoreFetch: () => {
+      globalThis.fetch = originalFetch;
+    },
+    swapTo: async (client: SwapStubClient, provider?: () => string | Promise<string>) => {
+      await act(async () => {
+        renderer.update(buildElement(client, provider));
+      });
+      await flush();
+    },
+  };
+}
+
+test(
+  'a client swap on the same request id clears the armed reply, draft, and post error (#465)',
+  renderTestOptions,
+  async () => {
+    const harness = await renderClientSwapHarness();
+    try {
+      const replyButton = findButtonByText(harness.renderer.root, enStrings.comments.replyButton);
+      assert.ok(replyButton, 'reply affordance must render on client A');
+      await act(async () => {
+        replyButton!.props.onPress();
+      });
+      const inputA = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputA.props.onChangeText('Draft for A');
+      });
+      assert.ok(
+        collectText(harness.renderer.root).includes(
+          enStrings.comments.replyingTo(harness.aComment.authorName!)
+        ),
+        'reply bar must be armed before the swap'
+      );
+
+      // Fail a post on A so the error banner is visible before the swap.
+      harness.clientA.postComment = async () => {
+        throw new Error('client A rejected the comment');
+      };
+      const sendA = findButtonByText(harness.renderer.root, enStrings.comments.postButton);
+      assert.ok(sendA);
+      await act(async () => {
+        sendA!.props.onPress();
+      });
+      await flush();
+      assert.ok(
+        collectText(harness.renderer.root).includes(enStrings.comments.postFailed),
+        'client A post error must render before the swap'
+      );
+
+      await harness.swapTo(harness.clientB);
+      const text = collectText(harness.renderer.root);
+      assert.ok(text.includes('Client B comment'), 'client B thread must load');
+      assert.ok(
+        !text.includes(enStrings.comments.replyingTo(harness.aComment.authorName!)),
+        'client A reply must not survive the swap'
+      );
+      assert.ok(!text.includes(enStrings.comments.postFailed), 'client A error must be cleared');
+      assert.equal(
+        harness.renderer.root.findByType(TextInputStub as any).props.value,
+        '',
+        'client A draft must be cleared'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a client swap clears the sign-in gate when the replacement client has a session (#465)',
+  renderTestOptions,
+  async () => {
+    const harness = await renderClientSwapHarness(() => '');
+    try {
+      const inputA = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputA.props.onChangeText('Draft needing sign-in');
+      });
+      const sendA = findButtonByText(harness.renderer.root, enStrings.comments.postButton);
+      assert.ok(sendA);
+      await act(async () => {
+        sendA!.props.onPress();
+      });
+      await flush();
+      assert.ok(
+        collectText(harness.renderer.root).includes(enStrings.comments.signInToComment),
+        'sign-in gate must be visible before the swap'
+      );
+
+      await harness.swapTo(harness.clientB, () => 'jwt');
+      assert.ok(
+        findButtonByText(harness.renderer.root, enStrings.comments.postButton),
+        'client B composer must be interactive with its own session'
+      );
+      assert.ok(
+        !collectText(harness.renderer.root).includes(enStrings.comments.signInToComment),
+        "client A's sign-in gate must not survive the swap"
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a late client A post cannot lock, clear, or pollute client B after a swap (#465)',
+  renderTestOptions,
+  async () => {
+    const harness = await renderClientSwapHarness();
+    try {
+      const deferredA = createDeferred<FeatureRequestComment>();
+      harness.clientA.deferredPosts.set('fr_A', deferredA);
+      const inputA = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputA.props.onChangeText('Post from A');
+      });
+      const sendA = findButtonByText(harness.renderer.root, enStrings.comments.postButton);
+      assert.ok(sendA);
+      await act(async () => {
+        sendA!.props.onPress();
+      });
+      await flush();
+      assert.equal(harness.clientA.postCalls.length, 1);
+
+      // Client B is interactive immediately while A's post is still pending.
+      await harness.swapTo(harness.clientB);
+      assert.ok(
+        findButtonByText(harness.renderer.root, enStrings.comments.postButton),
+        'client B send button must not inherit client A submit lock'
+      );
+      assert.ok(collectText(harness.renderer.root).includes('Client B comment'));
+
+      // Client B starts its own post. A's late settlement must not clear it.
+      const deferredB = createDeferred<FeatureRequestComment>();
+      harness.clientB.deferredPosts.set('fr_A', deferredB);
+      const inputB = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputB.props.onChangeText('Draft for B');
+      });
+      const sendB = findButtonByText(harness.renderer.root, enStrings.comments.postButton);
+      assert.ok(sendB);
+      await act(async () => {
+        sendB!.props.onPress();
+      });
+      await flush();
+
+      deferredA.resolve(makeComment('c_late_a', { authorName: 'Alice', body: 'Late A post' }));
+      await flush();
+      let text = collectText(harness.renderer.root);
+      assert.ok(!text.includes('Late A post'), 'client A post must not enter client B thread');
+      assert.equal(
+        harness.renderer.root.findByType(TextInputStub as any).props.value,
+        'Draft for B',
+        'client A post must not clear client B draft'
+      );
+      const postingButton = harness.renderer.root
+        .findAllByType(TouchableOpacityStub as any)
+        .find((button) => button.props.accessibilityLabel === enStrings.comments.postingButton);
+      assert.ok(postingButton, 'client B submit lock must remain until its own post settles');
+
+      deferredB.resolve(makeComment('c_late_b', { authorName: 'Bob', body: 'Fresh B post' }));
+      await flush();
+      text = collectText(harness.renderer.root);
+      assert.ok(text.includes('Fresh B post'), 'client B post must render once it settles');
+      assert.equal(
+        harness.renderer.root.findByType(TextInputStub as any).props.value,
+        '',
+        'client B draft must clear after its own successful post'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
+
+test(
+  'a rejected client A post after the swap does not surface an error on client B (#465)',
+  renderTestOptions,
+  async () => {
+    const harness = await renderClientSwapHarness();
+    try {
+      const deferredA = createDeferred<FeatureRequestComment>();
+      harness.clientA.deferredPosts.set('fr_A', deferredA);
+      const inputA = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputA.props.onChangeText('Doomed A post');
+      });
+      const sendA = findButtonByText(harness.renderer.root, enStrings.comments.postButton);
+      await act(async () => {
+        sendA!.props.onPress();
+      });
+      await flush();
+
+      await harness.swapTo(harness.clientB);
+      const inputB = harness.renderer.root.findByType(TextInputStub as any);
+      await act(async () => {
+        inputB.props.onChangeText('Keep this B draft');
+      });
+
+      deferredA.reject(new Error('client A failed'));
+      await flush();
+      const text = collectText(harness.renderer.root);
+      assert.ok(!text.includes(enStrings.comments.postFailed), 'client B must not show A error');
+      assert.ok(!text.includes(enStrings.comments.signInToComment), 'client B must stay signed in');
+      assert.equal(
+        harness.renderer.root.findByType(TextInputStub as any).props.value,
+        'Keep this B draft',
+        'client B draft must survive A rejection'
+      );
+    } finally {
+      harness.restoreFetch();
+      harness.renderer.unmount();
+    }
+  }
+);
