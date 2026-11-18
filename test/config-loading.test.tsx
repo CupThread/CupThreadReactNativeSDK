@@ -646,3 +646,101 @@ test(
     renderer!.unmount();
   }
 );
+
+test(
+  'CupThreadProvider: synchronous render pass during client swap never exposes previous client appConfig (#461)',
+  renderTestOptions,
+  async () => {
+    const clientA = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_a' });
+    const clientB = new FeedbackClient({ baseUrl: 'https://api.cupthread.com', appKey: 'app_b' });
+
+    const configA: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_a',
+      appKey: 'app_a',
+      name: 'App A',
+      sdk: { ...sampleConfig.sdk, theme: 'midnight' },
+    };
+    const configB: PublicAppConfig = {
+      ...sampleConfig,
+      appId: 'app_id_b',
+      appKey: 'app_b',
+      name: 'App B',
+      sdk: { ...sampleConfig.sdk, theme: 'light' },
+    };
+
+    clientA.fetchAppConfig = async () => configA;
+    let resolveB!: (value: PublicAppConfig) => void;
+    clientB.fetchAppConfig = () =>
+      new Promise<PublicAppConfig>((resolve) => {
+        resolveB = resolve;
+      });
+
+    const observedForClientB: Array<{
+      appConfig: PublicAppConfig | null;
+      themeName: string;
+      isLoadingConfig: boolean;
+    }> = [];
+    let renderer: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={clientA} _retryDelayMs={5}>
+          <ConfigProbe
+            onUpdate={(ctx) => {
+              if (ctx.client === clientB) {
+                observedForClientB.push({
+                  appConfig: ctx.appConfig,
+                  themeName: ctx.themeName,
+                  isLoadingConfig: ctx.isLoadingConfig,
+                });
+              }
+            }}
+          />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+
+    // Update to clientB without waiting for clientB's fetch to resolve;
+    // every render pass under clientB must see null appConfig and system theme.
+    await act(async () => {
+      renderer!.update(
+        <CupThreadProvider client={clientB} _retryDelayMs={5}>
+          <ConfigProbe
+            onUpdate={(ctx) => {
+              if (ctx.client === clientB) {
+                observedForClientB.push({
+                  appConfig: ctx.appConfig,
+                  themeName: ctx.themeName,
+                  isLoadingConfig: ctx.isLoadingConfig,
+                });
+              }
+            }}
+          />
+        </CupThreadProvider>
+      );
+    });
+
+    assert.ok(observedForClientB.length >= 1);
+    for (const snapshot of observedForClientB) {
+      assert.equal(
+        snapshot.appConfig,
+        null,
+        'clientB render pass must never expose clientA appConfig'
+      );
+      assert.equal(snapshot.themeName, 'system');
+      assert.equal(snapshot.isLoadingConfig, true);
+    }
+
+    resolveB(configB);
+    await flush();
+    assert.deepEqual(observedForClientB[observedForClientB.length - 1], {
+      appConfig: configB,
+      themeName: 'light',
+      isLoadingConfig: false,
+    });
+
+    renderer!.unmount();
+  }
+);

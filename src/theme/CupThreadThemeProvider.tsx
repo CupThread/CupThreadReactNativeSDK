@@ -383,11 +383,17 @@ export function CupThreadProvider({
   // attributed to a throwaway identity.
   const [resolvedUserToken, setResolvedUserToken] = useState<string>(normalizedUserToken);
   const [isTokenReady, setIsTokenReady] = useState<boolean>(Boolean(normalizedUserToken));
-  const [configState, setConfigState] = useState<ConfigFetchState>({
-    appConfig: null,
-    isLoadingConfig: true,
-    configError: null,
-  });
+  const [configSnapshot, setConfigSnapshot] = useState<{
+    owner: FeedbackClient;
+    state: ConfigFetchState;
+  }>(() => ({
+    owner: client,
+    state: {
+      appConfig: null,
+      isLoadingConfig: true,
+      configError: null,
+    },
+  }));
   const configClientRef = useRef(client);
   const activeRequestIdRef = useRef(0);
 
@@ -424,6 +430,26 @@ export function CupThreadProvider({
     };
   }, [normalizedUserToken]);
 
+  const updateConfigState = useCallback(
+    (requestClient: FeedbackClient, event: ConfigFetchEvent) => {
+      setConfigSnapshot((prev) => {
+        const baseState: ConfigFetchState =
+          prev.owner === requestClient
+            ? prev.state
+            : { appConfig: null, isLoadingConfig: true, configError: null };
+        const nextState = nextConfigState(baseState, event);
+        if (nextState === prev.state && prev.owner === requestClient) {
+          return prev;
+        }
+        return {
+          owner: requestClient,
+          state: nextState,
+        };
+      });
+    },
+    []
+  );
+
   const loadConfig = useCallback(
     async (signal?: AbortSignal, options?: { maxRetries?: number; retryDelayMs?: number }) => {
       const requestClient = client;
@@ -436,7 +462,7 @@ export function CupThreadProvider({
       const maxRetries = options?.maxRetries ?? 0;
       const retryDelayMs = options?.retryDelayMs ?? _retryDelayMs ?? 2000;
 
-      setConfigState((prev) => nextConfigState(prev, { type: 'start' }));
+      updateConfigState(requestClient, { type: 'start' });
 
       let attempt = 0;
       while (true) {
@@ -444,16 +470,16 @@ export function CupThreadProvider({
           const config = await requestClient.fetchAppConfig({ signal });
           if (signal?.aborted || !isCurrentRequest()) {
             if (signal?.aborted && isCurrentRequest()) {
-              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+              updateConfigState(requestClient, { type: 'abort' });
             }
             return;
           }
-          setConfigState((prev) => nextConfigState(prev, { type: 'success', config }));
+          updateConfigState(requestClient, { type: 'success', config });
           return;
         } catch (rawErr: any) {
           if (rawErr?.name === 'AbortError' || signal?.aborted || !isCurrentRequest()) {
             if ((rawErr?.name === 'AbortError' || signal?.aborted) && isCurrentRequest()) {
-              setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+              updateConfigState(requestClient, { type: 'abort' });
             }
             return;
           }
@@ -465,14 +491,14 @@ export function CupThreadProvider({
             } catch (delayErr: any) {
               if (delayErr?.name === 'AbortError' || signal?.aborted || !isCurrentRequest()) {
                 if ((delayErr?.name === 'AbortError' || signal?.aborted) && isCurrentRequest()) {
-                  setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+                  updateConfigState(requestClient, { type: 'abort' });
                 }
                 return;
               }
             }
             if (signal?.aborted || !isCurrentRequest()) {
               if (signal?.aborted && isCurrentRequest()) {
-                setConfigState((prev) => nextConfigState(prev, { type: 'abort' }));
+                updateConfigState(requestClient, { type: 'abort' });
               }
               return;
             }
@@ -482,12 +508,12 @@ export function CupThreadProvider({
           const error = rawErr instanceof Error ? rawErr : new Error(String(rawErr));
           logDevConfigWarning(rawErr);
 
-          setConfigState((prev) => nextConfigState(prev, { type: 'failure', error }));
+          updateConfigState(requestClient, { type: 'failure', error });
           return;
         }
       }
     },
-    [client, _retryDelayMs]
+    [client, _retryDelayMs, updateConfigState]
   );
 
   const refreshConfig = useCallback(
@@ -501,10 +527,13 @@ export function CupThreadProvider({
     if (configClientRef.current !== client) {
       configClientRef.current = client;
       activeRequestIdRef.current += 1;
-      setConfigState({
-        appConfig: null,
-        isLoadingConfig: true,
-        configError: null,
+      setConfigSnapshot({
+        owner: client,
+        state: {
+          appConfig: null,
+          isLoadingConfig: true,
+          configError: null,
+        },
       });
     }
     const controller = new AbortController();
@@ -515,8 +544,8 @@ export function CupThreadProvider({
   }, [client, loadConfig]);
 
   const effectiveConfigState: ConfigFetchState =
-    configClientRef.current === client
-      ? configState
+    configSnapshot.owner === client
+      ? configSnapshot.state
       : { appConfig: null, isLoadingConfig: true, configError: null };
 
   const effectiveTheme: SdkTheme =
