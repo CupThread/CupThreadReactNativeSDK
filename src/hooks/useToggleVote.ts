@@ -305,6 +305,26 @@ export function useToggleVote(
   // suspended renders (#459).
   const latestSessionPropsRef = useRef({ client, userToken: normalizedUserToken });
 
+  // Monotonic epochs let a callback prove it belongs to the newest identity
+  // without publishing session identity during render. Descendant layout
+  // effects run before this hook's layout effect on an identity swap, so a
+  // fresh callback stays usable there even though `latestSessionPropsRef`
+  // still holds the outgoing client (#479).
+  const renderEpochRef = useRef(0);
+  const committedEpochRef = useRef(0);
+  const lastRenderedIdentityRef = useRef<{ client: FeedbackClient; userToken: string } | null>(
+    null
+  );
+  if (
+    !lastRenderedIdentityRef.current ||
+    lastRenderedIdentityRef.current.client !== client ||
+    lastRenderedIdentityRef.current.userToken !== normalizedUserToken
+  ) {
+    lastRenderedIdentityRef.current = { client, userToken: normalizedUserToken };
+    renderEpochRef.current += 1;
+  }
+  const callbackEpoch = renderEpochRef.current;
+
   const sessionRef = useRef<VoteSession | null>(null);
   if (sessionRef.current === null) {
     sessionRef.current = {
@@ -350,6 +370,7 @@ export function useToggleVote(
 
   useLayoutEffect(() => {
     latestSessionPropsRef.current = { client, userToken: normalizedUserToken };
+    committedEpochRef.current = renderEpochRef.current;
 
     const current = sessionRef.current!;
     if (current.client !== client || current.userToken !== normalizedUserToken) {
@@ -431,8 +452,20 @@ export function useToggleVote(
     (item: FeatureRequestItem) => {
       if (!item || item.isOwnRequest || !normalizedUserToken) return;
 
+      // A callback retained from an identity that has already committed has a
+      // lower epoch and must not activate a session or dispatch a vote (#479).
+      // A callback from the incoming render keeps the higher epoch, so it stays
+      // usable in descendant layout effects that run before this hook's own
+      // layout effect publishes the new identity.
+      if (callbackEpoch < committedEpochRef.current) return;
+
       const tapSession = resolveActiveSession();
-      if (tapSession.pendingIds.has(item.id)) return;
+      if (
+        tapSession.client !== client ||
+        tapSession.userToken !== normalizedUserToken ||
+        tapSession.pendingIds.has(item.id)
+      )
+        return;
 
       tapSession.pendingIds.add(item.id);
       const nextPendingIds = Array.from(tapSession.pendingIds);
@@ -602,7 +635,7 @@ export function useToggleVote(
           warnInDev('[CupThread] useToggleVote: unexpected error in vote handler:', unexpectedErr);
         });
     },
-    [client, normalizedUserToken, resolveActiveSession, shipNotifyEmail]
+    [client, normalizedUserToken, resolveActiveSession, shipNotifyEmail, callbackEpoch]
   );
 
   const isVoting = useCallback(
