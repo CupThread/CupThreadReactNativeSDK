@@ -787,3 +787,258 @@ test('useToggleVote paired with useFeatureRequests retires pending entry across 
     renderer.unmount();
   }
 });
+
+test('useToggleVote rejects a stale client callback before it can vote on the replaced backend (#479)', async () => {
+  const clientAVotes: string[] = [];
+  const clientBVotes: string[] = [];
+  const clientA = {
+    castVote: (id: string, token: string) => {
+      clientAVotes.push(`cast:${id}:${token}`);
+      return Promise.resolve({ voted: false, voteCount: 4 });
+    },
+    removeVote: (id: string, token: string) => {
+      clientAVotes.push(`remove:${id}:${token}`);
+      return Promise.resolve({ voted: false, voteCount: 4 });
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    castVote: (id: string, token: string) => {
+      clientBVotes.push(`cast:${id}:${token}`);
+      return Promise.resolve({ voted: true, voteCount: 9 });
+    },
+    removeVote: (id: string, token: string) => {
+      clientBVotes.push(`remove:${id}:${token}`);
+      return Promise.resolve({ voted: false, voteCount: 8 });
+    },
+  } as unknown as FeedbackClient;
+
+  const appliedChanges: Array<VoteChangeMeta | undefined> = [];
+  const applyChange: VoteChangeApplier = (_itemId, _transform, meta) => {
+    appliedChanges.push(meta);
+  };
+  const latest: { current: UseToggleVoteResult | null } = { current: null };
+  const renderSnapshots: ProbeProps['renderSnapshots'] = [];
+  // A voted row makes a stale tap take the removeVote path on the old client.
+  const item = makeItem('fr_479_client', 'Dark mode', { hasVoted: true, voteCount: 5 });
+
+  const renderer = TestRenderer.create(
+    <VoteProbe
+      client={clientA}
+      userToken="tok_a"
+      applyChange={applyChange}
+      latest={latest}
+      renderSnapshots={renderSnapshots}
+    />
+  );
+
+  try {
+    // Retain the callback that belongs to (clientA, tok_a).
+    const staleToggleVote = latest.current!.toggleVote;
+
+    act(() => {
+      renderer.update(
+        <VoteProbe
+          client={clientB}
+          userToken="tok_b"
+          applyChange={applyChange}
+          latest={latest}
+          renderSnapshots={renderSnapshots}
+        />
+      );
+    });
+    assert.notEqual(
+      latest.current!.toggleVote,
+      staleToggleVote,
+      'a committed client swap must publish a new toggleVote callback'
+    );
+    assert.equal(latest.current!.isVoting('fr_479_client'), false);
+    renderSnapshots.length = 0;
+
+    act(() => {
+      staleToggleVote(item);
+    });
+    await flush();
+
+    assert.deepEqual(clientAVotes, [], 'a stale tap must not reach the replaced backend');
+    assert.deepEqual(
+      clientBVotes,
+      [],
+      'a stale tap must not dispatch through the new client either'
+    );
+    assert.deepEqual(appliedChanges, [], 'a stale tap must not apply an optimistic update');
+    assert.equal(latest.current!.isVoting('fr_479_client'), false);
+    assert.equal(latest.current!.voteError, null);
+    assert.equal(latest.current!.getVoteError('fr_479_client'), null);
+    assert.equal(
+      renderSnapshots.length,
+      0,
+      'a stale tap must not update state on the committed session'
+    );
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useToggleVote rejects a stale callback after a token-only swap (#479)', async () => {
+  const voteTokens: string[] = [];
+  const client = {
+    castVote: (_id: string, token: string) => {
+      voteTokens.push(token);
+      return Promise.resolve({ voted: true, voteCount: 6 });
+    },
+  } as unknown as FeedbackClient;
+
+  const appliedChanges: Array<VoteChangeMeta | undefined> = [];
+  const applyChange: VoteChangeApplier = (_itemId, _transform, meta) => {
+    appliedChanges.push(meta);
+  };
+  const latest: { current: UseToggleVoteResult | null } = { current: null };
+
+  const renderer = TestRenderer.create(
+    <VoteProbe client={client} userToken="tok_a" applyChange={applyChange} latest={latest} />
+  );
+
+  try {
+    const staleToggleVote = latest.current!.toggleVote;
+
+    act(() => {
+      renderer.update(
+        <VoteProbe client={client} userToken="tok_b" applyChange={applyChange} latest={latest} />
+      );
+    });
+    assert.notEqual(latest.current!.toggleVote, staleToggleVote);
+
+    act(() => {
+      staleToggleVote(makeItem('fr_479_token'));
+    });
+    await flush();
+
+    assert.deepEqual(voteTokens, [], 'a stale token callback must not cast a vote as tok_a');
+    assert.deepEqual(appliedChanges, []);
+    assert.equal(latest.current!.isVoting('fr_479_token'), false);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useToggleVote accepts a current callback invoked from a descendant layout effect during a client swap (#479)', async () => {
+  const clientBVotes: string[] = [];
+  const clientA = {
+    castVote: (id: string, token: string) => {
+      throw new Error(`the replaced client must not receive a vote: ${id}:${token}`);
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    castVote: (id: string, token: string) => {
+      clientBVotes.push(`${id}:${token}`);
+      return Promise.resolve({ voted: true, voteCount: 6 });
+    },
+  } as unknown as FeedbackClient;
+
+  const latest: { current: UseToggleVoteResult | null } = { current: null };
+  const item = makeItem('fr_479_layout');
+
+  function DescendantVoteTrigger({
+    toggle,
+    shouldVote,
+  }: {
+    toggle: () => void;
+    shouldVote: boolean;
+  }) {
+    const toggleRef = React.useRef(toggle);
+    toggleRef.current = toggle;
+    React.useLayoutEffect(() => {
+      if (shouldVote) toggleRef.current();
+    }, [shouldVote]);
+    return null;
+  }
+
+  function Owner({ client, shouldVote }: { client: FeedbackClient; shouldVote: boolean }) {
+    const vote = useToggleVote(client, 'tok_layout', () => {});
+    latest.current = vote;
+    return <DescendantVoteTrigger toggle={() => vote.toggleVote(item)} shouldVote={shouldVote} />;
+  }
+
+  const renderer = TestRenderer.create(<Owner client={clientA} shouldVote={false} />);
+
+  try {
+    await flush();
+    assert.deepEqual(clientBVotes, []);
+
+    // The descendant's layout effect runs before the hook owner's layout
+    // effect, so the new callback is invoked while the committed identity
+    // still names clientA. It must still vote on clientB.
+    act(() => {
+      renderer.update(<Owner client={clientB} shouldVote={true} />);
+    });
+    await flush();
+
+    assert.deepEqual(clientBVotes, ['fr_479_layout:tok_layout']);
+    assert.equal(latest.current!.isVoting('fr_479_layout'), false);
+  } finally {
+    renderer.unmount();
+  }
+});
+
+test('useToggleVote keeps the current callback usable after a stale callback is rejected (#479)', async () => {
+  const deferredA = createDeferred<VoteResult>();
+  let clientAVoteCount = 0;
+  const clientBVotes: string[] = [];
+  const clientA = {
+    castVote: () => {
+      clientAVoteCount += 1;
+      return deferredA.promise;
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    castVote: (id: string, token: string) => {
+      clientBVotes.push(`${id}:${token}`);
+      return Promise.resolve({ voted: true, voteCount: 11 });
+    },
+  } as unknown as FeedbackClient;
+
+  const appliedChanges: Array<VoteChangeMeta | undefined> = [];
+  const applyChange: VoteChangeApplier = (_itemId, _transform, meta) => {
+    appliedChanges.push(meta);
+  };
+  const latest: { current: UseToggleVoteResult | null } = { current: null };
+  const item = makeItem('fr_479_after');
+
+  const renderer = TestRenderer.create(
+    <VoteProbe client={clientA} userToken="tok_a" applyChange={applyChange} latest={latest} />
+  );
+
+  try {
+    const staleToggleVote = latest.current!.toggleVote;
+
+    act(() => {
+      renderer.update(
+        <VoteProbe client={clientB} userToken="tok_b" applyChange={applyChange} latest={latest} />
+      );
+    });
+
+    act(() => {
+      staleToggleVote(item);
+    });
+    await flush();
+    assert.equal(clientAVoteCount, 0);
+
+    await act(async () => {
+      latest.current!.toggleVote(item);
+    });
+    await flush();
+
+    assert.deepEqual(clientBVotes, ['fr_479_after:tok_b']);
+    assert.equal(
+      appliedChanges.length,
+      2,
+      'the current tap applies the optimistic delta and its final settlement'
+    );
+    assert.equal(appliedChanges[0], undefined, 'the optimistic delta carries no settlement meta');
+    assert.deepEqual(appliedChanges[1], { isFinal: true, userToken: 'tok_b' });
+    assert.equal(latest.current!.isVoting('fr_479_after'), false);
+    assert.equal(latest.current!.voteError, null);
+  } finally {
+    renderer.unmount();
+  }
+});
