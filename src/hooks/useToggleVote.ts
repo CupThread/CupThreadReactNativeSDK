@@ -1,8 +1,27 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FeedbackClient } from '../client/FeedbackClient';
 import type { FeatureRequestItem, VoteResult, VoteWarning } from '../types';
 
 declare const __DEV__: boolean | undefined;
+
+const EMPTY_PENDING_IDS: string[] = [];
+const EMPTY_ERRORS_BY_ITEM_ID: Record<string, Error> = {};
+
+interface VoteSession {
+  client: FeedbackClient;
+  userToken: string;
+  generation: number;
+  pendingIds: Set<string>;
+}
+
+interface VoteSessionState {
+  client: FeedbackClient;
+  userToken: string;
+  generation: number;
+  pendingIds: string[];
+  voteError: Error | null;
+  errorsByItemId: Record<string, Error>;
+}
 
 /**
  * Emits a diagnostic warning to `console.warn` only in development environments.
@@ -280,29 +299,117 @@ export function useToggleVote(
       ? options.shipNotifyEmail.trim() || undefined
       : undefined;
 
-  const pendingIdsRef = useRef<Set<string>>(new Set());
-  const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const normalizedUserToken = typeof userToken === 'string' ? userToken.trim() : '';
 
-  const [voteError, setVoteError] = useState<Error | null>(null);
-  const [errorsByItemId, setErrorsByItemId] = useState<Record<string, Error>>({});
+  // Most recently rendered (client, normalizedUserToken) pair, read by stable
+  // callbacks and async continuations so session switches invalidate stale
+  // in-flight settlements immediately (#459).
+  const latestSessionPropsRef = useRef({ client, userToken: normalizedUserToken });
+  latestSessionPropsRef.current = { client, userToken: normalizedUserToken };
+
+  const sessionRef = useRef<VoteSession | null>(null);
+  if (sessionRef.current === null) {
+    sessionRef.current = {
+      client,
+      userToken: normalizedUserToken,
+      generation: 0,
+      pendingIds: new Set(),
+    };
+  }
+
+  const [sessionState, setSessionState] = useState<VoteSessionState>(() => ({
+    client,
+    userToken: normalizedUserToken,
+    generation: 0,
+    pendingIds: EMPTY_PENDING_IDS,
+    voteError: null,
+    errorsByItemId: EMPTY_ERRORS_BY_ITEM_ID,
+  }));
+
+  const resolveActiveSession = useCallback((): VoteSession => {
+    const current = sessionRef.current!;
+    if (current.client !== client || current.userToken !== normalizedUserToken) {
+      const next: VoteSession = {
+        client,
+        userToken: normalizedUserToken,
+        generation: current.generation + 1,
+        pendingIds: new Set(),
+      };
+      sessionRef.current = next;
+      return next;
+    }
+    return current;
+  }, [client, normalizedUserToken]);
+
+  useEffect(() => {
+    const current = sessionRef.current!;
+    if (current.client !== client || current.userToken !== normalizedUserToken) {
+      const next = resolveActiveSession();
+      setSessionState({
+        client,
+        userToken: normalizedUserToken,
+        generation: next.generation,
+        pendingIds: EMPTY_PENDING_IDS,
+        voteError: null,
+        errorsByItemId: EMPTY_ERRORS_BY_ITEM_ID,
+      });
+    }
+  }, [client, normalizedUserToken, resolveActiveSession]);
+
+  const isStateForCurrentProps =
+    sessionState.client === client &&
+    sessionState.userToken === normalizedUserToken &&
+    sessionState.generation === sessionRef.current.generation;
+  const pendingIds = isStateForCurrentProps ? sessionState.pendingIds : EMPTY_PENDING_IDS;
+  const voteError = isStateForCurrentProps ? sessionState.voteError : null;
+  const errorsByItemId = isStateForCurrentProps
+    ? sessionState.errorsByItemId
+    : EMPTY_ERRORS_BY_ITEM_ID;
 
   const clearVoteError = useCallback((itemId?: string) => {
+    const active = sessionRef.current!;
+    const props = latestSessionPropsRef.current;
+    if (active.client !== props.client || active.userToken !== props.userToken) {
+      return;
+    }
     // Any supplied id — including an empty string — takes the per-item branch:
     // an id the hook never recorded is simply absent from the map, so the
     // call is a no-op and neither error state changes.
     if (itemId !== undefined) {
-      setErrorsByItemId((prev) => {
-        if (!prev[itemId]) return prev;
-        const next = { ...prev };
-        delete next[itemId];
-        return next;
+      setSessionState((prev) => {
+        if (
+          prev.generation !== active.generation ||
+          prev.client !== active.client ||
+          prev.userToken !== active.userToken ||
+          !prev.errorsByItemId[itemId]
+        ) {
+          return prev;
+        }
+        const nextErrors = { ...prev.errorsByItemId };
+        delete nextErrors[itemId];
+        return { ...prev, errorsByItemId: nextErrors };
       });
       // The global voteError intentionally stays untouched: it reports the
       // most recent failure, which may belong to a different row (#163).
       // Only a new attempt or an explicit global clear resets it.
     } else {
-      setErrorsByItemId({});
-      setVoteError(null);
+      setSessionState((prev) => {
+        if (
+          prev.generation !== active.generation ||
+          prev.client !== active.client ||
+          prev.userToken !== active.userToken
+        ) {
+          return prev;
+        }
+        if (prev.voteError === null && Object.keys(prev.errorsByItemId).length === 0) {
+          return prev;
+        }
+        return {
+          ...prev,
+          voteError: null,
+          errorsByItemId: EMPTY_ERRORS_BY_ITEM_ID,
+        };
+      });
     }
   }, []);
 
@@ -313,21 +420,35 @@ export function useToggleVote(
 
   const toggleVote = useCallback(
     (item: FeatureRequestItem) => {
-      const trimmedToken = typeof userToken === 'string' ? userToken.trim() : '';
-      if (!item || item.isOwnRequest || !trimmedToken) return;
-      if (pendingIdsRef.current.has(item.id)) return;
+      if (!item || item.isOwnRequest || !normalizedUserToken) return;
 
-      // Clear previous error on the same item at tap time
-      setErrorsByItemId((prev) => {
-        if (!prev[item.id]) return prev;
-        const next = { ...prev };
-        delete next[item.id];
-        return next;
+      const tapSession = resolveActiveSession();
+      if (tapSession.pendingIds.has(item.id)) return;
+
+      tapSession.pendingIds.add(item.id);
+      const nextPendingIds = Array.from(tapSession.pendingIds);
+
+      // Clear previous error on the same item and global voteError at tap time,
+      // and publish the updated pendingIds for this session (#459).
+      setSessionState((prev) => {
+        const sameSession =
+          prev.generation === tapSession.generation &&
+          prev.client === tapSession.client &&
+          prev.userToken === tapSession.userToken;
+        let nextErrors = sameSession ? prev.errorsByItemId : EMPTY_ERRORS_BY_ITEM_ID;
+        if (nextErrors[item.id]) {
+          nextErrors = { ...nextErrors };
+          delete nextErrors[item.id];
+        }
+        return {
+          client: tapSession.client,
+          userToken: tapSession.userToken,
+          generation: tapSession.generation,
+          pendingIds: nextPendingIds,
+          voteError: null,
+          errorsByItemId: nextErrors,
+        };
       });
-      setVoteError(null);
-
-      pendingIdsRef.current.add(item.id);
-      setPendingIds(Array.from(pendingIdsRef.current));
 
       const preVoteSnapshot: VoteStateSnapshot = {
         hasVoted: Boolean(item?.hasVoted),
@@ -345,9 +466,22 @@ export function useToggleVote(
         );
       }
 
-      dispatchVoteRequest(client, item.id, trimmedToken, preVoteSnapshot.hasVoted, shipNotifyEmail)
+      const isTapSessionCurrent = (): boolean =>
+        sessionRef.current === tapSession &&
+        latestSessionPropsRef.current.client === tapSession.client &&
+        latestSessionPropsRef.current.userToken === tapSession.userToken;
+
+      dispatchVoteRequest(
+        client,
+        item.id,
+        normalizedUserToken,
+        preVoteSnapshot.hasVoted,
+        shipNotifyEmail
+      )
         .then(
           (res) => {
+            if (!isTapSessionCurrent()) return;
+
             // The server-confirmed result settles the optimistic-vote
             // lifecycle: release the pending mutation along with the update
             // (see VoteChangeMeta.isFinal) so later server snapshots win for
@@ -358,7 +492,7 @@ export function useToggleVote(
             try {
               applyChangeRef.current(item.id, (current) => withServerVote(current, res), {
                 isFinal: true,
-                userToken: trimmedToken,
+                userToken: normalizedUserToken,
               });
             } catch (applyErr) {
               warnInDev(
@@ -367,13 +501,24 @@ export function useToggleVote(
               );
             }
 
-            setErrorsByItemId((prev) => {
-              if (!prev[item.id]) return prev;
-              const next = { ...prev };
-              delete next[item.id];
-              return next;
+            if (!isTapSessionCurrent()) return;
+
+            setSessionState((prev) => {
+              if (prev.generation !== tapSession.generation) return prev;
+              let nextErrors = prev.errorsByItemId;
+              if (nextErrors[item.id]) {
+                nextErrors = { ...nextErrors };
+                delete nextErrors[item.id];
+              }
+              if (nextErrors === prev.errorsByItemId && prev.voteError === null) {
+                return prev;
+              }
+              return {
+                ...prev,
+                voteError: null,
+                errorsByItemId: nextErrors,
+              };
             });
-            setVoteError(null);
 
             // A warning means the vote was saved but an optional opt-in was
             // refused, so it must not be routed through the error path.
@@ -386,6 +531,8 @@ export function useToggleVote(
             }
           },
           (err: unknown) => {
+            if (!isTapSessionCurrent()) return;
+
             // The rollback also ends the optimistic-vote lifecycle: hosts that
             // keep a pending mutation for the item (so an in-flight vote
             // survives concurrent refreshes) must release it here, or the
@@ -399,16 +546,24 @@ export function useToggleVote(
                 (current) => withVoteRollback(current, preVoteSnapshot),
                 {
                   isRollback: true,
-                  userToken: trimmedToken,
+                  userToken: normalizedUserToken,
                 }
               );
             } catch (applyErr) {
               warnInDev('[CupThread] useToggleVote: applyChange threw during rollback:', applyErr);
             }
 
+            if (!isTapSessionCurrent()) return;
+
             const errorObj = err instanceof Error ? err : new Error(String(err));
-            setErrorsByItemId((prev) => ({ ...prev, [item.id]: errorObj }));
-            setVoteError(errorObj);
+            setSessionState((prev) => {
+              if (prev.generation !== tapSession.generation) return prev;
+              return {
+                ...prev,
+                voteError: errorObj,
+                errorsByItemId: { ...prev.errorsByItemId, [item.id]: errorObj },
+              };
+            });
 
             try {
               onVoteErrorRef.current?.(err, item);
@@ -418,19 +573,31 @@ export function useToggleVote(
           }
         )
         .finally(() => {
-          pendingIdsRef.current.delete(item.id);
-          setPendingIds(Array.from(pendingIdsRef.current));
+          tapSession.pendingIds.delete(item.id);
+          if (!isTapSessionCurrent()) return;
+          const remainingPendingIds = Array.from(tapSession.pendingIds);
+          setSessionState((prev) => {
+            if (prev.generation !== tapSession.generation) return prev;
+            return {
+              ...prev,
+              pendingIds: remainingPendingIds,
+            };
+          });
         })
         .catch((unexpectedErr: unknown) => {
           warnInDev('[CupThread] useToggleVote: unexpected error in vote handler:', unexpectedErr);
         });
     },
-    [client, userToken, shipNotifyEmail]
+    [client, normalizedUserToken, resolveActiveSession, shipNotifyEmail]
   );
 
   const isVoting = useCallback(
-    (itemId: string) => pendingIds.includes(itemId) || pendingIdsRef.current.has(itemId),
-    [pendingIds]
+    (itemId: string) => {
+      const active = sessionRef.current!;
+      const refMatchesProps = active.client === client && active.userToken === normalizedUserToken;
+      return pendingIds.includes(itemId) || (refMatchesProps && active.pendingIds.has(itemId));
+    },
+    [client, normalizedUserToken, pendingIds]
   );
 
   return { toggleVote, isVoting, voteError, getVoteError, clearVoteError };

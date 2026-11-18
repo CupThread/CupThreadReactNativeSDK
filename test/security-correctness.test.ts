@@ -191,7 +191,10 @@ test('withServerVote applies the server truth as-is', () => {
 function renderTestHook<T>(hookFn: () => T) {
   const states: any[] = [];
   const refs: any[] = [];
+  const effects: Array<{ cleanup?: (() => void) | void; deps?: any[] }> = [];
+  const pendingEffects: Array<() => void> = [];
   let index = 0;
+  let effectIndex = 0;
   const listeners: (() => void)[] = [];
 
   const dispatcher = {
@@ -206,7 +209,9 @@ function renderTestHook<T>(hookFn: () => T) {
         states[idx] = typeof initial === 'function' ? (initial as () => V)() : initial;
       }
       const setter = (val: V | ((prev: V) => V)) => {
-        states[idx] = typeof val === 'function' ? (val as (prev: V) => V)(states[idx]) : val;
+        const nextVal = typeof val === 'function' ? (val as (prev: V) => V)(states[idx]) : val;
+        if (Object.is(nextVal, states[idx])) return;
+        states[idx] = nextVal;
         listeners.forEach((l) => l());
       };
       return [states[idx], setter];
@@ -214,11 +219,31 @@ function renderTestHook<T>(hookFn: () => T) {
     useCallback<F extends (...args: any[]) => any>(fn: F) {
       return fn;
     },
+    useEffect(effect: () => void | (() => void), deps?: any[]) {
+      const idx = effectIndex++;
+      const prev = effects[idx];
+      const changed =
+        !prev ||
+        !deps ||
+        !prev.deps ||
+        deps.length !== prev.deps.length ||
+        deps.some((d, i) => !Object.is(d, prev.deps![i]));
+      if (changed) {
+        pendingEffects.push(() => {
+          if (typeof prev?.cleanup === 'function') prev.cleanup();
+          effects[idx] = { cleanup: effect(), deps };
+        });
+      }
+    },
   };
 
   let currentResult: T;
+  let rendering = false;
   function render() {
+    if (rendering) return;
+    rendering = true;
     index = 0;
+    effectIndex = 0;
     const reactInternals = (React as any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
     const prev = reactInternals.ReactCurrentDispatcher.current;
     reactInternals.ReactCurrentDispatcher.current = dispatcher;
@@ -226,6 +251,10 @@ function renderTestHook<T>(hookFn: () => T) {
       currentResult = hookFn();
     } finally {
       reactInternals.ReactCurrentDispatcher.current = prev;
+      rendering = false;
+    }
+    while (pendingEffects.length > 0) {
+      pendingEffects.shift()!();
     }
   }
 
