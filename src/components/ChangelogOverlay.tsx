@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   SafeAreaView,
 } from 'react-native';
+import type { FeedbackClient } from '../client/FeedbackClient';
 import {
   useCupThreadTheme,
   useCupThreadClient,
@@ -20,6 +21,23 @@ import { Badge } from './Badge';
 import { MarkdownText } from './MarkdownText';
 import { ErrorState } from './ErrorState';
 import { formatVersionLabel } from '../utils/formatters';
+
+const EMPTY_ENTRIES: ChangelogEntry[] = [];
+
+interface LatestSeenRecord {
+  client: FeedbackClient;
+  appKey: string | undefined;
+  key: string;
+}
+
+interface OverlayClientState {
+  client: FeedbackClient;
+  entries: ChangelogEntry[];
+  latestSeen: LatestSeenRecord | null;
+  remoteConfig: ChangelogOverlayConfig | null;
+  isLoading: boolean;
+  loadFailed: boolean;
+}
 
 /**
  * Props for configuring the {@link ChangelogOverlay} modal sheet.
@@ -67,54 +85,125 @@ export function ChangelogOverlay({
   const client = useCupThreadClient();
   const strings = useCupThreadStrings();
 
-  const [entries, setEntries] = useState<ChangelogEntry[]>([]);
-  const [latestKey, setLatestKey] = useState<string | null>(null);
-  const [config, setConfig] = useState<ChangelogOverlayConfig>({
-    title: strings.changelog.overlayTitle,
-    subtitle: '',
-    entryCount: 3,
-    primaryButton: strings.changelog.continueButton,
-    closeButton: strings.changelog.closeButton,
-  });
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [loadFailed, setLoadFailed] = useState<boolean>(false);
+  const [overlayState, setOverlayState] = useState<OverlayClientState>(() => ({
+    client,
+    entries: EMPTY_ENTRIES,
+    latestSeen: null,
+    remoteConfig: null,
+    isLoading: true,
+    loadFailed: false,
+  }));
   const [retryToken, setRetryToken] = useState<number>(0);
 
   // The dismiss callback is read through a ref so parent-supplied inline
   // closures don't re-trigger the changelog fetch on every render.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
-    if (!visible) return;
+    const activeClient = client;
+
+    if (!visible) {
+      // Even while hidden, drop any state fetched under a previous client so
+      // reopening under the new client starts clean (#464).
+      setOverlayState((prev) =>
+        prev.client === activeClient
+          ? prev
+          : {
+              client: activeClient,
+              entries: EMPTY_ENTRIES,
+              latestSeen: null,
+              remoteConfig: null,
+              isLoading: true,
+              loadFailed: false,
+            }
+      );
+      return;
+    }
 
     const controller = new AbortController();
     let isMounted = true;
-    setIsLoading(true);
-    setLoadFailed(false);
+    setOverlayState((prev) =>
+      prev.client === activeClient
+        ? { ...prev, isLoading: true, loadFailed: false }
+        : {
+            client: activeClient,
+            entries: EMPTY_ENTRIES,
+            latestSeen: null,
+            remoteConfig: null,
+            isLoading: true,
+            loadFailed: false,
+          }
+    );
 
-    client
+    activeClient
       .prepareChangelogOverlay({ onlyIfUnseen, tokenStore, signal: controller.signal })
       .then((res) => {
         if (!isMounted || controller.signal.aborted) return;
         if (!res) {
+          setOverlayState((prev) =>
+            prev.client !== activeClient
+              ? prev
+              : {
+                  client: activeClient,
+                  entries: EMPTY_ENTRIES,
+                  latestSeen: null,
+                  remoteConfig: null,
+                  isLoading: false,
+                  loadFailed: false,
+                }
+          );
           if (onlyIfUnseen) {
             onCloseRef.current();
           }
           return;
         }
-        setEntries(res.entries);
-        setLatestKey(res.latestKey);
-        if (res.appearance.changelogOverlay) {
-          setConfig(res.appearance.changelogOverlay);
+        const safeEntries = Array.isArray(res.entries) ? res.entries : EMPTY_ENTRIES;
+        const safeLatestKey =
+          typeof res.latestKey === 'string' && res.latestKey.trim().length > 0
+            ? res.latestKey.trim()
+            : null;
+        const nextRemoteConfig =
+          res.appearance?.changelogOverlay &&
+          typeof res.appearance.changelogOverlay === 'object' &&
+          !Array.isArray(res.appearance.changelogOverlay)
+            ? res.appearance.changelogOverlay
+            : null;
+        setOverlayState((prev) =>
+          prev.client !== activeClient
+            ? prev
+            : {
+                client: activeClient,
+                entries: safeEntries,
+                latestSeen: safeLatestKey
+                  ? {
+                      client: activeClient,
+                      appKey: activeClient.config?.appKey,
+                      key: safeLatestKey,
+                    }
+                  : null,
+                remoteConfig: nextRemoteConfig,
+                isLoading: false,
+                loadFailed: false,
+              }
+        );
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string } | null)?.name === 'AbortError' || controller.signal.aborted) {
+          return;
         }
-      })
-      .catch((err: any) => {
-        if (err?.name === 'AbortError' || controller.signal.aborted) return;
-        setLoadFailed(true);
-      })
-      .finally(() => {
-        if (isMounted && !controller.signal.aborted) setIsLoading(false);
+        if (!isMounted) return;
+        setOverlayState((prev) =>
+          prev.client !== activeClient
+            ? prev
+            : {
+                ...prev,
+                isLoading: false,
+                loadFailed: true,
+              }
+        );
       });
 
     return () => {
@@ -123,15 +212,36 @@ export function ChangelogOverlay({
     };
   }, [client, visible, onlyIfUnseen, tokenStore, retryToken]);
 
+  const isStateForCurrentClient = overlayState.client === client;
+  const entries = isStateForCurrentClient ? overlayState.entries : EMPTY_ENTRIES;
+  const latestSeen = isStateForCurrentClient ? overlayState.latestSeen : null;
+  const remoteConfig = isStateForCurrentClient ? overlayState.remoteConfig : null;
+  const isLoading = isStateForCurrentClient ? overlayState.isLoading : true;
+  const loadFailed = isStateForCurrentClient ? overlayState.loadFailed : false;
+
+  const titleText =
+    (typeof remoteConfig?.title === 'string' && remoteConfig.title) ||
+    strings.changelog.overlayTitle;
+  const subtitleText = typeof remoteConfig?.subtitle === 'string' ? remoteConfig.subtitle : '';
+  const primaryButtonText =
+    (typeof remoteConfig?.primaryButton === 'string' && remoteConfig.primaryButton) ||
+    strings.changelog.continueButton;
+
   const handleRetry = () => {
     setRetryToken((token) => token + 1);
   };
 
   const handleDismiss = async () => {
-    if (autoMarkSeen && latestKey) {
+    if (
+      autoMarkSeen &&
+      !isLoading &&
+      latestSeen &&
+      latestSeen.client === client &&
+      latestSeen.appKey === client.config?.appKey
+    ) {
       try {
         const store = tokenStore || UserTokenStore.shared;
-        await store.markChangelogSeen(latestKey, client.config.appKey);
+        await store.markChangelogSeen(latestSeen.key, latestSeen.appKey);
       } catch {
         // ignore
       }
@@ -160,13 +270,9 @@ export function ChangelogOverlay({
             >
               <Text style={{ color: colors.textSecondary, fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>
-              {config.title || strings.changelog.overlayTitle}
-            </Text>
-            {config.subtitle ? (
-              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                {config.subtitle}
-              </Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>{titleText}</Text>
+            {subtitleText ? (
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitleText}</Text>
             ) : null}
           </View>
 
@@ -214,7 +320,7 @@ export function ChangelogOverlay({
               accessibilityRole="button"
             >
               <Text style={[styles.primaryBtnText, { color: colors.primaryText }]}>
-                {config.primaryButton || strings.changelog.continueButton}
+                {primaryButtonText}
               </Text>
             </TouchableOpacity>
           </View>
