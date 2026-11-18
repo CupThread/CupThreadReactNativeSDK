@@ -153,6 +153,7 @@ export function useChangelogEntries(
   const loadFirstPage = useCallback(
     async (signal?: AbortSignal) => {
       if (!enabled) return;
+      const generation = listGenerationRef.current;
       // Every first-page load replaces the list, so a load-more failure
       // against the previous list no longer applies — including when the
       // replacement fails, where the old footer error would otherwise stay
@@ -160,7 +161,7 @@ export function useChangelogEntries(
       setLoadMoreError(null);
       try {
         const page = await client.listChangelog({ limit: pageSize, signal });
-        if (signal?.aborted) return;
+        if (signal?.aborted || listGenerationRef.current !== generation) return;
         nextCursorRef.current = page.nextCursor;
         setEntries(page.entries);
         // An empty page can never be followed by another one, even if a
@@ -172,9 +173,10 @@ export function useChangelogEntries(
         setLoadMoreError(null);
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal?.aborted) return;
+        if (listGenerationRef.current !== generation) return;
         setError(err instanceof Error ? err : new Error(String(err)));
       } finally {
-        if (!signal?.aborted) {
+        if (!signal?.aborted && listGenerationRef.current === generation) {
           setIsLoading(false);
           setIsRefreshing(false);
         }
@@ -185,22 +187,6 @@ export function useChangelogEntries(
 
   // Initial load, and reload when the client / page size / enabled changes.
   useEffect(() => {
-    if (!enabled) {
-      // The previous effect's cleanup aborted only its own controller; a
-      // manual refresh()/reload() may have replaced `loadControllerRef` with
-      // a live request the cleanup never saw. Abort it here so the hook
-      // cannot disable with a first page still on the wire, then clear the
-      // flags its guarded `finally` would otherwise skip (#137).
-      loadControllerRef.current?.abort();
-      loadMoreControllerRef.current?.abort();
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return;
-    }
-
-    loadControllerRef.current?.abort();
-    loadMoreControllerRef.current?.abort();
-
     const identity = firstPageIdentityRef.current;
     const clientChanged = identity.client !== client;
     const identityChanged = clientChanged || identity.pageSize !== pageSize;
@@ -213,15 +199,36 @@ export function useChangelogEntries(
       nextCursorRef.current = null;
       hasMoreRef.current = false;
       setHasMore(false);
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
       setLoadMoreError(null);
       if (clientChanged) {
-        // The rendered rows belong to the previous app, so a failed
+        // The rendered rows and error belong to the previous app, so a failed
         // replacement must not leave them on screen under the new client.
         // A page-size change and a refresh/reload keep the same data source,
         // so their failures still keep the stale-but-valid entries (#447).
         setEntries([]);
+        setError(null);
       }
     }
+
+    if (!enabled) {
+      // The previous effect's cleanup aborted only its own controller; a
+      // manual refresh()/reload() may have replaced `loadControllerRef` with
+      // a live request the cleanup never saw. Abort it here so the hook
+      // cannot disable with a first page still on the wire, then clear the
+      // flags its guarded `finally` would otherwise skip (#137).
+      loadControllerRef.current?.abort();
+      loadMoreControllerRef.current?.abort();
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    loadControllerRef.current?.abort();
+    loadMoreControllerRef.current?.abort();
 
     const controller = new AbortController();
     loadControllerRef.current = controller;
@@ -279,13 +286,18 @@ export function useChangelogEntries(
       setLoadMoreError(null);
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      if (listGenerationRef.current !== generation) return;
       setLoadMoreError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       // Reset even when aborted: refresh()/reload() abort an in-flight
       // loadMore, and leaving the guard set would permanently disable the
-      // load-more affordance.
-      isLoadingMoreRef.current = false;
-      setIsLoadingMore(false);
+      // load-more affordance. An identity change already reset the guard
+      // and state (#473); a superseded request must not clear the new list's
+      // in-flight flag when it settles later.
+      if (listGenerationRef.current === generation) {
+        isLoadingMoreRef.current = false;
+        setIsLoadingMore(false);
+      }
     }
   }, [client, pageSize, enabled, isLoading, isRefreshing]);
 

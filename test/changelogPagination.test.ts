@@ -1475,6 +1475,181 @@ test('useChangelogEntries does not fetch when disabled', async () => {
   }
 });
 
+test('useChangelogEntries: client swap resets isLoadingMore and ignores late loadMore rejection/finally (#473)', async () => {
+  let resolveALoadMore!: (page: ListPublicChangelogResult) => void;
+  let rejectALoadMore!: (err: Error) => void;
+  let resolveBLoadMore!: (page: ListPublicChangelogResult) => void;
+
+  const clientA = {
+    listChangelog: async (opts?: { cursor?: string | null }) => {
+      if (!opts?.cursor) {
+        return {
+          entries: [makeEntry('a1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-a1',
+        };
+      }
+      return new Promise<ListPublicChangelogResult>((resolve, reject) => {
+        resolveALoadMore = resolve;
+        rejectALoadMore = reject;
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  const clientB = {
+    listChangelog: async (opts?: { cursor?: string | null }) => {
+      if (!opts?.cursor) {
+        return {
+          entries: [makeEntry('b1', '2026-09-02T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-b1',
+        };
+      }
+      return new Promise<ListPublicChangelogResult>((resolve) => {
+        resolveBLoadMore = resolve;
+      });
+    },
+  } as unknown as FeedbackClient;
+
+  let currentClient = clientA;
+  const harness = renderTestHook(() =>
+    useChangelogEntries({ client: currentClient, pageSize: 20 })
+  );
+  await flush();
+
+  // Start loadMore on clientA (remains pending, non-abort-aware).
+  const aLoadMorePromise = harness.result.loadMore();
+  await flush();
+  assert.equal(harness.result.isLoadingMore, true);
+
+  // Swap to clientB.
+  currentClient = clientB;
+  harness.rerender();
+  assert.equal(
+    harness.result.isLoadingMore,
+    false,
+    'isLoadingMore must reset immediately on client swap'
+  );
+  await flush();
+  assert.deepEqual(
+    harness.result.entries.map((e) => e.id),
+    ['b1']
+  );
+
+  // Start loadMore on clientB, then reject clientA's late loadMore.
+  const bLoadMorePromise = harness.result.loadMore();
+  await flush();
+  assert.equal(harness.result.isLoadingMore, true);
+
+  rejectALoadMore(new Error('late A loadMore failure'));
+  await aLoadMorePromise;
+  await flush();
+
+  assert.equal(
+    harness.result.loadMoreError,
+    null,
+    'late clientA loadMore error must not leak onto clientB'
+  );
+  assert.equal(
+    harness.result.isLoadingMore,
+    true,
+    'late clientA finally must not clear clientB isLoadingMore'
+  );
+
+  resolveBLoadMore({
+    entries: [makeEntry('b2', '2026-09-03T00:00:00.000Z')],
+    hasMore: false,
+    nextCursor: null,
+  });
+  await bLoadMorePromise;
+  await flush();
+  assert.equal(harness.result.isLoadingMore, false);
+  assert.deepEqual(
+    harness.result.entries.map((e) => e.id),
+    ['b1', 'b2']
+  );
+  void resolveALoadMore;
+  harness.unmount();
+});
+
+test('useChangelogEntries: disabling resets in-flight isLoadingMore (#473)', async () => {
+  const client = {
+    listChangelog: async (opts?: { cursor?: string | null }) => {
+      if (!opts?.cursor) {
+        return {
+          entries: [makeEntry('e1', '2026-09-01T00:00:00.000Z')],
+          hasMore: true,
+          nextCursor: 'cur-1',
+        };
+      }
+      return new Promise<ListPublicChangelogResult>(() => {});
+    },
+  } as unknown as FeedbackClient;
+
+  let enabled = true;
+  const harness = renderTestHook(() => useChangelogEntries({ client, pageSize: 20, enabled }));
+  await flush();
+
+  void harness.result.loadMore();
+  await flush();
+  assert.equal(harness.result.isLoadingMore, true);
+
+  enabled = false;
+  harness.rerender();
+  await flush();
+  assert.equal(harness.result.isLoadingMore, false, 'disabling must clear isLoadingMore');
+
+  harness.unmount();
+});
+
+test('useChangelogEntries: client swap clears previous client error while replacement loads (#473)', async () => {
+  let resolveBFirstPage!: (page: ListPublicChangelogResult) => void;
+  const clientA = {
+    listChangelog: async () => {
+      throw new Error('clientA failed');
+    },
+  } as unknown as FeedbackClient;
+
+  const clientB = {
+    listChangelog: async () =>
+      new Promise<ListPublicChangelogResult>((resolve) => {
+        resolveBFirstPage = resolve;
+      }),
+  } as unknown as FeedbackClient;
+
+  let currentClient = clientA;
+  const harness = renderTestHook(() =>
+    useChangelogEntries({ client: currentClient, pageSize: 20 })
+  );
+  await flush();
+  assert.match(harness.result.error?.message ?? '', /clientA failed/);
+
+  currentClient = clientB;
+  harness.rerender();
+  await flush();
+  assert.equal(
+    harness.result.error,
+    null,
+    'previous client error must be cleared while replacement loads'
+  );
+  assert.equal(harness.result.isLoading, true);
+
+  resolveBFirstPage({
+    entries: [makeEntry('b1', '2026-09-01T00:00:00.000Z')],
+    hasMore: false,
+    nextCursor: null,
+  });
+  await flush();
+  assert.equal(harness.result.error, null);
+  assert.equal(harness.result.isLoading, false);
+  assert.deepEqual(
+    harness.result.entries.map((e) => e.id),
+    ['b1']
+  );
+
+  harness.unmount();
+});
+
 // ---------------------------------------------------------------------------
 // Screen: WhatsNewScreen load-more wiring (needs react-native module mocks)
 // ---------------------------------------------------------------------------
