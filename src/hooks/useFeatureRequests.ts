@@ -341,6 +341,15 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   const page0GenerationRef = useRef<number>(0);
   const loadedGenerationRef = useRef<number>(-1);
 
+  // Identity of the list the pagination walk and optimistic overlays belong
+  // to (#458). A cursor/offset walk is only meaningful for the client and page
+  // size that produced it, and the previous client's rows must not survive a
+  // swap: an identity change invalidates both before the replacement resolves.
+  const listIdentityRef = useRef({ client, pageSize });
+  // Bumped on every identity change so an in-flight page-0 or load-more that
+  // resolves late cannot publish the previous list's rows or walk.
+  const listGenerationRef = useRef(0);
+
   // Offset bookkeeping for loadMore (#159): the next `offset` to request for
   // the current query context, advanced by the *requested* window (pageSize)
   // per consumed page. Deriving the offset from the deduped display length
@@ -734,6 +743,41 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
   );
 
   useEffect(() => {
+    // Identity invalidation runs even while the hook is disabled or the token
+    // is still resolving (#458): the previous client's rows and walk must not
+    // stay exposed through `items` until the hook is re-enabled.
+    const identity = listIdentityRef.current;
+    const clientChanged = identity.client !== client;
+    const identityChanged = clientChanged || identity.pageSize !== pageSize;
+    listIdentityRef.current = { client, pageSize };
+    if (identityChanged) {
+      // The previous walk's cursor/offset belongs to another client or page
+      // size and can never be followed here; a failed replacement page must
+      // not leave `loadMore` holding it (#458).
+      listGenerationRef.current += 1;
+      // The search-key dedupe below only covers the data source that produced
+      // the key: without this reset an active query would skip the refetch and
+      // keep showing the previous client's results.
+      lastSearchKeyRef.current = null;
+      nextCursorRef.current = null;
+      cursorHasMoreRef.current = null;
+      setCursorHasMore(null);
+      nextOffsetRef.current = 0;
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+      setLoadMoreError(null);
+      if (clientChanged) {
+        // The rendered rows and optimistic snapshots belong to the previous
+        // app, so a failed replacement must not leave them on screen under the
+        // new client. A page-size change keeps the same data source, so its
+        // failures still keep the stale-but-valid rows (#458).
+        setItems([]);
+        setTotal(0);
+        pendingItemMutationsRef.current.clear();
+        settledItemMutationsRef.current.clear();
+      }
+    }
+
     if (!isTokenReady || !enabled) {
       // The previous effect's cleanup aborted only its own deferred
       // controller; a manual refresh()/reload() may have replaced
@@ -833,7 +877,17 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       if (timer) clearTimeout(timer);
       controller.abort();
     };
-  }, [loadPage0, debounceMs, isTokenReady, query, versionId, normalizedUserToken, enabled]);
+  }, [
+    loadPage0,
+    debounceMs,
+    isTokenReady,
+    query,
+    versionId,
+    normalizedUserToken,
+    client,
+    pageSize,
+    enabled,
+  ]);
 
   // Load next page
   const loadMore = useCallback(async () => {
@@ -869,6 +923,10 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     const trimmedQuery = typeof query === 'string' ? query.trim() : '';
     const isSearch = trimmedQuery.length > 0;
     const limiter = searchLimiterRef.current!;
+    // The page this request fetches belongs to the list identity that was
+    // current when it started (#458): a response that resolves after a
+    // client/page-size swap must never splice into the replacement list.
+    const listGeneration = listGenerationRef.current;
 
     loadMoreControllerRef.current?.abort();
     const controller = new AbortController();
@@ -900,6 +958,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       });
 
       if (controller.signal.aborted) return;
+      if (listGenerationRef.current !== listGeneration) return;
 
       const safeRes = res && typeof res === 'object' && !Array.isArray(res) ? res : null;
       const newItems = Array.isArray(safeRes?.requests)
@@ -1007,6 +1066,7 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
       }
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
+      if (listGenerationRef.current !== listGeneration) return;
       if (isSearch && err instanceof RateLimitedException) {
         enterSearchCooldown(err.retryAfterMs);
       }
@@ -1014,9 +1074,13 @@ export function useFeatureRequests(options: UseFeatureRequestsOptions): UseFeatu
     } finally {
       // Reset even when aborted: refresh()/reload()/filter changes abort an
       // in-flight loadMore, and leaving the guard set would permanently
-      // disable infinite scroll.
-      isLoadingMoreRef.current = false;
-      setIsLoadingMore(false);
+      // disable infinite scroll. An identity change already reset the guard
+      // and state (#458); the superseded request must not clear the new list's
+      // in-flight flag when it settles later.
+      if (listGenerationRef.current === listGeneration) {
+        isLoadingMoreRef.current = false;
+        setIsLoadingMore(false);
+      }
     }
   }, [
     client,
