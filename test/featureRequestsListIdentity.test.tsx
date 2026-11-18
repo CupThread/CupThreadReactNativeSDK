@@ -545,3 +545,54 @@ test('useFeatureRequests scopes post-429 cooldown state to the active client bud
     renderer.unmount();
   }
 });
+
+test('useFeatureRequests retains both A and B cooldowns after A -> B -> A (#477)', async () => {
+  let clientAFetches = 0;
+  let clientBFetches = 0;
+  const clientA = {
+    fetchFeatureRequests: async (): Promise<never> => {
+      clientAFetches += 1;
+      throw new RateLimitedException(5_000);
+    },
+  } as unknown as FeedbackClient;
+  const clientB = {
+    fetchFeatureRequests: async (): Promise<never> => {
+      clientBFetches += 1;
+      throw new RateLimitedException(5_000);
+    },
+  } as unknown as FeedbackClient;
+  const options = (client: FeedbackClient): UseFeatureRequestsOptions => ({
+    client,
+    userToken: 'tok_both_429',
+    query: 'needle',
+    pageSize: 2,
+    debounceMs: 0,
+    searchRateLimiterOptions: { minSpacingMs: 0, cooldownMs: 5_000 },
+  });
+
+  const latest: { current: UseFeatureRequestsResult | null } = { current: null };
+  const renderer = TestRenderer.create(<HookProbe options={options(clientA)} latest={latest} />);
+  try {
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
+
+    act(() => {
+      renderer.update(<HookProbe options={options(clientB)} latest={latest} />);
+    });
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientBFetches, 1);
+
+    // A's own cooldown is still active even though B's key was the last one
+    // stored; returning to A must show its notice without another request.
+    act(() => {
+      renderer.update(<HookProbe options={options(clientA)} latest={latest} />);
+    });
+    await flush();
+    assert.equal(latest.current!.isRateLimited, true);
+    assert.equal(clientAFetches, 1);
+  } finally {
+    renderer.unmount();
+  }
+});
