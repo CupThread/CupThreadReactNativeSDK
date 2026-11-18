@@ -38,7 +38,8 @@ if (supportsModuleMocks) {
   });
 }
 
-const { CupThreadProvider } = await import('../src/theme/CupThreadThemeProvider');
+const { CupThreadProvider, useCupThreadContext } =
+  await import('../src/theme/CupThreadThemeProvider');
 const { FeatureRequestsScreen } = await import('../src/components/FeatureRequestsScreen');
 const { ErrorState } = await import('../src/components/ErrorState');
 const { enStrings } = await import('../src/i18n');
@@ -165,7 +166,71 @@ test(
 );
 
 test(
-  'FeatureRequestsScreen keeps version chips visible when versions refetch fails (#446)',
+  'FeatureRequestsScreen keeps version chips visible when versions refetch fails on the same client (#446)',
+  renderTestOptions,
+  async () => {
+    let featureEnabled = true;
+    const initialClient = new ReconcileVersionsClient([makeMockVersion('v1', '1.0.0')]);
+    initialClient.fetchAppConfig = async () =>
+      ({
+        appId: 'app_test',
+        appKey: 'app_test_versions',
+        name: 'Test App',
+        sdk: {
+          theme: 'system',
+          features: {
+            featureRequests: featureEnabled,
+            roadmap: true,
+            feedback: true,
+            changelog: true,
+          },
+        },
+      }) as any;
+
+    let refreshConfigFn: (() => Promise<void>) | undefined;
+    function ContextBridge() {
+      const { refreshConfig } = useCupThreadContext();
+      refreshConfigFn = refreshConfig;
+      return null;
+    }
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <CupThreadProvider client={initialClient} userToken="usr_test">
+          <ContextBridge />
+          <FeatureRequestsScreen />
+        </CupThreadProvider>
+      );
+    });
+    await flush();
+    assert.ok(findPressableWithLabel(renderer.root, '1.0.0'), 'initial chip row should be visible');
+
+    // Toggle enabled off then back on for the same client while fetchVersions fails.
+    featureEnabled = false;
+    await act(async () => {
+      await refreshConfigFn!();
+    });
+    await flush();
+
+    initialClient.failFetch = true;
+    featureEnabled = true;
+    await act(async () => {
+      await refreshConfigFn!();
+    });
+    await flush();
+
+    const compactErrors = renderer.root
+      .findAllByType(ErrorState)
+      .filter((node) => node.props.compact);
+    assert.equal(compactErrors.length, 1);
+    assert.ok(findPressableWithLabel(renderer.root, '1.0.0'), 'chip row should stay visible');
+    renderer.unmount();
+  }
+);
+
+test(
+  'FeatureRequestsScreen clears previous client version chips when swapping to a failing client (#462)',
   renderTestOptions,
   async () => {
     const initialClient = new ReconcileVersionsClient([makeMockVersion('v1', '1.0.0')]);
@@ -178,6 +243,7 @@ test(
       );
     });
     await flush();
+    assert.ok(findPressableWithLabel(renderer.root, '1.0.0'), 'initial chip row should be visible');
 
     const failingClient = new ReconcileVersionsClient([makeMockVersion('v1', '1.0.0')]);
     failingClient.failFetch = true;
@@ -194,7 +260,11 @@ test(
       .findAllByType(ErrorState)
       .filter((node) => node.props.compact);
     assert.equal(compactErrors.length, 1);
-    assert.ok(findPressableWithLabel(renderer.root, '1.0.0'), 'chip row should stay visible');
+    assert.equal(
+      findPressableWithLabel(renderer.root, '1.0.0'),
+      undefined,
+      'previous client version chip must not leak onto replacement client'
+    );
     renderer.unmount();
   }
 );
