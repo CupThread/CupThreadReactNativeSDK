@@ -1466,3 +1466,114 @@ test('useFeatureRequests paired with useToggleVote: padded userToken normalizes 
     }
   }
 });
+
+test('useAsyncData: fetcher identity change clears data when replacement load fails (#462)', async () => {
+  const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
+  const fetcherA = async () => 'data from A';
+  const fetcherB = async () => {
+    throw new Error('B failed');
+  };
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(<HookProbeAsyncData fetcher={fetcherA} latest={latest} />);
+  });
+  await flush();
+
+  assert.equal(latest.current!.data, 'data from A');
+  assert.equal(latest.current!.hasLoaded, true);
+  assert.equal(latest.current!.error, null);
+
+  await act(async () => {
+    renderer.update(<HookProbeAsyncData fetcher={fetcherB} latest={latest} />);
+  });
+  // Even before fetcherB settles, data from fetcherA must not be exposed.
+  assert.equal(latest.current!.data, null);
+  assert.equal(latest.current!.hasLoaded, false);
+
+  await flush();
+  assert.equal(latest.current!.data, null);
+  assert.equal(latest.current!.hasLoaded, false);
+  assert.equal(latest.current!.isLoading, false);
+  assert.match((latest.current!.error as Error | null)?.message ?? '', /B failed/);
+
+  renderer.unmount();
+});
+
+test('useAsyncData: fetcher identity change A -> B replaces data when B succeeds (#462)', async () => {
+  const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
+  const fetcherA = async () => 'data from A';
+  const fetcherB = async () => 'data from B';
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(<HookProbeAsyncData fetcher={fetcherA} latest={latest} />);
+  });
+  await flush();
+  assert.equal(latest.current!.data, 'data from A');
+
+  await act(async () => {
+    renderer.update(<HookProbeAsyncData fetcher={fetcherB} latest={latest} />);
+  });
+  await flush();
+  assert.equal(latest.current!.data, 'data from B');
+  assert.equal(latest.current!.hasLoaded, true);
+  assert.equal(latest.current!.error, null);
+
+  renderer.unmount();
+});
+
+test('useAsyncData: failed refresh with the same fetcher retains previous data (#462)', async () => {
+  const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
+  let shouldFail = false;
+  const fetcher = async () => {
+    if (shouldFail) {
+      throw new Error('Refresh failed');
+    }
+    return 'initial data';
+  };
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(<HookProbeAsyncData fetcher={fetcher} latest={latest} />);
+  });
+  await flush();
+  assert.equal(latest.current!.data, 'initial data');
+
+  shouldFail = true;
+  await act(async () => {
+    await latest.current!.refresh();
+  });
+  await flush();
+  assert.equal(latest.current!.data, 'initial data');
+  assert.equal(latest.current!.hasLoaded, true);
+  assert.match(latest.current!.error?.message ?? '', /Refresh failed/);
+
+  renderer.unmount();
+});
+
+test('useAsyncData: late response from non-abort-aware previous fetcher does not overwrite replacement (#462)', async () => {
+  const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
+  const deferredA = createDeferred<string>();
+  const fetcherA = () => deferredA.promise;
+  const fetcherB = async () => 'data from B';
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(<HookProbeAsyncData fetcher={fetcherA} latest={latest} />);
+  });
+  await flush(2);
+
+  await act(async () => {
+    renderer.update(<HookProbeAsyncData fetcher={fetcherB} latest={latest} />);
+  });
+  await flush();
+  assert.equal(latest.current!.data, 'data from B');
+
+  deferredA.resolve('stale data from A');
+  await flush();
+  assert.equal(latest.current!.data, 'data from B');
+  assert.equal(latest.current!.error, null);
+
+  renderer.unmount();
+});

@@ -29,7 +29,8 @@ export interface UseAsyncDataOptions<T = any> {
 export interface UseAsyncDataResult<T> {
   /**
    * The most recently loaded value, or `null` before the first successful load.
-   * Preserved when a refresh fails so stale data is never blanked out.
+   * Preserved across a failed refresh/reload of the same fetcher; cleared when
+   * the fetcher identity changes.
    */
   data: T | null;
 
@@ -100,17 +101,27 @@ export function useAsyncData<T>(
 ): UseAsyncDataResult<T> {
   const { enabled = true, mergeStale } = options;
 
-  const [data, setData] = useState<T | null>(null);
+  const [dataState, setDataState] = useState<{
+    owner: (signal: AbortSignal) => Promise<T>;
+    data: T | null;
+    error: Error | null;
+    hasLoaded: boolean;
+  }>(() => ({
+    owner: fetcher,
+    data: null,
+    error: null,
+    hasLoaded: false,
+  }));
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [hasLoaded, setHasLoaded] = useState<boolean>(false);
   const hasLoadedRef = useRef(false);
-  hasLoadedRef.current = hasLoaded;
+  hasLoadedRef.current = dataState.owner === fetcher ? dataState.hasLoaded : false;
 
   const controllerRef = useRef<AbortController | null>(null);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  const activeFetcherRef = useRef(fetcher);
+  const fetcherGenerationRef = useRef(0);
 
   const mergeStaleRef = useRef(mergeStale);
   mergeStaleRef.current = mergeStale;
@@ -119,35 +130,60 @@ export function useAsyncData<T>(
 
   const wrappedSetData: React.Dispatch<React.SetStateAction<T | null>> = useCallback((action) => {
     localRevisionRef.current += 1;
-    setData(action);
+    const targetFetcher = fetcherRef.current;
+    setDataState((prev) => {
+      const currentData = prev.owner === targetFetcher ? prev.data : null;
+      const nextData =
+        typeof action === 'function'
+          ? (action as (prevState: T | null) => T | null)(currentData)
+          : action;
+      return {
+        owner: targetFetcher,
+        data: nextData,
+        error: prev.owner === targetFetcher ? prev.error : null,
+        hasLoaded: prev.owner === targetFetcher ? prev.hasLoaded : false,
+      };
+    });
   }, []);
 
   const runLoad = useCallback(async (signal: AbortSignal) => {
+    const requestFetcher = fetcherRef.current;
+    const generation = fetcherGenerationRef.current;
     const rev = localRevisionRef.current;
+    const isCurrentFetcher = () => fetcherGenerationRef.current === generation;
     try {
-      const result = await fetcherRef.current(signal);
-      if (signal?.aborted) return;
+      const result = await requestFetcher(signal);
+      if (signal?.aborted || !isCurrentFetcher()) return;
       const hadLoadedBeforeFetch = hasLoadedRef.current;
-      setData((prev) => {
-        if (mergeStaleRef.current && prev != null && !hadLoadedBeforeFetch) {
-          return mergeStaleRef.current(prev, result);
-        }
-        if (localRevisionRef.current !== rev) {
-          if (mergeStaleRef.current) {
-            return mergeStaleRef.current(prev, result);
-          }
-          return prev;
-        }
-        return result;
-      });
       hasLoadedRef.current = true;
-      setHasLoaded(true);
-      setError(null);
+      setDataState((prev) => {
+        const prevData = prev.owner === requestFetcher ? prev.data : null;
+        let nextData: T | null;
+        if (mergeStaleRef.current && prevData != null && !hadLoadedBeforeFetch) {
+          nextData = mergeStaleRef.current(prevData, result);
+        } else if (localRevisionRef.current !== rev) {
+          nextData = mergeStaleRef.current ? mergeStaleRef.current(prevData, result) : prevData;
+        } else {
+          nextData = result;
+        }
+        return {
+          owner: requestFetcher,
+          data: nextData,
+          error: null,
+          hasLoaded: true,
+        };
+      });
     } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      setError(err instanceof Error ? err : new Error(String(err)));
+      if (err?.name === 'AbortError' || signal?.aborted || !isCurrentFetcher()) return;
+      const error = err instanceof Error ? err : new Error(String(err));
+      setDataState((prev) => ({
+        owner: requestFetcher,
+        data: prev.owner === requestFetcher ? prev.data : null,
+        error,
+        hasLoaded: prev.owner === requestFetcher ? prev.hasLoaded : false,
+      }));
     } finally {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && isCurrentFetcher()) {
         setIsLoading(false);
         setIsRefreshing(false);
       }
@@ -178,12 +214,22 @@ export function useAsyncData<T>(
   const reload = useCallback(() => runWithController('initial'), [runWithController]);
   const refresh = useCallback(() => runWithController('refresh'), [runWithController]);
 
-  // Initial load, and reload when `enabled` flips on. Reset `hasLoaded` only
-  // when the fetcher identity changes (including while disabled) so stale data
-  // from an earlier load keeps its "loaded" semantics across re-enables.
+  // Reset `data`, `error`, and `hasLoaded` when the fetcher identity changes
+  // (including while disabled) so stale data from a previous source is never
+  // exposed under a new fetcher if the replacement load fails (#462).
   useEffect(() => {
-    hasLoadedRef.current = false;
-    setHasLoaded(false);
+    if (activeFetcherRef.current !== fetcher) {
+      activeFetcherRef.current = fetcher;
+      fetcherGenerationRef.current += 1;
+      hasLoadedRef.current = false;
+      localRevisionRef.current = 0;
+      setDataState({
+        owner: fetcher,
+        data: null,
+        error: null,
+        hasLoaded: false,
+      });
+    }
   }, [fetcher]);
 
   // Initial load, and reload when the fetcher identity or `enabled` changes.
@@ -212,12 +258,16 @@ export function useAsyncData<T>(
     };
   }, []);
 
+  const effectiveData = dataState.owner === fetcher ? dataState.data : null;
+  const effectiveError = dataState.owner === fetcher ? dataState.error : null;
+  const effectiveHasLoaded = dataState.owner === fetcher ? dataState.hasLoaded : false;
+
   return {
-    data,
+    data: effectiveData,
     isLoading,
     isRefreshing,
-    error,
-    hasLoaded,
+    error: effectiveError,
+    hasLoaded: effectiveHasLoaded,
     reload,
     refresh,
     setData: wrappedSetData,
