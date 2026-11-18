@@ -1470,9 +1470,8 @@ test('useFeatureRequests paired with useToggleVote: padded userToken normalizes 
 test('useAsyncData: fetcher identity change clears data when replacement load fails (#462)', async () => {
   const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
   const fetcherA = async () => 'data from A';
-  const fetcherB = async () => {
-    throw new Error('B failed');
-  };
+  const deferredB = createDeferred<string>();
+  const fetcherB = () => deferredB.promise;
 
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -1490,7 +1489,9 @@ test('useAsyncData: fetcher identity change clears data when replacement load fa
   // Even before fetcherB settles, data from fetcherA must not be exposed.
   assert.equal(latest.current!.data, null);
   assert.equal(latest.current!.hasLoaded, false);
+  assert.equal(latest.current!.error, null);
 
+  deferredB.reject(new Error('B failed'));
   await flush();
   assert.equal(latest.current!.data, null);
   assert.equal(latest.current!.hasLoaded, false);
@@ -1573,6 +1574,47 @@ test('useAsyncData: late response from non-abort-aware previous fetcher does not
   deferredA.resolve('stale data from A');
   await flush();
   assert.equal(latest.current!.data, 'data from B');
+  assert.equal(latest.current!.error, null);
+
+  renderer.unmount();
+});
+
+test('useAsyncData: reload() from useLayoutEffect on disabled fetcher swap is not discarded (#462)', async () => {
+  const latest: { current: UseAsyncDataResult<string> | null } = { current: null };
+  const fetcherA = async () => 'data from A';
+  const fetcherB = async () => 'data from B';
+
+  function LayoutReloadProbe({
+    fetcher,
+    triggerOnSwap,
+  }: {
+    fetcher: (signal: AbortSignal) => Promise<string>;
+    triggerOnSwap: boolean;
+  }) {
+    const result = useAsyncData(fetcher, { enabled: false });
+    latest.current = result;
+    React.useLayoutEffect(() => {
+      if (triggerOnSwap) {
+        void result.reload();
+      }
+    }, [fetcher, triggerOnSwap, result.reload]);
+    return null;
+  }
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(<LayoutReloadProbe fetcher={fetcherA} triggerOnSwap={false} />);
+  });
+  await flush();
+  assert.equal(latest.current!.data, null);
+
+  await act(async () => {
+    renderer.update(<LayoutReloadProbe fetcher={fetcherB} triggerOnSwap={true} />);
+  });
+  await flush();
+
+  assert.equal(latest.current!.data, 'data from B');
+  assert.equal(latest.current!.hasLoaded, true);
   assert.equal(latest.current!.error, null);
 
   renderer.unmount();
